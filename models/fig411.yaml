@@ -1,0 +1,56 @@
+title: Figure 4.11
+symbolic: false
+rge:
+   before_measure: false
+   before_forwarding: false
+   combine_signs: true
+normalize_weights:
+   output: false
+   input: false
+probability_threshold:
+   control: 0
+   forwarding: 0
+   presence: 0
+winner_take_all: true
+string_precision: 2
+
+variables:
+   zero: &zero "0j"
+   one: &one "1+0j"
+   r60: &r60 "0.5+0.87j"
+   q1: &q1 "rad(25)"
+   q2: &q2 "rad(30)"
+phases:
+   phase1: [g1, g2]
+   phase2: [g3, g4]
+particles:
+   c:
+      sign: 1
+      weight: *zero
+   p1:
+      sign: 1
+      weight: *one
+   p2:
+      sign: 1
+      weight: *one
+   p3:
+      sign: 1
+      weight: *one
+gates:
+   g1:
+      angle: *q1
+   g2:
+      angle: *q2
+   g3:
+      angle: 0
+   g4:
+      angle: 0
+links:
+   c: g1.control
+   p1: g1.upper
+   p2: g3.upper
+   p3: g4.upper
+   g1.control: g2.control
+   g1.upper: g2.upper
+   g2.upper: g3.control
+   g2.lower: g4.control

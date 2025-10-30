@@ -1,0 +1,74 @@
+title: Quantish EPR Experiment
+variables:
+   zero: &zero 0im
+   one: &one (1+0im)
+   q1: &q1 10 #!RandomAngle
+   q2: &q2 20
+   q3: &q3
+      base: *q1
+      rotation: 90
+   cw: &cw (1+0im)
+phases:
+   prepare: [g1, g2]
+   couple: [g3, g4]
+   split: [g5, g6]
+normalize_weights:
+   output: false
+   input: true
+probability_threshold:
+   control: 0.1
+   forwarding: 0.0
+particles:
+   control1:
+      sign: 1
+      weight: *cw
+   control2:
+      sign: 1
+      weight: *cw
+   p1:
+      sign: true
+      weight: *one
+   p2:
+      sign: false
+      weight: *one
+   p3:
+      sign: true
+      weight: *one
+gates:
+   g1:
+      angle: *q1
+   g2:
+      angle: q3
+   g3:
+      angle: 0
+   g4:
+      angle: 0
+   g5:
+      angle: *q2
+   g6:
+      angle: *q2
+links:
+   control1: g1_control
+   control2: g2_control
+   p1: g1_sw1
+   p2: g2_sw1
+   p3: g3_sw1
+   g1_control: g1c
+   g1_sw1: g3_control
+   g1_sw2: g5_sw2
+   g2_control: g2c
+   g2_sw1: g4_control
+   g2_sw2: g6_sw2
+   g3_control: g5_sw1
+   g3_sw1: g4_sw1
+   g3_sw2: g4_sw2
+   g4_control: g6_sw1
+   g4_sw1: g41
+   g4_sw2: g42
+   g5_control: g5c
+   g5_sw1: g51
+   g5_sw2: g52
+   g6_control: g6c
+   g6_sw1: g61
+   g6_sw2: g62
+sinks: [g1c, g2c, g41, g42, g5c, g51, g52, g6c, g61, g62]

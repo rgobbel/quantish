@@ -1,0 +1,61 @@
+title: Figure 4.15
+symbolic: false
+merge:
+   before_measure: false
+   before_forwarding: false
+   combine_signs: true
+normalize_weights:
+   output: false
+   input: false
+probability_threshold:
+   control: 0
+   forwarding: 0
+   presence: 0
+winner_take_all: true
+string_precision: 2
+
+variables:
+   zero: &zero '0j'
+   one: &one '1+0j'
+   r60: &r60 '0.5+0.87j'
+   q1: &q1 'rad(30)'
+   q2: &q2 'rad(50)'
+phases:
+   prep_split: [prepare, split]
+   observe_unobserve: [observe, unobserve]
+   merge_test: [merge, test]
+particles:
+   p1:
+      sign: 1
+      weight: *one
+   p2:
+      sign: 1
+      weight: *one
+gates:
+   prepare:
+      angle: *q1
+   split:
+      angle: *q2
+   merge:
+      angle: *q2
+   test:
+      angle: *q1
+   observe:
+      angle: 0
+   unobserve:
+      angle: 0
+links:
+   p1: prepare.upper
+   p2: observe.upper
+   prepare.control: split.control
+   prepare.upper: split.upper
+   split.control: merge.control
+   split.upper: merge.upper
+   split.lower: observe.control
+   merge.control: test.control
+   merge.upper: test.upper
+   merge.lower: test.lower
+   observe.control: unobserve.control
+   observe.upper: unobserve.upper
+   observe.lower: unobserve.lower
+   unobserve.control: merge.lower

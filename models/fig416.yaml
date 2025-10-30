@@ -1,0 +1,75 @@
+title: Quantish EPR Experiment
+
+sample: false
+n_samples: 1
+winner_take_all: false
+probability_threshold:      # threshold values determine whether or not particles are considered to exist
+   control: 0               # controls whether or not a superposed control particle is "present"
+   forwarding: 0            # particles whose probabilities are less than this are dropped
+   presence: 0            # particles whose probabilities are less than this are not added to sinks
+
+phases:
+   prepare: [g1, g2]
+   couple: [g3, g4]
+   split: [g5, g6]
+
+variables:
+   zero: &zero "0+0j"
+   one: &one "1+0j"
+   minus_one: "-1+0j"
+   cweight: &cweight "1"
+   q30: &q30 "rad(30)"
+   q45: &q45 "rad(45)"
+   q135: &q135 "rad(135)"
+   q2: &q2 "acos(1/3)"
+   q60: &q60 "rad(60)"
+   q120: &q120 "rad(30+90)"
+   q20: &q20 "rad(20)"
+   q40: &q40 "rad(40)"
+   q10: &q10 "rad(10)"
+   q100: &q100 "rad(100)"
+   q90: &q90 "rad(90)"
+   cw: &cw "0"
+particles:
+   control1:
+      sign: 1
+      weight: *zero
+   control2:
+      sign: 1
+      weight: *zero
+   p1:
+      sign: 1
+      weight: *one
+   p2:
+      sign: 1
+      weight: *one
+   p3:
+      sign: 1
+      weight: *one
+gates:
+   g1:
+      angle: *q30
+   g2:
+      angle: *q120
+   g3:
+      angle: 0
+   g4:
+      angle: 0
+   g5:
+      angle: *q20
+   g6:
+      angle: *q20
+links:
+   control1: g1.control
+   control2: g2.control
+   p1: g1.upper
+   p2: g2.upper
+   p3: g3.upper
+   g1.upper: g3.control
+   g1.lower: g5.lower
+   g2.upper: g4.control
+   g2.lower: g6.lower
+   g3.control: g5.upper
+   g3.upper: g4.upper
+   g3.lower: g4.lower
+   g4.control: g6.upper

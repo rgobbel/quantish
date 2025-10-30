@@ -1,0 +1,107 @@
+import json
+from collections import defaultdict
+from quantish.util import wstr, enough
+from quantish.particle import Particle
+import logging
+
+log = logging.getLogger('quantish')
+
+class Sink:
+    def __init__(self, name, pid, presence_threshold=0, initial_values=None,
+                 precision=2, combine_signs=True):
+        log.debug(f'NEW SINK: {name}-{pid}, {presence_threshold=}, {initial_values=}, {combine_signs=}')
+        self.precision = precision
+        self.trace = defaultdict(list)
+        self.name = name
+        self.id = pid
+        self.pnames = set()
+        self.values = {}
+        self.combine_signs = combine_signs
+        self.presence_threshold = presence_threshold
+        if initial_values is not None:
+            self.add(initial_values)
+
+    def __repr__(self):
+        # s = f'Sink {self.name}-{self.id}'
+        if len(self.values) == 0:
+            return f'EMPTY'
+        else:
+            sink_vals = list(self.values.values())
+            return f'{sink_vals}'
+
+    @property
+    def value(self):
+        return self.values
+
+    @property
+    def vstr(self):
+        vals = []
+        for p in self.values.values():
+            if enough(p.probability, self.presence_threshold):
+                ss = f"{'+' if p.sign > 0 else '-'}"
+                pstr = f'%.{self.precision}f'
+                probstr = pstr % p.probability
+                p_short_name = p.name.split('>')[0]
+                vals += [f'{ss}{p_short_name} {wstr(p.weight, precision=self.precision)}|{probstr}']
+        if len(vals) == 0:
+            return '0'
+        else:
+            return ', '.join(vals)
+
+    def summary_probability(self)->float:
+        if len(list(self.values.values())) > 0:
+            return float(Particle.merge(self.values.values()).probability)
+        else:
+            return 0
+
+    def add(self, new_particles):
+        log.debug(f'SINK {self.name}({self.id}): ADD {new_particles}')
+        def add_some(particles):
+            if not self.combine_signs:
+                p_key = lambda particle: f'{"+" if particle.sign > 0 else "-"}{particle.name}'
+            else:
+                p_key = lambda particle: particle.name
+            for p in particles:
+                key = p_key(p)
+                if key not in self.values.keys():
+                    self.values[key] = p
+                    self.trace[key] = [p]
+                    log.debug(f'SINK {self.name}({self.id}): NEW VALUE {p}')
+                else:
+                    self.trace[key].append(p)
+                    prev_particle = self.values[key]
+                    before = prev_particle.weight
+                    prev_particle += p
+                    after = prev_particle.weight
+                    prev_particle.trace = f'{prev_particle.trace}+={p.trace}'
+                    self.values[key] = prev_particle
+                    log.debug(f'{self.name}({self.id}): SINK UPDATED VALUE {wstr(before, precision=self.precision)}->{wstr(after, precision=self.precision)}')
+        if not self.combine_signs:
+            pluses = [x for x in new_particles if x.sign > 0]
+            minuses = [x for x in new_particles if x.sign < 0]
+            add_some(pluses)
+            add_some(minuses)
+        else:
+            add_some(new_particles)
+
+    def vlist(self):
+        result = []
+        for p in self.values.values():
+            sign = int(float(p.sign))
+            ss = f'{"+" if sign == 1 else "-"}'
+            weight = complex(p.weight)
+            result.append(
+                {f'{ss}{p.name.split('>')[0]}': {'weight': [weight.real, weight.imag], 'sign': sign, 'probability': float(p.probability)}})
+        return result
+
+
+class SinkEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Sink):
+            result = []
+            for p in obj.values.values():
+                sign = int(float(p.sign))
+                weight = complex(p.weight)
+                result.append({p.name: {'weight': [weight.real, weight.imag], 'sign': sign, 'probability': float(p.probability)}})
+            return result
+        return super().default(obj)

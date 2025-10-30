@@ -1,0 +1,14 @@
+[
+ {
+  "coupled-equal": 0,
+  "coupled-unequal": 0,
+  "g1.upper": 1,
+  "g2.upper": 1,
+  "g3.upper": 1,
+  "g4.lower": 1,
+  "g5.lower": 1,
+  "g6.lower": 1,
+  "uncoupled-equal": 1,
+  "uncoupled-unequal": 0
+ }
+]

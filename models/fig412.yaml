@@ -1,0 +1,53 @@
+title: Figure 4.12
+symbolic: true
+string_precision: 2
+merge:
+   before_measure: false
+   before_forwarding: false
+   combine_signs: true
+normalize_weights:
+   output: false
+   input: false
+probability_threshold:
+   control: 0
+   forwarding: 0
+   presence: 0
+winner_take_all: true
+
+variables:
+   zero: &zero "0j"
+   one: &one "1+0j"
+   r60: &r60 "0.5+0.87j"
+   q40: &q40 'rad(40)'
+   q30: &q30 'rad(30)'
+   q2: &q2 "acos(4/5)"
+   q3: &q3 '0.8+0.6j'
+   q4: &q4 'rad(15)'
+phases:
+   prepare: [g0]
+   split: [g1]
+   merge: [g2]
+   test: [g3]
+particles:
+   p1:
+      sign: 1
+      weight: *one
+gates:
+   g0:
+      angle: *q40
+   g1:
+      angle: *q30
+   g2:
+      angle: *q30
+   g3:
+      angle: *q40
+links:
+   p1: g0.upper
+   g0.control: g1.control
+   g0.upper: g1.upper
+   g1.control: g2.control
+   g1.upper: g2.upper
+   g1.lower: g2.lower
+   g2.control: g3.control
+   g2.upper: g3.upper
+   g2.lower: g3.lower

@@ -1,0 +1,45 @@
+title: Figure 4.6
+symbolic: true
+merge:
+   before_measure: false
+   before_forwarding: false
+   combine_signs: true
+normalize_weights:
+   output: false
+   input: false
+probability_threshold:
+   control: 0
+   forwarding: 0
+   presence: 0
+winner_take_all: true
+string_precision: 2
+
+variables:
+   zero: &zero  "0j"
+   one: &one  "1+0j"
+   r60: &r60  "0.5+0.87j"
+   q: &q "rad(30)"
+phases:
+   run: [g1, g2]
+particles:
+   c:
+      sign: 1
+      weight: *zero
+   p1:
+      sign: 1
+      weight: *one
+gates:
+   g1:
+      angle: *q
+   g2:
+      angle: *q
+#sinks: [g1_upper, g2_ctrl, g2_upper, g2_lower]
+links:
+   c: g1.control
+   p1: g1.upper
+   g1.control: g2.control
+#   g1.upper: g1_upper
+   g1.lower: g2.lower
+#   g2.control: g2_ctrl
+#   g2.upper: g2_upper
+#   g2.lower: g2_lower

@@ -1,0 +1,32 @@
+title: Test 1
+variables:
+   zero: &zero !!python/complex 0j
+   one: &one !!python/complex (1+0j)
+   q1: &q1 !RandomAngle
+   q2: &q2 !RandomAngle
+   q3: &q3
+      base: *q1
+      rotation: -90
+phases:
+   phase1: [g]
+particles:
+   control0:
+      sign: true
+      weight: *zero
+   control1:
+      sign: true
+      weight: *one
+   p1:
+      sign: true
+      weight: *one
+   p2:
+      sign: false
+      weight: *one
+gates:
+   g: {angle: 0}
+links:
+   control0: g.control
+   p1: g.sw1
+   g.sw1: s1
+   g.sw2: s2
+sinks: [s1, s2]

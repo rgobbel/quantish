@@ -1,0 +1,63 @@
+title: Figure 4.14
+symbolic: false
+merge:
+   before_measure: false
+   before_forwarding: false
+   combine_signs: true
+normalize_weights:
+   output: false
+   input: false
+probability_threshold:
+   control: 0
+   forwarding: 0
+   presence: 0
+winner_take_all: true
+string_precision: 2
+
+variables:
+   zero: &zero '0j'
+   one: &one '1+0j'
+   r60: &r60 '0.5+0.87j'
+   q1: &q1 'rad(20)'
+   q2: &q2 'rad(30)'
+   q40: &q40 'rad(40)'
+   q30: &q30 'rad(30)'
+   q60: &q60 'rad(60)'
+   q10: &q10 'rad(10)'
+   q120: &q120 'rad(120)'
+
+phases:
+   prepare: [g0]
+   split: [g1]
+   observe: [g4]
+   test: [g2, g3]
+particles:
+   p1:
+      sign: 1
+      weight: *one
+   p2:
+      sign: 1
+      weight: *one
+gates:
+   g0:
+      angle: *q40
+   g1:
+      angle: *q30
+   g2:
+      angle: *q30
+   g3:
+      angle: *q40
+   g4:
+      angle: 0
+links:
+   p1: g0.upper
+   g0.control: g1.control
+   g0.upper: g1.upper
+   g1.control: g2.control
+   g1.upper: g2.upper
+   g1.lower: g4.control
+   p2: g4.upper
+   g2.control: g3.control
+   g2.upper: g3.upper
+   g2.lower: g3.lower
+   g4.control: g2.lower

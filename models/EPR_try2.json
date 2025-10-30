@@ -1,0 +1,100 @@
+[{
+  "variables": {
+    "q1": "random",
+    "q2": "random",
+    "q3": "q1_rot",
+    "float0": 0.0,
+    "one": "1+0j",
+    "empty": null
+  },
+  "phases": [
+    {"prepare": ["g1", "g2"]},
+    {"couple": ["g3", "g4"]},
+    {"split": ["g5", "g6"]}
+  ],
+  "particles": [
+    {"name": "p1", "position": "g1_in1", "sign": true, "weight": "one"},
+    {"name": "p2", "position": "g2_in1", "sign": false, "weight": "one"},
+    {"name": "p3", "position": "g3_in1", "sign": true, "weight": "one"}
+  ],
+  "gates": {
+    "g1": {
+      "angle": "q1",
+      "inputs": {
+        "control": "empty",
+        "in1": "p1",
+        "in2": "empty"
+      },
+      "outputs": {
+        "control": "empty",
+        "out1": "g3_control",
+        "out2": "g5_in2"
+      }
+  },
+    "g2": {
+      "angle": "q3",
+      "inputs": {
+        "control": "empty",
+        "in1": "p2",
+        "in2": "empty"
+      },
+      "outputs": {
+        "control": "g6_in2",
+        "out1": "g4_control",
+        "out2": "g6_in2"
+      }
+    }
+  },
+  "g3": {
+      "angle": 0.0,
+      "inputs": {
+        "control": "g1_out1",
+        "in1": "p3",
+        "in2": "empty"
+      },
+      "outputs": {
+        "control": "g5_in1",
+        "out1": "g4_in1",
+        "out2": "g4_in2"
+      }
+  },
+  "g4": {
+      "angle": 0.0,
+      "inputs": {
+        "control": "g2_out1",
+        "in1": "g3_out1",
+        "in2": "g3_out1"
+      },
+      "outputs": {
+        "control": "g6_in1",
+        "out1": "empty",
+        "out2": "empty"
+      }
+  },
+  "g5": {
+      "angle": "q2",
+      "inputs": {
+        "control": "empty",
+        "in1": "g3_control",
+        "in2": "g1_out2"
+      },
+      "outputs": {
+        "control": "empty",
+        "out1": "empty",
+        "out2": "empty"
+      }
+  },
+  "g6": {
+      "angle": "q2",
+      "inputs": {
+        "control": "empty",
+        "in1": "g4_control",
+        "in2": "g2_out2"
+      },
+      "outputs": {
+        "control": "empty",
+        "out1": "empty",
+        "out2": "empty"
+      }
+  }
+}]

@@ -1,0 +1,37 @@
+title: Figure 4.4
+symbolic: true
+merge:
+   before_measure: false
+   before_forwarding: false
+   combine_signs: false
+normalize_weights:
+   output: true
+   input: false
+probability_threshold:
+   control: 0.5
+   forwarding: 0.5
+   presence: 0.5
+string_precision: 2
+
+variables:
+   zero: &zero  "0j"
+   one: &one  "1+0j"
+   minus_one: &minus_one  "-1+0j"
+   r60: &r60  "0.5+0.866j"
+   q: &q 0
+
+phases:
+   phase1: [g1]
+particles:
+   control:
+      sign: 1
+      weight: *zero
+   p1:
+      sign: 1
+      weight: *one
+gates:
+   g1:
+      angle: 0
+links:
+   control: g1.control
+   p1: g1.upper
