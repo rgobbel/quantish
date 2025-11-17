@@ -10,6 +10,9 @@ variables:
    qx: &qx '0.64+0j'
    qy: &qy '0+0.48j'
 
+sample: true
+n_samples: 1000
+
 phases:
    run: [g1, g2]
 particles:

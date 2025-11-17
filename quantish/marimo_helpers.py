@@ -1,4 +1,4 @@
-from quantish.gate import Gate
+from quantish.gate import FredkinGate
 from quantish.particle import Particle
 from quantish.sink import Sink
 from quantish.qnumber import Real, probability
@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
-def measure_many(gate: Gate, controls=None, uppers=None, lowers=None,
+def measure_many(gate: FredkinGate, controls=None, uppers=None, lowers=None,
                  cdest=None, udest=None, ldest=None,
                  config=None):
 

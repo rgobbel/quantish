@@ -1,3 +1,4 @@
+import logging
 import numbers as n
 import sympy as sym
 from sympy import re, im, Rational, deg, rad, Eq, Piecewise
@@ -7,6 +8,7 @@ import re as rex
 import scipy.special as sci
 from quantish.qconstants import float_methods, complex_methods
 
+log = logging.getLogger('quantish')
 
 # realtype = lambda x: type(x) in (int, float)
 def realtype(x):
@@ -61,6 +63,13 @@ def to_float(x):
             result = complex(x).real
         else:
             raise
+    return result
+
+def to_native(x):
+    try:
+        result = float(x)
+    except TypeError:
+        result = complex(x)
     return result
 
 def qify(x):
@@ -550,4 +559,4 @@ def runtest(x, y):
     try:
         return x % y
     except TypeError as e:
-        print(e)
+        log.error(e)

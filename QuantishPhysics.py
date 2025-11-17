@@ -9,7 +9,7 @@ def _():
     import marimo as mo
     from marimo import md
     from quantish.angle import Angle
-    from quantish.gate import Gate
+    from quantish.gate import FredkinGate
     from quantish.particle import Particle
     from quantish.sink import Sink
     from quantish.qnumber import Real
@@ -20,7 +20,7 @@ def _():
     import yaml
     return (
         Angle,
-        Gate,
+        FredkinGate,
         Particle,
         Path,
         Real,
@@ -402,7 +402,7 @@ def run_sim(Sink, diagram, mo, run_button, sim):
     # run_button.disabled = False
     mo.stop(output='Press RUN button to run simulation with current settings', predicate=not run_button.value)
     # print('after stop')
-    simresult, result_particles = sim.run()
+    simresult, result_particles = sim.propagate_weights()
     for _pname, _particle in result_particles.items():
         simresult[_pname] = Sink(_pname, initial_values=[_particle])
     rr0 = {x.name: list(x.value.values())[0] for x in simresult.values() if len(x.value.values()) > 0 and list(x.value.values())[0].name != 'temp' and list(x.value.values())[0].weight != 0}

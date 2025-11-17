@@ -41,11 +41,13 @@ class TestCPair(unittest.TestCase):
         return True
 
     def test_cpair_methods(self):
-        print('test_all:')
+        print('test_cpair_methods:\n')
         methods = ('cpair', 'cpair_alt', 'cpair0', 'cpair1', 'cpair2', 'cpair3')
         for mode in Modes:
             CalcMode.mode = mode
             one, m_one, angle, twist, g, canon_quadp, canon_quadm = self.setup()
+            self.assertAlmostEqual(sum(canon_quadp), 1)
+            self.assertAlmostEqual(sum(canon_quadm), -1)
             with self.subTest(mode=mode):
                 for method_str in methods:
                     with self.subTest(method=method_str):
@@ -164,12 +166,14 @@ class TestMeasure(unittest.TestCase):
             p_plus = Particle('p_plus', one, 1)
             result_plus  = g30.measure(p_plus)
             print(f'gate={g30}, particle={p_plus}, result={result_plus}')
+            self.assertAlmostEqual(sum(result_plus)**2, p_plus.probability)
             self.assertAlmostEqual(result_plus[0], qify('3/4'))
             self.assertAlmostEqual(result_plus[1], qify('(1/4) * sqrt(3) * I'))
             self.assertAlmostEqual(result_plus[2], qify('1/4'))
             self.assertAlmostEqual(result_plus[3], qify('(1/4) * sqrt(3) * -I'))
             p_minus = Particle('p_minus', one, -1)
             result_minus = g30.measure(p_minus)
+            self.assertAlmostEqual(sum(result_minus)**2, p_minus.probability)
             print(f'gate={g30}, particle={p_minus}, result={result_minus}')
             self.assertAlmostEqual(result_minus[0], qify('1/4'))
             self.assertAlmostEqual(result_minus[1], qify('(1/4) * sqrt(3) * -I'))

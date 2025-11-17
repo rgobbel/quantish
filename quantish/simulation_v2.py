@@ -2,12 +2,12 @@ import logging
 from collections import defaultdict
 
 from quantish.particle import Particle, p_last, dest_parts
-from quantish.gate import Gate
+from quantish.gate import FredkinGate, DelayGate
 from quantish.sink import Sink
 # from quantish.config_space import ConfigurationSpace, Measurement
 from quantish.qnumber import Real, qify, softmax, probability, Complex
-from quantish.util import topo_sort, SEP, wstr, enough, to_float
-from quantish.config_space import GateState, Coordinate, WIRES, SWITCH_WIRES, default_wires
+from quantish.util import topo_sort, SEP, wstr, enough, to_float, Gensym
+from quantish.config_space import GateState, Coordinate, WIRES, SWITCH_WIRES, default_wires, default_switches
 import random
 
 log = logging.getLogger('quantish')
@@ -20,7 +20,6 @@ class Simulation:
         self.config = config
         self.title = config['title']
         self.symbolic = config.get('symbolic', False)
-        self.winner_take_all = config.get('winner_take_all', False)
         self.precision = config.get('string_precision', 2)
         self.add_with_signs = config.get('add_with_signs', False)
         self.alternative_measure = config.get('alternative_measure', False)
@@ -29,14 +28,15 @@ class Simulation:
         self.add_with_signs = config.get('merge', {'add_with_signs': False}).get('add_with_signs', False)
         self.combine_signs = config.get('merge', {'combine_signs': True}).get('combine_signs', True)
         self.sample = config.get('sample', False)
-        self.winner_take_all = config.get('winner_take_all', True)
         self.qvars = {vname: vval for vname, vval in config['variables'].items()}
-        self.downstream = config['links']
-        self.upstream = {v: k for k, v in self.downstream.items()}
+        self.links = config['links']
+        self.reverse_links = {v: k for k, v in self.links.items()}
         self.particles = {}
         self.sinks = {}
         self.phases = config['phases']
         self.gates = {}
+        self.delay_gates = {}
+        self.tangles = {}
         self.inputs = defaultdict(list)
         self.initial_values = defaultdict(dict)
         self.normalize_outputs = config.get('normalize_weights', {}).get('output', False)
@@ -50,26 +50,35 @@ class Simulation:
         log.info(f'normalize inputs={self.normalize_inputs}, normalize outputs={self.normalize_outputs}')
         log.info('')
         for gname, gval in config['gates'].items():
-            self.gates[gname] = Gate(gname, gval['angle'], alternative_measure=self.alternative_measure)
-            # self.inputs[gname] += [{'control': [], 'upper': [], 'lower': []}]
+            print(f'{gname=}, {gval["angle"]=}')
+            gate = FredkinGate(gname, gval['angle'], alternative_measure=self.alternative_measure)
+            self.gates[gname] = gate
+            tid = Gensym('tangle')
+            self.tangles[tid] = GateState(tid, gate)
+            # self.inputs[gname] += [default_wires()]
+        for dgname in config['delay_gates']:
+            dgate = DelayGate(dgname)
+            self.delay_gates[dgname] = dgate
         for pname, pval in config['particles'].items():
             pweight = Complex(pval['weight'])
-            position = self.downstream.get(pname)
+            position = self.links.get(pname)
             if position:
                 gate_name, wire = position.split('.')
                 if gate_name not in self.initial_values.keys():
-                    self.initial_values[gate_name] = {'control': [], 'upper': [], 'lower': []}
+                    self.initial_values[gate_name] = default_wires()
                 particle = Particle(pname, pweight, qify(pval['sign']),
                     precision=self.precision,
                     add_with_signs=self.add_with_signs)
+                self.particles[pname] = particle
                 self.initial_values[gate_name][wire] = [particle]
                 log.info(f'PARTICLE: {particle.pid} -> {position}')
-        self.order = topo_sort(self.downstream)
+        self.order = topo_sort(self.links)
         log.info('')
         log.info(f'{self.qvars=}')
         log.info(f'{self.phases=}')
         log.info(f'{self.gates=}')
         log.info(f'{self.particles=}')
+        log.info(f'{self.delay_gates=}')
         log.info('self.initial_values=')
         for gname, ginput in self.initial_values.items():
             log.info(f'   {gname}, initial_values=:')
@@ -96,11 +105,14 @@ class Simulation:
         normalize_inputs = self.normalize_inputs
         normalize_outputs = self.normalize_outputs
         scale_by_control = self.scale_by_control
-        winner_take_all = self.winner_take_all
         add_with_signs = self.add_with_signs
         sample = self.sample
 
         for obname in self.order:
+            if obname in self.delay_gates.keys():
+                dgname = obname
+                dgate = self.delay_gates[dgname]
+                self.distribute_result(dgate, dgate.particle)
             if obname in self.gates.keys():
                 gate_name = obname
                 gate = self.gates[gate_name]
@@ -114,13 +126,12 @@ class Simulation:
                 log.info(f'GATE {gate}, {len(inputs)} input{"s" if len(inputs) > 1 else ""}:')
                 gate_positions = {wire: f'{gate_name}{SEP}{wire}' for wire in WIRES}
                 destinations = default_wires()
-                for wire in WIRES:  # look up sources and destinations for all wires in this gate
+                for wire in WIRES:  # look up reverse_links and destinations for all wires in this gate
                     pos = gate_positions[wire]
-                    destinations[wire] = self.downstream.get(pos)
+                    destinations[wire] = self.links.get(pos)
                 dest_gates = set([x.split('.')[0] for x in destinations.values() if x])
 
                 for i, input_dict in enumerate(inputs):
-
                     outputs = []
                     if input_dict['control']:
                         control = input_dict['control'][0]
@@ -135,7 +146,7 @@ class Simulation:
                         log.info(f'      {wire:7s} -> {destinations[wire]}')
                     log.info('')
 
-                    unswapped_results = {wire: [] for wire in SWITCH_WIRES}
+                    unswapped_results = default_switches()
                     # result_dict = defaultdict(list)
                     ## Sequence through and measure inputs. Don't deal with upper/lower swap yet.
                     for input_switch in SWITCH_WIRES:
@@ -261,7 +272,7 @@ class Simulation:
         return self.sinks, self.particles
 
     def one_switch_result(self, gate, input_switch, input):
-        result = {'upper': [], 'lower': []}
+        result = default_switches()
         for p_in in input:
             if p_in:  # and to_float(p_in.probability) > 0:  # Zero probability particles are discarded
                 log.info(f'      {p_in.ps(with_id=True)} ->')
@@ -285,7 +296,7 @@ class Simulation:
         return result
 
     def collect_successor_switches(self, dest_gate_name, gate_result):
-        successor_dict = {'control': [], 'upper': [], 'lower': []}
+        successor_dict = default_wires()
         for wire in SWITCH_WIRES:
             if wire in gate_result.keys():
                 if not isinstance(gate_result[wire], list):
@@ -299,6 +310,10 @@ class Simulation:
                                  add_with_signs=self.add_with_signs
                                  )]
         return successor_dict
+
+    def distribute_value(self, source, values):
+        destination = self.links.get(source.name)
+
 
     def pos_value_str(self, pos):
         values = self.state_dict[pos]

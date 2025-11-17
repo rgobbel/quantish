@@ -14,6 +14,9 @@ probability_threshold:
 winner_take_all: true
 string_precision: 2
 
+sample: true
+n_samples: 10
+
 variables:
    zero: &zero '0j'
    one: &one '1+0j'

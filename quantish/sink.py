@@ -37,12 +37,15 @@ class Sink:
     def vstr(self):
         vals = []
         for p in self.values.values():
-            if enough(p.probability, self.presence_threshold):
-                ss = f"{'+' if p.sign > 0 else '-'}"
-                pstr = f'%.{self.precision}f'
-                probstr = pstr % p.probability
-                p_short_name = p.name.split('>')[0]
-                vals += [f'{ss}{p_short_name} {wstr(p.weight, precision=self.precision)}|{probstr}']
+            if p.name[:4] == 'null':
+                vals += ['None']
+                continue
+            # if enough(p.probability, self.presence_threshold):
+            ss = f"{'+' if p.sign > 0 else '-'}"
+            pstr = f'%.{self.precision}f'
+            probstr = pstr % p.probability
+            p_short_name = p.name.split('>')[0]
+            vals += [f'{ss}{p_short_name} {wstr(p.weight, precision=self.precision)}|{probstr}']
         if len(vals) == 0:
             return '0'
         else:
@@ -57,10 +60,10 @@ class Sink:
     def add(self, new_particles):
         log.debug(f'SINK {self.name}({self.id}): ADD {new_particles}')
         def add_some(particles):
-            if not self.combine_signs:
-                p_key = lambda particle: f'{"+" if particle.sign > 0 else "-"}{particle.name}'
+            if self.combine_signs:
+                p_key = lambda particle: particle.ps(name_only=True)
             else:
-                p_key = lambda particle: particle.name
+                p_key = lambda particle: f'{"+" if particle.sign > 0 else "-"}{particle.ps(name_only=True)}'
             for p in particles:
                 key = p_key(p)
                 if key not in self.values.keys():
@@ -76,13 +79,13 @@ class Sink:
                     prev_particle.trace = f'{prev_particle.trace}+={p.trace}'
                     self.values[key] = prev_particle
                     log.debug(f'{self.name}({self.id}): SINK UPDATED VALUE {wstr(before, precision=self.precision)}->{wstr(after, precision=self.precision)}')
-        if not self.combine_signs:
+        if self.combine_signs:
+            add_some(new_particles)
+        else:
             pluses = [x for x in new_particles if x.sign > 0]
             minuses = [x for x in new_particles if x.sign < 0]
             add_some(pluses)
             add_some(minuses)
-        else:
-            add_some(new_particles)
 
     def vlist(self):
         result = []

@@ -1,4 +1,4 @@
-from quantish.simulation import Simulation
+from quantish.simulation_v2 import Simulation
 from quantish.util import SEP, parse_position
 import python_mermaid.diagram as pm
 from collections import namedtuple
@@ -65,7 +65,7 @@ def make_gnode(sim, gname, inout, wire, mermaid_nodes):
             cs = f'None'
         else:
             cs = f'{pos_sink.vstr}'
-        if out_pos not in sim.downstream.keys():
+        if out_pos not in sim.links.keys():
             sink_node_id = f'{position}_sink'
             sink_nodes += [make1(sink_node_id, f'{gcontent}: {cs}', shape='stadium-shape')]
         make1(graph_node_id, f'{gcontent}: {cs}')
@@ -75,7 +75,7 @@ def make_gnode(sim, gname, inout, wire, mermaid_nodes):
             cs = 'None'
         else:
             cs = f'{pos_sink.vstr}'
-        if position not in sim.downstream.keys():
+        if position not in sim.links.keys():
             sink_node_id = f'{position}_sink'
             sink_nodes += [make1(sink_node_id, f'{gcontent}: {cs}', shape='stadium-shape')]
         make1(graph_node_id, f'{gcontent}: {cs}')
@@ -108,6 +108,11 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
         particle_node.content = pcontent
         mermaid_nodes[pname] = particle_node
         diag.add_nodes([particle_node])
+    # for delay_name, delay_gate in sim.delay_gates.items():
+    #     dgcontent = 'D'
+    #     dgnode = pm.Node(id=delay_name)
+    #     dgnode.content = dgcontent
+    #     mermaid_nodes[delay_name] = dgnode
     for phase_name, phase_gates in sim.phases.items():
         pg = diag.add_subgraph(phase_name)
         phase_graphs[phase_name] = pg
@@ -138,8 +143,8 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
     for gate_name, gate in sim.gates.items():
         control_pos = f'{gate_name}{SEP}control'
         ctrl_gate_node = mermaid_nodes[control_pos]
-        if control_pos in sim.sources.keys():
-            ctrl_source_name = sim.sources[control_pos]
+        if control_pos in sim.reverse_links.keys():
+            ctrl_source_name = sim.reverse_links[control_pos]
             ctrl_source_parts = parse_position(ctrl_source_name)
             if type(ctrl_source_parts) is str:
                 ctrl_input_node = mermaid_nodes[ctrl_source_name]
@@ -149,6 +154,8 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
             dest_parts = parse_position(dest)
             if dest_parts[1] == 'control':
                 dest_node = mermaid_nodes[dest]
+            elif dest_parts[1] == 'input':
+                dest_node = mermaid_nodes[dest_parts[0]]
             else:
                 dest_node = mermaid_nodes[f'{dest}_in']
         else:
@@ -159,8 +166,8 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
             for inout in ('in', 'out'):
                 switch_node_id = f'{switch_pos}_{inout}'
                 switch_node = mermaid_nodes[switch_node_id]
-                if inout == 'in' and switch_pos in sim.sources.keys():
-                    switch_input = sim.sources[switch_pos]
+                if inout == 'in' and switch_pos in sim.reverse_links.keys():
+                    switch_input = sim.reverse_links[switch_pos]
                     input_pos = parse_position(switch_input)
                     if type(input_pos) is str:
                         switch_input_node = mermaid_nodes[switch_input]
@@ -171,6 +178,8 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
                         dest_parts = parse_position(dest)
                         if dest_parts[1] == 'control':
                             dest_node = mermaid_nodes[dest]
+                        elif dest_parts[1] == 'input': # delay gate
+                            dest_node = mermaid_nodes[dest_parts[0]]
                         else:
                             dest_node = mermaid_nodes[f'{dest}_in']
                     else:

@@ -1,34 +1,46 @@
 title: Quantish EPR Experiment
 
-sample: false
-n_samples: 1
+sample: true
+n_samples: 1000
 winner_take_all: false
 probability_threshold:      # threshold values determine whether or not particles are considered to exist
    control: 0               # controls whether or not a superposed control particle is "present"
    forwarding: 0            # particles whose probabilities are less than this are dropped
    presence: 0            # particles whose probabilities are less than this are not added to sinks
+merge:
+   combine_signs: true
 
 phases:
    prepare: [g1, g2]
+#   couple: [d1, g3, d2, d3, d4, d5, g4, d6]
    couple: [g3, g4]
    split: [g5, g6]
+#   final: [g7]
 
 variables:
    zero: &zero "0+0j"
    one: &one "1+0j"
-   minus_one: "-1+0j"
+   minus_one: &minus_one "-1+0j"
    cweight: &cweight "1"
-   q30: &q30 "rad(30)"
-   q45: &q45 "rad(45)"
-   q135: &q135 "rad(135)"
-   q2: &q2 "acos(1/3)"
-   q60: &q60 "rad(60)"
-   q120: &q120 "rad(30+90)"
-   q20: &q20 "rad(20)"
-   q40: &q40 "rad(40)"
+   q0: &q0 "0"
    q10: &q10 "rad(10)"
-   q100: &q100 "rad(100)"
+   q15: &q15 "rad(15)"
+   q20: &q20 "rad(20)"
+   q30: &q30 "rad(30)"
+   q35: &q35 "rad(35)"
+   q40: &q40 "rad(40)"
+   q45: &q45 "rad(45)"
+   q60: &q60 "rad(60)"
    q90: &q90 "rad(90)"
+   q100: &q100 "rad(100)"
+   q120: &q120 "rad(30+90)"
+   q135: &q135 "rad(135)"
+   q210: &q210 "rad(210)"
+   q2: &q2 "acos(1/3)"
+   qr34: &qr34 "acos(3/4)"
+   qr45: &qr45 "acos(4/5)"
+   qm45: &qm45 "-rad(45)"
+   qm60: &qm60 "-rad(60)"
    cw: &cw "0"
 particles:
    control1:
@@ -50,15 +62,20 @@ gates:
    g1:
       angle: *q30
    g2:
-      angle: *q120
+      angle: *q30
    g3:
       angle: 0
    g4:
       angle: 0
    g5:
-      angle: *q20
+      angle: *q10
    g6:
-      angle: *q20
+      angle: *q10
+#   g7:
+#      angle: *zero
+
+#delay_gates: [d1, d2, d3, d4, d5, d6]
+
 links:
    control1: g1.control
    control2: g2.control
@@ -67,9 +84,23 @@ links:
    p3: g3.upper
    g1.upper: g3.control
    g1.lower: g5.lower
+#   g1.lower: d1.input
+#   d1.output: d5.input
+#   d5.output: g5.lower
+#   g2.upper: d2.input
+#   d2.output: g4.control
    g2.upper: g4.control
+#   g2.lower: d3.input
+#   d3.output: d6.input
+#   d6.output: g6.lower
    g2.lower: g6.lower
+#   g3.control: d4.input
+#   d4.output: g5.upper
    g3.control: g5.upper
    g3.upper: g4.upper
    g3.lower: g4.lower
    g4.control: g6.upper
+#   g5.upper: g7.upper
+#   g5.lower: g7.lower
+#   g6.upper: g7.upper
+#   g6.lower: g7.lower

@@ -13,12 +13,18 @@ probability_threshold:
    presence: 0
 winner_take_all: true
 string_precision: 2
+#alternative_measure: cpair3
+
+sample: true
+n_samples: 100
 
 variables:
    zero: &zero  "0j"
    one: &one  "1+0j"
    r60: &r60  "0.5+0.87j"
    q: &q "rad(20)"
+   q90: &q90 "rad(90)"
+   q345: &q345 "acos(4/5)"
 phases:
    phase1: [g1]
    phase2: [g2, g3]
@@ -37,7 +43,7 @@ particles:
       weight: *one
 gates:
    g1:
-      angle: *q
+      angle: 0
    g2:
       angle: 0
    g3:

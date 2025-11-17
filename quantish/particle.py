@@ -33,11 +33,13 @@ class Particle:
     def v_0(self):
         return Complex(1+0j if self.sign == 1 else 1j)
 
-    def ps(self, with_id=False, short=False):
+    def ps(self, with_id=False, short=False, name_only=False):
         x = complex(self.weight)
         ss = f"{'+' if self.sign > 0 else '-'}"
         pstr = f'%.{self.precision}f'
         probstr = pstr % self.probability
+        if name_only:
+            return self.name.split('>')[0]
         if short:
             nstr = self.name.split('>')[0]
         elif with_id:

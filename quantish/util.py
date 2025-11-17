@@ -1,3 +1,5 @@
+from itertools import accumulate
+
 from quantish.qnumber import Complex, isq, issym
 from graphlib import TopologicalSorter
 from collections import defaultdict
@@ -109,22 +111,34 @@ def parse_position(pos:str):
 
 def topo_sort(links):
     sorter = TopologicalSorter()
-    sources = defaultdict(list)
+    reverse_links = defaultdict(list)
     for k, v in links.items():
         source = parse_position(k)
         dest = parse_position(v)
         if isinstance(source, str):
             sorter.add(source)
             gate_name = dest[0]
-            sources[gate_name] += [source]
+            reverse_links[gate_name] += [source]
         else:
             gate_name, _ = source
             if isinstance(dest, str):
-                sources[dest] += [gate_name]
+                reverse_links[dest] += [gate_name]
             else:
                 dest_gate_name, _ = dest
-                sources[dest_gate_name] += [gate_name]
-    for dest, sources in sources.items():
-        sorter.add(dest, *sources)
+                reverse_links[dest_gate_name] += [gate_name]
+    for dest, reverse_links in reverse_links.items():
+        sorter.add(dest, *reverse_links)
     order = sorter.static_order()
     return list(order)
+
+def normalize_list(data):
+    total = sum(data)
+    if total == 0: return data
+    return [x/total for x in data]
+
+def select(weights, selector):
+    target = list(accumulate(normalize_list(weights)))
+    for i in range(len(weights)):
+        if target[i] > selector:
+            return i
+    return len(weights)-1

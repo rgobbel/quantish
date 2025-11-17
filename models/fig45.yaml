@@ -3,18 +3,21 @@ symbolic: false
 merge:
    before_measure: false
    before_forwarding: false
-   combine_signs: true
+   combine_signs: false
    add_with_signs: false
 normalize_weights:
    output: false
    input: false
 probability_threshold:
-   control: 0.0
+   control: 0
    forwarding: 0
    presence: 0
 winner_take_all: false
 alternative_measure: false
 #string_precision: 2
+
+#sample: true
+#n_samples: 100
 
 variables:
    zero: &zero "0+0j"
