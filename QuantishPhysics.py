@@ -1,19 +1,23 @@
 import marimo
 
-__generated_with = "0.16.5"
+__generated_with = "0.18.1"
 app = marimo.App(width="full", app_title="Quantish Physics")
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _():
     import marimo as mo
     from marimo import md
+    import quantish.qnumber as qn
+    import math as m
+    import cmath as cm
+    import random
     from quantish.angle import Angle
     from quantish.gate import FredkinGate
     from quantish.particle import Particle
     from quantish.sink import Sink
     from quantish.qnumber import Real
-    from quantish.marimo_helpers import measure_many, plot_weights, load_models, load_selected_model
+    from quantish.marimo_helpers import plot_weights, load_models, load_selected_model
     from quantish.visualizations import diagram
     from quantish.simulation import Simulation
     from pathlib import Path
@@ -25,14 +29,16 @@ def _():
         Path,
         Real,
         Simulation,
-        Sink,
+        cm,
         diagram,
         load_models,
         load_selected_model,
+        m,
         md,
-        measure_many,
         mo,
         plot_weights,
+        qn,
+        random,
         yaml,
     )
 
@@ -46,15 +52,104 @@ def _(mo):
                                       options=['Symbolic', 'Float']),
         'merge_before_measure': mo.ui.checkbox(label='Before measure'),
         'merge_before_forward': mo.ui.checkbox(label='Before forwarding'),
-        'winner_take_all': mo.ui.checkbox(label='Winner take all'),
+        'combine_names': mo.ui.checkbox(label='Combine names'),
         'normalize_inputs': mo.ui.checkbox(label='Inputs'),
         'normalize_outputs': mo.ui.checkbox(label='Outputs'),
         'combine_signs': mo.ui.checkbox(label='Combine signs'),
+        'selector': mo.ui.number(label='Selector:', start=-2, stop=1.0),
         'control_threshold': mo.ui.number(label='Control:', start=0, stop=0.9),
         'forward_threshold': mo.ui.number(label='Forwarding:', start=0, stop=0.9),
         'presence_threshold': mo.ui.number(label='Presence:', start=0, stop=0.9),
     })
     return (config_ui,)
+
+
+@app.cell
+def _(aa_probs):
+    aa_probs['0.00'][1], aa_probs['22.50'][1], aa_probs['45.00'][1]
+    return
+
+
+@app.cell
+def _(aa_probs, random):
+    def _(iters, th1, th2, th3):
+        disc_ab = disc_bc = disc_ac = 0
+        outs = None
+        for i in range(iters):
+            out_a, out_b, out_c = (random.random() for _ in range(3))
+            out_a = out_b = out_c = random.random()
+            out_a_up = out_a >= th1
+            out_b_up = out_b >= th2
+            out_c_up = out_c >= th3
+            if out_a_up != out_b_up: disc_ab += 1
+            if out_b_up != out_c_up: disc_bc += 1
+            if out_a_up != out_c_up: disc_ac += 1
+        return disc_ab/iters, disc_bc/iters, disc_ac/iters
+    discs = _(1000000, aa_probs['0.00'][1], aa_probs['22.50'][1], aa_probs['45.00'][1])
+    discs
+    return
+
+
+@app.cell
+def _(qn):
+    qn.qify('pi/36').degrees, [(x, qn.qify(f'(pi/36)*{x}').degrees) for x in range(19)]
+    return
+
+
+@app.cell
+def _(qn):
+    #_angles = [(x*10, qn.qify(f'{x}*5'), qn.qify(f'90 - {x}*5')) for x in range(19)]
+    g_angles = [(x, qn.qify(f'(pi/36)*(({x}*5)/10)'), qn.qify(f'(pi/2) - ((pi/36)*(({x}*5)/10))')) for x in range(37)]
+    #print(p_angles)
+    [(x[1].degrees, x[2].degrees, x[1].radians.sin**2, 1-x[2].radians.sin**2) for x in g_angles]
+    return (g_angles,)
+
+
+@app.cell
+def _(g_angles, qn):
+    [(x[1].degrees, qn.Complex.rotate(1, x[1])) for x in g_angles]
+    return
+
+
+@app.cell
+def _(Particle, g_angles, qn):
+    aa_probs = {}
+    for aa in g_angles:
+        aastr = f'{aa[1].degrees:.2f}'
+        # g = FredkinGate(f'g{aastr}', theta=aa[1])
+        _pp = Particle(f'p{aastr}', weight=qn.Complex.rotate(1, aa[1]), sign=1)
+        aa_probs[aastr] = (_pp.weight, _pp.probability, aa[2].sin**2, _pp.probability-aa[2].sin**2)
+    return (aa_probs,)
+
+
+@app.cell
+def _(aa_probs):
+    [(k, aa_probs[k]) for k in aa_probs.keys()]
+    return
+
+
+@app.cell
+def _(aa_probs):
+    {'0': aa_probs['0'][1], '22.5': aa_probs['22.5'][1], '45': aa_probs['45'][1], 'd0-22.5': abs(aa_probs['0'][1] - aa_probs['22.5'][1]), 'd22.5-45': abs(aa_probs['22.5'][1] - aa_probs['45'][1])}
+    return
+
+
+@app.cell
+def _(aa_probs):
+    aap_diffs = {f'{k}º': aa_probs[k][1] - aa_probs[list(aa_probs.keys())[i+1]][1] for i, k in enumerate(aa_probs.keys()) if i < len(aa_probs.keys())-1}
+    return (aap_diffs,)
+
+
+@app.cell
+def _(aap_diffs):
+    aap_diffs
+    return
+
+
+@app.cell
+def _(aap_diffs):
+    sum(aap_diffs.values())
+    return
 
 
 @app.cell(hide_code=True)
@@ -74,7 +169,7 @@ def _(config_ui, md):
 
         -  {config_ui['combine_signs']}
 
-        -  {config_ui['winner_take_all']}
+        -  {config_ui['combine_names']}
 
     - Normalize:
 
@@ -83,6 +178,9 @@ def _(config_ui, md):
         - {config_ui['normalize_outputs']}
 
     - Thresholds
+
+        - {config_ui['selector']}
+
         - {config_ui['control_threshold']}
 
         -  {config_ui['forward_threshold']}
@@ -102,7 +200,7 @@ def _(config_ui, gates, links, particles, phases):
         'particles': particles,
         'gates': gates,
         'symbolic': config_ui['symbolic'].value[0] == 'Symbolic',
-        'winner_take_all': config_ui['winner_take_all'].value,
+        'combine_names': config_ui['combine_names'].value,
          'merge': {
              'before_measure': config_ui['merge_before_measure'].value,
              'before_forwarding': config_ui['merge_before_forward'].value,
@@ -119,7 +217,7 @@ def _(config_ui, gates, links, particles, phases):
         }
     }
     qconfig
-    return (qconfig,)
+    return
 
 
 @app.cell
@@ -135,17 +233,17 @@ def _(Angle, Real):
 
 
 @app.cell
-def _(Gate, angles):
+def _(FredkinGate, angles):
     gates = {
-        'g0': Gate('g0', angles['theta0']),
-        'g1': Gate('g1', angles['theta37']),
-        'g2': Gate('g2', angles['theta37']),
-        'g3': Gate('g3', angles['theta0']),
-        'g4': Gate('g4', angles['theta0']),
-        'g5': Gate('g5', angles['theta20']),
-        'g6': Gate('g6', angles['theta20']),
-        'g30': Gate('g30', angles['theta30']),
-        'g90': Gate('g90', angles['theta90'])
+        'g0': FredkinGate('g0', angles['theta0']),
+        'g1': FredkinGate('g1', angles['theta37']),
+        'g2': FredkinGate('g2', angles['theta37']),
+        'g3': FredkinGate('g3', angles['theta0']),
+        'g4': FredkinGate('g4', angles['theta0']),
+        'g5': FredkinGate('g5', angles['theta20']),
+        'g6': FredkinGate('g6', angles['theta20']),
+        'g30': FredkinGate('g30', angles['theta30']),
+        'g90': FredkinGate('g90', angles['theta90'])
     }
     return (gates,)
 
@@ -176,7 +274,7 @@ def _(gates, particles):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def phases(yaml):
     phases = yaml.safe_load("""
     phases:
@@ -208,13 +306,29 @@ def load_models_button(mo):
 
 
 @app.cell
+def _(model_selector):
+    model_selector
+    return
+
+
+@app.cell
+def run_button(md, mo):
+    run_button = mo.ui.run_button(label='RUN')
+    # def set_run_enabled(_):
+    #     run_button.disabled = False
+    # init_sim = mo.ui.run_button(label='INIT SIM', on_change=set_run_enabled)
+    md(f'{run_button}')
+    return (run_button,)
+
+
+@app.cell(hide_code=True)
 def load_models(config_files, load_models, load_models_button, mo):
     mo.stop(output='Press LOAD MODELS to load selected model files', predicate=not load_models_button.value)
     all_models = load_models(config_files)
     return (all_models,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def select_model(all_models, mo):
     try:
         model_selector = mo.ui.multiselect(label='Select model to instantiate:', 
@@ -225,13 +339,7 @@ def select_model(all_models, mo):
     return (model_selector,)
 
 
-@app.cell
-def _(model_selector):
-    model_selector
-    return
-
-
-@app.cell
+@app.cell(hide_code=True)
 def loaded_model(all_models, config_ui, load_selected_model, model_selector):
     try:
         selected = model_selector.value
@@ -240,6 +348,18 @@ def loaded_model(all_models, config_ui, load_selected_model, model_selector):
     except NameError:
         pass
     return (loaded_model,)
+
+
+@app.cell
+def _(loaded_model):
+    loaded_model
+    return
+
+
+@app.cell
+def _(loaded_model):
+    print(loaded_model)
+    return
 
 
 @app.cell
@@ -273,6 +393,18 @@ def show_objects(angles, config_ui, gates, md, mo, particles):
     return
 
 
+@app.cell
+def _(Particle, qn):
+    pp = Particle('pp', weight=qn.Complex.rotate(1, qn.qify('pi/2-pi/8')), sign=1)
+    return (pp,)
+
+
+@app.cell
+def _(pp):
+    pp, pp.probability
+    return
+
+
 @app.cell(hide_code=True)
 def measure_parts(md):
     measure_parts = ['c2a', 'c2b', 'c3a', 'c3b']
@@ -284,7 +416,7 @@ def measure_parts(md):
 def _(Particle, gates, md, measure_parts, mo, particles):
     mp = particles['p1']
     mg = gates['g30']
-    mpresult = mg.measure2(mp)
+    mpresult = mg.measure(mp)
     mpdict = {k: v.v for k, v in zip(measure_parts, mpresult)}
     mpresult2 = mg.measure(Particle('pc2b', mpdict['c2b'], sign=-1))
     mp2dict = {k: v.v for k, v in zip(measure_parts, mpresult2)}
@@ -301,7 +433,7 @@ def _(Particle, gates, md, measure_parts, mo, particles):
     \end{{align*}}
     $$
     """))
-    return mg, mp, mpdict, mpresult
+    return mpdict, mpresult
 
 
 @app.cell
@@ -333,9 +465,9 @@ def _(Particle, md, mo, mpresult, particles):
 
 
 @app.cell
-def _(gates, measure_many, p1mp, qconfig):
-    p3outs, p3sinks = measure_many(gate=gates['g1'], controls=None, uppers=p1mp[:2], lowers=p1mp[2:], udest='g3.control', config=qconfig)
-    p3outs, p3sinks
+def _():
+    # p3outs, p3sinks = measure_many(gate=gates['g1'], controls=None, uppers=p1mp[:2], lowers=p1mp[2:], udest='g3.control', config=qconfig)
+    # p3outs, p3sinks
     return
 
 
@@ -374,16 +506,6 @@ def links(yaml):
 
 
 @app.cell(hide_code=True)
-def run_button(md, mo):
-    run_button = mo.ui.run_button(label='RUN')
-    # def set_run_enabled(_):
-    #     run_button.disabled = False
-    # init_sim = mo.ui.run_button(label='INIT SIM', on_change=set_run_enabled)
-    md(f'{run_button}')
-    return (run_button,)
-
-
-@app.cell(hide_code=True)
 def sim(Simulation, loaded_model):
     try:
         sim = Simulation(loaded_model)
@@ -394,7 +516,7 @@ def sim(Simulation, loaded_model):
 
 
 @app.cell(hide_code=True)
-def run_sim(Sink, diagram, mo, run_button, sim):
+def run_sim(diagram, mo, run_button, sim):
     # mo.stop(output='Press INIT SIM button to initialize simulation', predicate=not init_sim.value)
     # print('INIT SIM was pressed')
     # diag = diagram(sim, has_run=False)
@@ -402,14 +524,37 @@ def run_sim(Sink, diagram, mo, run_button, sim):
     # run_button.disabled = False
     mo.stop(output='Press RUN button to run simulation with current settings', predicate=not run_button.value)
     # print('after stop')
-    simresult, result_particles = sim.propagate_weights()
-    for _pname, _particle in result_particles.items():
-        simresult[_pname] = Sink(_pname, initial_values=[_particle])
-    rr0 = {x.name: list(x.value.values())[0] for x in simresult.values() if len(x.value.values()) > 0 and list(x.value.values())[0].name != 'temp' and list(x.value.values())[0].weight != 0}
-    rr = {f'{k}: {v.name}': v.weight.v for k, v in rr0.items()}
+    simresult = sim.propagate_weights()
+    # for _pname, _particle in run_results.items():
+    #     simresult[_pname] = Sink(_pname, _pname, initial_values=[_particle])
+    # rr0 = {x.name: list(x.value.values())[0] for x in simresult.values() if len(x.value.values()) > 0 and list(x.value.values())[0].name != 'temp' and list(x.value.values())[0].weight != 0}
+    rr = {}
+    for k, v, in simresult.items():
+        if v is None:
+            continue
+        elif isinstance(v, list):
+            if len(v) == 1:
+                rr[k] = v[0].weight.v
+            else:
+                rr[k] = [x.weight.v for x in v]
+        else:
+            rr[k] = v.weight.v
+    # rr = {f'{k}: {v}': v.weight.v for k, v in simresult.items()}
 
     mo.mermaid(f'{diagram(sim, has_run=True)}')
-    return rr, rr0, simresult
+    return rr, simresult
+
+
+@app.cell
+def _(sim):
+    list(sim.gates.values())
+    return
+
+
+@app.cell
+def _(rr):
+    rr
+    return
 
 
 @app.cell
@@ -419,8 +564,8 @@ def _(simresult):
 
 
 @app.cell(hide_code=True)
-def _(md, mo, rr0, sim):
-    _rrstr = '\n'.join([rf'&\text{{{k}}}:&\hspace*{{1em}}&{v}\\' for k, v in rr0.items()])
+def _(md, mo, rr, sim):
+    _rrstr = '\n'.join([rf'&\text{{{k}}}:&\hspace*{{1em}}&{v}\\' for k, v in rr.items()])
     mo.left(md(rf"""
     ## Results for {sim.title}
     $$
@@ -442,29 +587,99 @@ def _():
 
 
 @app.cell
+def _(sim):
+    g1attrs = {attr: getattr(sim.gates['g1'], attr) for attr in ('inputs', 'weights', 'outputs')}
+    return (g1attrs,)
+
+
+@app.cell
+def _(g1attrs):
+    g1attrs
+    return
+
+
+@app.cell
+def _(sim):
+    pattrs = {g.name: {attr: getattr(g, attr) for attr in ('inputs', 'weights', 'outputs')} for g in sim.gates.values()}
+    return (pattrs,)
+
+
+@app.cell
+def _(pattrs):
+    pattrs
+    return
+
+
+@app.cell
+def _(pattrs):
+    pattr2 = {f'{g}.{stage}.{wire}': pattrs[g].get(stage).get(wire)[0].weight.v for g in pattrs.keys() for stage in pattrs[g].keys() for wire in ('control', 'upper', 'lower') if pattrs[g].get(stage).get(wire) is not None and pattrs[g].get(stage).get(wire)[0].weight.v != 0}
+    return (pattr2,)
+
+
+@app.cell
+def _(pattr2):
+    pattr2
+    return
+
+
+@app.cell
+def _(g1attrs):
+    g1attr2 = {f'{stage}.{wire}': g1attrs.get(stage).get(wire)[0].weight.v for stage in g1attrs.keys() for wire in ('control', 'upper', 'lower') if g1attrs.get(stage).get(wire) is not None and g1attrs.get(stage).get(wire)[0].weight.v != 0}
+    return (g1attr2,)
+
+
+@app.cell
+def _(g1attr2):
+    g1attr2
+    return
+
+
+@app.cell
+def _(g1attrs, md):
+    g1s = '\n'.join([rf'&\text{{{k}}}:&\hspace*{{1em}}&{v}\\' for k, v in g1attrs.items()])
+    md(fr"""
+    $$
+    \begin{{align*}}
+    {g1s}
+    \end{{align*}}
+    $$
+    """)
+    return
+
+
+@app.cell
+def _(g1attrs):
+    [x[0] for x in list(g1attrs['weights'].values())], list(g1attrs['weights'].keys())
+    return
+
+
+@app.cell
+def _(pattr2, plot_weights, sim):
+    plot_weights(data=pattr2, selections=list(pattr2.keys()), title=f'{sim.title} gate values')
+    return
+
+
+@app.cell
 def _(loaded_model, plot_weights, rr):
     plot_weights(data=rr, title=f'Results for {loaded_model["title"]}', selections=list(rr.keys()))
     return
 
 
 @app.cell
-def _(mg, mp, mpdict, plot_weights):
-    plot_weights(mpdict, ['c2a', 'c2b', 'c3a', 'c3b'], title=f'{mp} -> {mg}')
+def _():
+    # plot_weights(mpdict, ['c2a', 'c2b', 'c3a', 'c3b'], title=f'{mp} -> {mg}')
     return
 
 
 @app.cell
-def _():
-    import math as m
-    import cmath as cm
+def _(cm):
     def cpair(w, theta):
         """basic weight rotation with trig scaling"""
         twist = theta - cm.pi/2
         wplus = w * cm.cos(theta)* cm.exp(1j * theta)
         wminus = w * cm.sin(theta) * cm.exp(1j * twist)
         return wplus, wminus
-
-    return cm, cpair, m
+    return (cpair,)
 
 
 @app.cell
@@ -475,7 +690,6 @@ def _(cm):
         c3a = w * cm.sin(theta)**2
         c3b = w * -1j * cm.sin(theta) * cm.cos(theta)
         return c2a+c2b, c3a+c3b
-
     return (cpair2,)
 
 

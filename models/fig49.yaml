@@ -2,7 +2,7 @@ title: Figure 4.9
 symbolic: false
 merge:
    before_measure: false
-   before_forwarding: false
+   before_forwarding: true
    combine_signs: true
 normalize_weights:
    output: false
@@ -11,23 +11,28 @@ probability_threshold:
    control: 0
    forwarding: 0
    presence: 0
-winner_take_all: true
 string_precision: 2
 #alternative_measure: cpair3
 
 sample: true
-n_samples: 100
+n_samples: 1000
 
 variables:
    zero: &zero  "0j"
    one: &one  "1+0j"
    r60: &r60  "0.5+0.87j"
-   q: &q "rad(20)"
+   q20: &q20 "rad(20)"
+   q30: &q30 "rad(30)"
+   q45: &q45 "rad(45)"
+   q60: &q60 "rad(60)"
    q90: &q90 "rad(90)"
+   q120: &q120 "rad(120)"
    q345: &q345 "acos(4/5)"
-phases:
-   phase1: [g1]
-   phase2: [g2, g3]
+   qp4: &qp4 "pi/4"
+   qp8: &qp8 "pi/8"
+run_stages:
+   stage1: [g1]
+   stage2: [g2, g3]
 particles:
    c:
       sign: 1
@@ -43,7 +48,7 @@ particles:
       weight: *one
 gates:
    g1:
-      angle: 0
+      angle: *q30
    g2:
       angle: 0
    g3:

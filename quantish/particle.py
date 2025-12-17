@@ -2,10 +2,10 @@ import random
 from typing import Self, Union
 import cmath as cm
 from quantish.util import wstr, Gensym
-from quantish.qnumber import qify, probability, isq, Complex
+from quantish.qnumber import qify, probability, isq, Complex, PI
 
 class Particle:
-    def __init__(self, name, weight, sign, trace=None, add_with_signs=False, precision=2):
+    def __init__(self, name, weight, sign, add_with_signs=False, precision=2):
         if sign not in (-1, 1):
             raise ValueError(f'Invalid value for sign: {sign.__repr__()}')
         self.precision = precision
@@ -14,10 +14,10 @@ class Particle:
         self.pid = Gensym(p_first(name))
         self.weight = qify(weight)
         self.sign = qify(sign)
-        if trace is not None:
-            self.trace = trace
-        else:
-            self.trace = ''
+        # if trace is not None:
+        #     self.trace = trace
+        # else:
+        #     self.trace = ''
 
     def __repr__(self):
         if isq(self.weight) and self.weight.mm == 'Symbolic':
@@ -25,9 +25,23 @@ class Particle:
         else:
             return self.ps()
 
+    def __hash__(self):
+        isign = int(float(self.sign))
+        ireal = int(float(self.weight.real * 10))
+        iimag = int(float(self.weight.imag * 100))
+        return hash(f'{self.name}|{isign}{ireal:.10f}.{iimag:.10f}')
+
     @property
     def probability(self):
         return probability(self.weight)
+
+    @property
+    def reality(self):
+        return 1.0 - abs(self.weight.phase) % (PI()/2)
+
+    @property
+    def superposed(self):
+        return 0 < self.probability < 1
 
     @property
     def v_0(self):
@@ -50,11 +64,18 @@ class Particle:
 
     @classmethod
     def merge(cls, particles):
+        if not isinstance(particles, list):
+            return particles
         result = None
         for particle in particles:
             if result is None: result = particle
             else: result += particle
         return result
+
+    def equiv(self, other):
+        if self.weight == other.weight and self.sign == other.sign:
+            return True
+        return False
 
     def __add__(self, other:Self):
         if self.probability >= other.probability: new_sign = self.sign
@@ -64,9 +85,10 @@ class Particle:
         else:
             new_weight = self.weight + other.weight
         return self.__class__(self.name, new_weight, new_sign,
-                              f'->{self.trace}+{other.trace}', precision=self.precision)
+                              # f'->{self.trace}+{other.trace}',
+                              precision=self.precision)
 
-def random_particle(name, weight=1, phase=0, sign=None):
+def random_particle(name, weight=None, phase=None, sign=None):
     if sign is None:
         sign = random.randint(0, 1) * 2 - 1
     if weight is None:

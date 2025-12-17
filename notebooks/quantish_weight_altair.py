@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.16.0"
+__generated_with = "0.17.8"
 app = marimo.App(width="full")
 
 with app.setup(hide_code=True):
@@ -41,13 +41,17 @@ def sim_mode_constant():
 
 @app.cell(hide_code=True)
 def _():
-    mo.md(r"""# Simulation""")
+    mo.md(r"""
+    # Simulation
+    """)
     return
 
 
 @app.cell(hide_code=True)
 def _():
-    mo.md(r"""## Simulation run""")
+    mo.md(r"""
+    ## Simulation run
+    """)
     return
 
 
@@ -94,7 +98,7 @@ def _(sccb):
 
 @app.cell(hide_code=True)
 def _(SymSimulation, cf):
-    cf['symbolic'] = True
+    cf['symbolic'] = False
     sym_sim = SymSimulation(cf)
     md(f'### sim=SymSimulation(cf)')
     return (sym_sim,)
@@ -213,13 +217,17 @@ def _(cpair_sym, cps, ttsr):
 
 @app.cell(hide_code=True)
 def _():
-    mo.md(r"""## Simulation classes""")
+    mo.md(r"""
+    ## Simulation classes
+    """)
     return
 
 
 @app.cell(hide_code=True)
 def _():
-    mo.md(r"""### Simulation""")
+    mo.md(r"""
+    ### Simulation
+    """)
     return
 
 
@@ -467,7 +475,9 @@ def simulation_class(
 
 @app.cell(hide_code=True)
 def _():
-    mo.md(r"""### Sink""")
+    mo.md(r"""
+    ### Sink
+    """)
     return
 
 
@@ -495,7 +505,9 @@ def sink_class():
 
 @app.cell(hide_code=True)
 def _():
-    mo.md(r"""### Angle""")
+    mo.md(r"""
+    ### Angle
+    """)
     return
 
 
@@ -563,7 +575,9 @@ def angle_class():
 
 @app.cell(hide_code=True)
 def _():
-    mo.md(r"""### Particle""")
+    mo.md(r"""
+    ### Particle
+    """)
     return
 
 
@@ -628,7 +642,9 @@ def particle_class():
 
 @app.cell(hide_code=True)
 def _():
-    mo.md(r"""### Gate""")
+    mo.md(r"""
+    ### Gate
+    """)
     return
 
 
@@ -700,7 +716,9 @@ def sym_integer_constants():
 
 @app.cell(hide_code=True)
 def _():
-    mo.md(r"""# Experiments""")
+    mo.md(r"""
+    # Experiments
+    """)
     return
 
 
@@ -1045,7 +1063,9 @@ def sym_measure(cpair_sym):
 
 @app.cell(hide_code=True)
 def plot_fw_md():
-    mo.md(r"""# Plotting framework""")
+    mo.md(r"""
+    # Plotting framework
+    """)
     return
 
 
@@ -1063,7 +1083,9 @@ def measurement(cquad, sign, theta, w):
 
 @app.cell(hide_code=True)
 def measurement_params_md():
-    mo.md(r"""## Measurement parameters""")
+    mo.md(r"""
+    ## Measurement parameters
+    """)
     return
 
 
@@ -1101,7 +1123,9 @@ def values_from_ui(comp_select, sign_check, theta_slide, wi_slide, wr_slide):
 
 @app.cell(hide_code=True)
 def display_sel_md():
-    mo.md(r"""## Display selection""")
+    mo.md(r"""
+    ## Display selection
+    """)
     return
 
 
@@ -1126,7 +1150,9 @@ def plot_input_ui(sign_check, theta_slide, wi_slide, wr_slide):
 
 @app.cell(hide_code=True)
 def measurement_plot_md():
-    mo.md(r"""# Measurement plot""")
+    mo.md(r"""
+    # Measurement plot
+    """)
     return
 
 
@@ -1157,7 +1183,9 @@ def _(measurement):
 
 @app.cell(hide_code=True)
 def support_fns_md():
-    mo.md(r"""# Support functions""")
+    mo.md(r"""
+    # Support functions
+    """)
     return
 
 

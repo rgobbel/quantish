@@ -1,23 +1,23 @@
 title: Figure 4.5
 symbolic: false
-merge:
-   before_measure: false
-   before_forwarding: false
-   combine_signs: false
-   add_with_signs: false
-normalize_weights:
-   output: false
-   input: false
-probability_threshold:
-   control: 0
-   forwarding: 0
-   presence: 0
-winner_take_all: false
-alternative_measure: false
+#merge:
+#   before_measure: true
+#   before_forwarding: false
+#   combine_signs: true
+#   add_with_signs: false
+#normalize_weights:
+#   output: false
+#   input: false
+#probability_threshold:
+#   control: 0
+#   forwarding: 0
+#   presence: 0
+#winner_take_all: false
+#alternative_measure: false
 #string_precision: 2
 
-#sample: true
-#n_samples: 100
+sample: true
+n_samples: 100
 
 variables:
    zero: &zero "0+0j"
@@ -25,8 +25,10 @@ variables:
    r60: &r60 "0.5+0.87j"
    q345: &q345 "acos(4/5)"
    q30: &q30 "rad(30)"
-phases:
-   run: [g1, g2]
+   q45: &q45 "rad(45)"
+run_stages:
+   g1: [g1]
+   g2: [g2]
 particles:
    c:
       sign: 1
@@ -35,12 +37,13 @@ particles:
       sign: 1
       weight: *one
 gates:
-   g1:
-      angle: *q30
-   g2:
-      angle: *q30
+   g1: {angle: *q30}
+   g2: {angle: *q30}
+delay_gates: [d1, d2]
 links:
    c: g1.control
    p1: g1.upper
    g1.control: g2.control
    g1.upper: g2.upper
+   g2.upper: d1.input
+   g2.lower: d2.input

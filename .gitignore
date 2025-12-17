@@ -32,3 +32,4 @@
 /test.ipynb
 /.ipynb_checkpoints/
 /models/HIDEME/
+.env

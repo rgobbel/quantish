@@ -1,4 +1,4 @@
-title: Figure 4.4
+title: Single Gate Test
 symbolic: false
 merge:
    before_measure: false
@@ -6,7 +6,7 @@ merge:
    combine_signs: true
 normalize_weights:
    output: false
-   input: true
+   input: false
 probability_threshold:
    control: 0
    forwarding: 0
@@ -14,7 +14,7 @@ probability_threshold:
 string_precision: 2
 
 sample: true
-n_samples: 10000
+n_samples: 1
 
 variables:
    zero: &zero  "0j"
@@ -22,7 +22,6 @@ variables:
    minus_one: &minus_one  "-1+0j"
    r60: &r60  "0.5+0.866j"
    q0: &q0 0
-   qpi8: &qpi8 "pi/8"
    q30: &q30 "rad(30)"
    q45: &q45 "rad(45)"
    q60: &q60 "rad(60)"
@@ -32,15 +31,18 @@ variables:
 phases:
    phase1: [g1]
 particles:
-   control:
-      sign: 1
+   control0:
       weight: *zero
-   p1:
       sign: 1
+   control1:
       weight: *one
+      sign: 1
+   p1:
+      weight: *one
+      sign: 1
 gates:
    g1:
-      angle: *q30
+      angle: *q120
 links:
-   control: g1.control
+#   control: g1.control
    p1: g1.upper

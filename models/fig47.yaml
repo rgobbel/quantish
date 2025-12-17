@@ -6,15 +6,22 @@ variables:
    r60: &r60 "0.5+0.87j"
    q0: &q0 "acos(4/5)"
    q30: &q30 "rad(30)"
+   q45: &q45 "rad(45)"
    q2: &q2 "acos(5/6)"
    qx: &qx '0.64+0j'
    qy: &qy '0+0.48j'
 
 sample: true
 n_samples: 1000
+loglevel: warning
 
-phases:
-   run: [g1, g2]
+normalize_weights:          # whether or not to normalize weights so that their sum is one
+   input: false             # normalize values of input particles before measurement
+   output: false            # normalize values of output particles before returning from measurement
+
+run_stages:
+   g1: [g1]
+   g2: [g2]
 particles:
    control:
       sign: 1

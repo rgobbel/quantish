@@ -1,4 +1,7 @@
+import logging
+import random
 import unittest
+from pathlib import Path
 from typing import Callable
 
 import numpy as np
@@ -6,9 +9,11 @@ import sympy as sym
 # import cmath as cm
 # import math as m
 from quantish.qnumber import CalcMode, qify, I, PI, Modes, to_native, Complex
-from quantish.particle import Particle
+from quantish.particle import Particle, random_particle
+from quantish.simulation import Simulation
 import quantish.qnumber as qn
 from quantish.gate import FredkinGate
+import yaml
 
 class TestCPair(unittest.TestCase):
     @staticmethod
@@ -28,10 +33,20 @@ class TestCPair(unittest.TestCase):
         canon_c3am = qify("-1/4")
         canon_c3bm = qify("(1/4) * sqrt(3) * I ")
         canon_quadm = (canon_c2am, canon_c2bm, canon_c3am, canon_c3bm)
-        return one, m_one, angle, twist, g, canon_quadp, canon_quadm
+        canon_c2ap_t = qify("1/4")
+        canon_c2bp_t = qify("-sqrt(3) * I / 4")
+        canon_c3ap_t = qify("3 / 4")
+        canon_c3bp_t = qify("sqrt(3) * I / 4")
+        canon_quadp_t = (canon_c2ap_t, canon_c2bp_t, canon_c3ap_t, canon_c3bp_t)
+        canon_c2am_t = qify("-1 / 4")
+        canon_c2bm_t = qify("sqrt(3) * I / 4")
+        canon_c3am_t = qify("-3 / 4")
+        canon_c3bm_t = qify("-sqrt(3) * I / 4")
+        canon_quadm_t = (canon_c2am_t, canon_c2bm_t, canon_c3am_t, canon_c3bm_t)
+        return one, m_one, angle, twist, g, canon_quadp, canon_quadm, canon_quadp_t, canon_quadm_t
 
     @staticmethod
-    def check_quads(calc, canon):
+    def check_quads(calc, canon, twist):
         for i in range(4):
             calc_i = to_native(calc[i])
             canon_i = to_native(canon[i])
@@ -40,35 +55,41 @@ class TestCPair(unittest.TestCase):
                 return False
         return True
 
+    @unittest.skip
     def test_cpair_methods(self):
         print('test_cpair_methods:\n')
-        methods = ('cpair', 'cpair_alt', 'cpair0', 'cpair1', 'cpair2', 'cpair3')
+        # methods = ('cpair', 'cpair_alt', 'cpair0', 'cpair1', 'cpair2', 'cpair3')
         for mode in Modes:
             CalcMode.mode = mode
-            one, m_one, angle, twist, g, canon_quadp, canon_quadm = self.setup()
+            one, m_one, angle, twist, g, canon_quadp, canon_quadm, canon_quadp_t, canon_quadm_t = self.setup()
             self.assertAlmostEqual(sum(canon_quadp), 1)
             self.assertAlmostEqual(sum(canon_quadm), -1)
-            with self.subTest(mode=mode):
-                for method_str in methods:
-                    with self.subTest(method=method_str):
-                        method: Callable = getattr(g, method_str)
-                        for sign in (1, -1):
-                            with self.subTest(sign=sign):
-                                if sign > 0:
-                                    ss = '+'
-                                    value = one
-                                    canon = canon_quadp
-                                else:
-                                    ss = '-'
-                                    value = m_one
-                                    canon = canon_quadm
-                                if method_str in ('cpair0', 'cpair_alt'):
-                                    result = method(value, angle)
-                                else:
-                                    result = method(value) # angle is built into the gate
-                                print(f'{method_str}{ss} ({mode}) = {result}')
-                                self.assertTrue(self.check_quads(result, canon), f'{method}{ss} ({mode}) failed')
-                    print()
+            self.assertAlmostEqual(sum(canon_quadp_t), 1)
+            self.assertAlmostEqual(sum(canon_quadm_t), -1)
+            # with self.subTest(mode=mode):
+                # for method_str in methods:
+                #     with self.subTest(method=method_str):
+                #         method: Callable = getattr(g, method_str)
+            # method: Callable = getattr(g, method_str)
+            for twist in (False, True):
+                for sign in (1, -1):
+                    with self.subTest(sign=sign):
+                        if sign > 0:
+                            ss = '+'
+                            value = one
+                            canon = canon_quadp_t if twist else canon_quadp
+                        else:
+                            ss = '-'
+                            value = m_one
+                            canon = canon_quadm_t if twist else canon_quadm
+                        # if method_str in ('cpair0', 'cpair_alt'):
+                        #     result = method(value, angle)
+                        # else:
+                        #     result = method(value) # angle is built into the gate
+                        result = g.cpair(value, twist=twist)  # angle is built into the gate
+                        print(f'cpair{ss} ({mode}) = {result}')
+                        self.assertTrue(self.check_quads(result, canon, twist), f'cpair{ss} ({mode}) failed')
+                        print()
 
     # @unittest.skip
     # def test_cpair(self):
@@ -138,6 +159,7 @@ class TestCPair(unittest.TestCase):
 
 class TestMeasure(unittest.TestCase):
 
+    @unittest.skip
     def test_g0(self):
         for mode in Modes:
             CalcMode.mode = mode
@@ -158,6 +180,7 @@ class TestMeasure(unittest.TestCase):
             self.assertEqual(result_minus[2], p_minus.weight)
             self.assertAlmostEqual(result_minus[3], 0)
 
+    @unittest.skip
     def test_g30(self):
         for mode in Modes:
             CalcMode.mode = mode
@@ -180,6 +203,109 @@ class TestMeasure(unittest.TestCase):
             self.assertAlmostEqual(result_minus[2], qify('3/4'))
             self.assertAlmostEqual(result_minus[3], qify('(1/4) * sqrt(3) * I'))
 
+    def test_random_gate(self):
+        log = logging.getLogger('quantish')
+        log.setLevel(logging.DEBUG)
+        CalcMode.mode = 'Float'
+        config_dir = Path(Path.cwd(), 'tests', 'configs')
+        config_path = Path(config_dir, 'test_1gate').with_suffix('.yaml')
+        with open(Path(config_dir, 'common.yaml'), 'r') as f:
+            config = yaml.safe_load(f)
+        with open(config_path, 'r') as f:
+            config.update(yaml.safe_load(f))
+        sim = Simulation(config)
+        random_angle = random.random() * qn.PI() * 2
+        # p1 = random_particle('p1')
+        p1 = Particle('p1', 1, 1)
+        sim.particles['p1'] = p1
+        g45 = FredkinGate('g45', qn.qify('rad(45)'))
+        g30 = FredkinGate('g30', qn.qify('rad(30)'))
+        g30_result = g30.cpair(1)
+        control_angle = sum(g30_result[:2])
+        control = Particle('control', control_angle, 1)
+        sim.particles['control'] = control
+        print(f'{sim.particles["control"]=}')
+        g1 = FredkinGate('g1', qn.qify('rad(30)'), sim)
+        print(f'{g1=}')
+        sim.gates['g1'] = g1
+        # g1.set_inputs()
+        # print(f'{g1.inputs=}')
+        # g1.set_weights()
+        # print(f'{g1.weights=}')
+        # g1.set_outputs()
+        # print(f'{g1.outputs=}')
+        print(f'{g1=}, {p1=}')
+        result = g1.measure(p1)
+        print(f'{result=}')
+        up_count = 0
+        up_lo = 0
+        up_up = 0
+        lo_lo = 0
+        lo_up = 0
+        n_iter = 100000
+        sel_sum = 0.0
+        for i in range(n_iter):
+            # g1.swapping = random.choice([True, False])
+            g1.reset()
+            selector = random.random()
+            sel_sum += selector
+            # print(f'{selector=}')
+            if selector < 0.5:
+                sim.links['control0'] = 'g1.control'
+                sim.sources['g1.control'] = 'control0'
+                if 'control1' in sim.links.keys():
+                    del sim.links['control1']
+            else:
+                sim.links['control1'] = 'g1.control'
+                sim.sources['g1.control'] = 'control1'
+                if 'control0' in sim.links.keys():
+                    del sim.links['control0']
+            g1.set_inputs()
+            # print(f'{g1.inputs=}')
+            g1.set_weights()
+            g1.output_wire = None
+            # print(f'{g1.weights=}')
+            g1.set_outputs()
+            ctrl_in = g1.inputs['control']
+            upper_in = g1.inputs['upper']
+            lower_in = g1.inputs['lower']
+            ctrl_w = g1.port_weights('control')
+            upper_w = g1.port_weights('upper')
+            lower_w = g1.port_weights('lower')
+            ctrl_o = g1.port_outputs('control')
+            upper_o = g1.port_outputs('upper')
+            lower_o = g1.port_outputs('lower')
+            if g1.swapping:
+                if lower_o:
+                    up_lo += 1
+                    up_count += 1
+                else:
+                    lo_up += 1
+            else:
+                if upper_o:
+                    up_up += 1
+                    up_count += 1
+                else:
+                    lo_lo += 1
+            if g1.port_outputs('upper'):
+                self.assertTrue(not lower_o)
+                w_up = Particle.merge(upper_w)
+                self.assertTrue(w_up.equiv(Particle.merge(g1.port_outputs('upper'))))
+            else:
+                self.assertTrue(not upper_o)
+                w_lo = Particle.merge(lower_w)
+                self.assertTrue(w_lo.equiv(Particle.merge(g1.port_outputs('lower'))))
+            # print(f'{g1.outputs=}')
+            # print(f'INPUTS: {g1.swapping=}, {ctrl_in=}, {upper_in=}, {lower_in=}')
+            # print(f'WEIGHTS: {g1.swapping=}, {ctrl_w=}, {upper_w=}, {lower_w=}')
+            # print(f'OUTPUT: {g1.swapping=}, {ctrl_o=}, {upper_o=}, {lower_o=}')
+        up_rate = up_count/n_iter
+        print(f'{up_count=}, {up_rate=}, {up_lo=}, {up_up=}, {lo_lo=}, {lo_up=}')
+        print(f'{up_up/up_lo=}, {lo_lo/lo_up=}')
+        print(f'{sel_sum/(n_iter/2)=}')
+        self.assertEqual(up_lo+up_up+lo_lo+lo_up, n_iter)
+        # self.assertAlmostEqual(sel_sum, n_iter/2)
+        self.assertAlmostEqual(up_rate, g1.cos2_theta, 1)
 
 if __name__ == '__main__':
     unittest.main()

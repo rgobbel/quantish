@@ -1,7 +1,8 @@
-from quantish.simulation_v2 import Simulation
+from quantish.simulation import Simulation
 from quantish.util import SEP, parse_position
 import python_mermaid.diagram as pm
 from collections import namedtuple
+import re
 # import altair as alt
 # import pandas as pd
 import time
@@ -91,8 +92,8 @@ def gnodes(sim, gname, mermaid_nodes):
 
 def diagram(sim:Simulation, output_file=None, has_run=False):
     mermaid_nodes = {}
-    norm_in = f'{"not " if not sim.normalize_inputs else ""}normalizing inputs'
-    norm_out = f'{"not " if not sim.normalize_outputs else ""}normalizing outputs'
+    norm_in = f'{"not " if not sim.normalize_input else ""}normalizing input'
+    norm_out = f'{"not " if not sim.normalize_output else ""}normalizing output'
     merge = f'{"not " if not sim.merge_before_measure else ""}merging before measuring'
     combine = f'{"not " if not sim.combine_signs else ""}combining signs'
     parms = f'{norm_in}, {norm_out}, {merge}, {combine}'
@@ -113,38 +114,38 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
     #     dgnode = pm.Node(id=delay_name)
     #     dgnode.content = dgcontent
     #     mermaid_nodes[delay_name] = dgnode
-    for phase_name, phase_gates in sim.phases.items():
-        pg = diag.add_subgraph(phase_name)
-        phase_graphs[phase_name] = pg
-        for gate_name in phase_gates:
-            gate = sim.gates[gate_name]
-            gg = pg.add_subgraph(gate_name)
-            gg.header = f'subgraph {gate_name}["{gate_name}: {float(gate.theta.degrees):.0f}º"]'
-            ggi = gg.add_subgraph(f'{gate_name}.inputs')
-            ggi.header = f'subgraph {gate_name}.inputs[inputs]'
-            ggo = gg.add_subgraph(f'{gate_name}.outputs')
-            ggo.header = f'subgraph {gate_name}.outputs[outputs]'
-            sink_nodes = gnodes(sim, gate_name, mermaid_nodes)
+    for stage_name, stage in sim.run_stages.items():
+        pg = diag.add_subgraph(stage_name)
+        phase_graphs[stage_name] = pg
+        for gate in stage.gates:
+            gname = gate.name
+            gg = pg.add_subgraph(gname)
+            gg.header = f'subgraph {gname}["{gname}: {float(gate.theta.degrees):.0f}º"]'
+            ggi = gg.add_subgraph(f'{gname}.input')
+            ggi.header = f'subgraph {gname}.input[input]'
+            ggo = gg.add_subgraph(f'{gname}.output')
+            ggo.header = f'subgraph {gname}.output[output]'
+            sink_nodes = gnodes(sim, gname, mermaid_nodes)
             diag.add_nodes(sink_nodes)
-            gg.add_nodes([mermaid_nodes[f'{gate_name}.{gate_fields['control'].field}']])
-            ggi.add_nodes([mermaid_nodes[f'{gate_name}.{gate_fields['upper'].field}_in'],
-                           mermaid_nodes[f'{gate_name}.{gate_fields['lower'].field}_in']])
-            ggo.add_nodes([mermaid_nodes[f'{gate_name}.{gate_fields['upper'].field}_out'],
-                           mermaid_nodes[f'{gate_name}.{gate_fields['lower'].field}_out']])
+            gg.add_nodes([mermaid_nodes[f'{gname}.{gate_fields['control'].field}']])
+            ggi.add_nodes([mermaid_nodes[f'{gname}.{gate_fields['upper'].field}_in'],
+                           mermaid_nodes[f'{gname}.{gate_fields['lower'].field}_in']])
+            ggo.add_nodes([mermaid_nodes[f'{gname}.{gate_fields['upper'].field}_out'],
+                           mermaid_nodes[f'{gname}.{gate_fields['lower'].field}_out']])
             mermaid_links += [
-                pm.Link(mermaid_nodes[f'{gate_name}.{gate_fields['upper'].field}_in'],
-                        mermaid_nodes[f'{gate_name}.{gate_fields['upper'].field}_out'], shape='dotted'),
-                pm.Link(mermaid_nodes[f'{gate_name}.{gate_fields['upper'].field}_in'],
-                        mermaid_nodes[f'{gate_name}.{gate_fields['lower'].field}_out'], shape='dotted'),
-                pm.Link(mermaid_nodes[f'{gate_name}.{gate_fields['lower'].field}_in'],
-                        mermaid_nodes[f'{gate_name}.{gate_fields['lower'].field}_out'], shape='dotted'),
-                pm.Link(mermaid_nodes[f'{gate_name}.{gate_fields['lower'].field}_in'],
-                        mermaid_nodes[f'{gate_name}.{gate_fields['upper'].field}_out'], shape='dotted')]
+                pm.Link(mermaid_nodes[f'{gname}.{gate_fields['upper'].field}_in'],
+                        mermaid_nodes[f'{gname}.{gate_fields['upper'].field}_out'], shape='dotted'),
+                pm.Link(mermaid_nodes[f'{gname}.{gate_fields['upper'].field}_in'],
+                        mermaid_nodes[f'{gname}.{gate_fields['lower'].field}_out'], shape='dotted'),
+                pm.Link(mermaid_nodes[f'{gname}.{gate_fields['lower'].field}_in'],
+                        mermaid_nodes[f'{gname}.{gate_fields['lower'].field}_out'], shape='dotted'),
+                pm.Link(mermaid_nodes[f'{gname}.{gate_fields['lower'].field}_in'],
+                        mermaid_nodes[f'{gname}.{gate_fields['upper'].field}_out'], shape='dotted')]
     for gate_name, gate in sim.gates.items():
         control_pos = f'{gate_name}{SEP}control'
         ctrl_gate_node = mermaid_nodes[control_pos]
-        if control_pos in sim.reverse_links.keys():
-            ctrl_source_name = sim.reverse_links[control_pos]
+        if control_pos in sim.sources.keys():
+            ctrl_source_name = sim.sources[control_pos]
             ctrl_source_parts = parse_position(ctrl_source_name)
             if type(ctrl_source_parts) is str:
                 ctrl_input_node = mermaid_nodes[ctrl_source_name]
@@ -166,8 +167,8 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
             for inout in ('in', 'out'):
                 switch_node_id = f'{switch_pos}_{inout}'
                 switch_node = mermaid_nodes[switch_node_id]
-                if inout == 'in' and switch_pos in sim.reverse_links.keys():
-                    switch_input = sim.reverse_links[switch_pos]
+                if inout == 'in' and switch_pos in sim.sources.keys():
+                    switch_input = sim.sources[switch_pos]
                     input_pos = parse_position(switch_input)
                     if type(input_pos) is str:
                         switch_input_node = mermaid_nodes[switch_input]
@@ -190,6 +191,15 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
     diag.graph.header = 'flowchart LR'
     diag.pretty_print = True
     if output_file is not None:
+        graph_config = """config:
+   layout: elk
+   elk:
+      forceNodeModelOrder: true
+      nodePlacementStrategy: LINEAR_SEGMENTS
+      considerModelOrder: NODES_AND_EDGES
+title:
+"""
+        styled_diag = re.sub("title:", graph_config, str(diag))
         with open(output_file, 'w') as f:
-            f.write(str(diag))
+            f.write(styled_diag)
     return diag

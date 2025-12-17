@@ -8,8 +8,8 @@ log = logging.getLogger('quantish')
 
 class Sink:
     def __init__(self, name, pid, presence_threshold=0, initial_values=None,
-                 precision=2, combine_signs=True):
-        log.debug(f'NEW SINK: {name}-{pid}, {presence_threshold=}, {initial_values=}, {combine_signs=}')
+                 precision=2, combine_signs=True, combine_names=True):
+        log.debug(f'NEW SINK: {name}-{pid}, {presence_threshold=}, {initial_values=}, {combine_signs=}, {combine_names=}')
         self.precision = precision
         self.trace = defaultdict(list)
         self.name = name
@@ -17,6 +17,7 @@ class Sink:
         self.pnames = set()
         self.values = {}
         self.combine_signs = combine_signs
+        self.combine_names = combine_names
         self.presence_threshold = presence_threshold
         if initial_values is not None:
             self.add(initial_values)
@@ -31,7 +32,7 @@ class Sink:
 
     @property
     def value(self):
-        return self.values
+        return list(self.values.values())
 
     @property
     def vstr(self):
@@ -60,7 +61,12 @@ class Sink:
     def add(self, new_particles):
         log.debug(f'SINK {self.name}({self.id}): ADD {new_particles}')
         def add_some(particles):
-            if self.combine_signs:
+            if self.combine_names:
+                if self.combine_signs:
+                    p_key = lambda particle: '*'
+                else:
+                    p_key = lambda particle: f'{"+" if particle.sign > 0 else "-"}'
+            elif self.combine_signs:
                 p_key = lambda particle: particle.ps(name_only=True)
             else:
                 p_key = lambda particle: f'{"+" if particle.sign > 0 else "-"}{particle.ps(name_only=True)}'

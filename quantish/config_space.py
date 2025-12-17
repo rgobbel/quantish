@@ -15,15 +15,36 @@ def default_wires():
 def default_switches():
     return {wire: [] for wire in SWITCH_WIRES}
 
+class RunStage:
+    def __init__(self, gates=None):
+        if gates is None:
+            gates = []
+        self.gates = gates
+
+    def run(self):
+        for gate in self.gates:
+            gate.set_input()
+            gate.set_weights()
+            gate.set_output()
+
 class GateState:
-    def __init__(self, key, gate, control=None, upper=None, lower=None, predecessor=None, successors=None):
+    def __init__(self, gate, predecessor=None, successors=None):
         self.predecessor = predecessor
         self.successors = successors
-        self.key = key
         self.gate = gate
-        self.control = control
-        self.upper = upper
-        self.lower=lower
+        self.input = {'control': None, 'inputs': None, 'outputs': None}
+        self.weights = {'control': None, 'inputs': None, 'outputs': None}
+        self.output = {'control': None, 'inputs': None, 'outputs': None}
+        self.output_wire = None
 
     def __repr__(self):
-        return f'{self.gate.name}(c:{self.control}, u:{self.upper}, l:{self.lower}'
+        return f'{self.gate.name}(i:{self.input}, w:{self.weights}, l:{self.output}'
+
+class WorldState:
+    def __init__(self, gates=None, predecessors=None, successors=None):
+        if gates is None:
+            gates = {}
+        self.gates = gates
+        self.predecessors = predecessors
+        self.successors = successors
+

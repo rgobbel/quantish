@@ -195,6 +195,12 @@ class Complex(n.Number):
                     n_value = int(n_value)
                 self._value = n_value
 
+    @classmethod
+    def rotate(cls, x, theta):
+        qx = qify(x)
+        qt = qify(theta)
+        return qx * qt.cos * (I() * qt).exp
+
     def newme(self, x):
         return self.__class__(x)
 
@@ -553,7 +559,10 @@ class Real(Complex):
             return self._value <= otherv(other)
 
 def probability(w: Complex)-> Real:
-    return (abs(w)**2).real
+    result = abs(w)**2
+    return result
+
+ZERO = Real(0)
 
 def runtest(x, y):
     try:

@@ -10,6 +10,7 @@ from sympy import N
 import numpy as np
 from logging import StreamHandler
 import sys
+import random
 
 SEP = '.'
 
@@ -42,7 +43,9 @@ def to_float(x):
 def enough(x, threshold):
     if not x: return False
     flx = to_float(x)
-    return (not np.isclose(flx, 0)) and flx >= threshold
+    tx = to_float(threshold)
+    # return (not np.isclose(flx, 0)) and flx >= threshold
+    return flx >= tx
 
 class QLogger(StreamHandler):
     def __init__(self, stream=None):
@@ -67,14 +70,15 @@ def wangle(weight:Complex):
 #     degs = float(theta.degrees)
 #     return f'∆{degs:.0f}º'
 
-def angstr(theta):
+def angstr(theta, precision=0):
     try:
         nx = N(theta)
         if type(nx) not in (int, float, sym.Float):
             nx = cm.phase(nx)
         if nx == 0: nx = 0
-        txstr = f'{m.degrees(nx):.0f}'
-        if txstr == '-0': txstr = '0'
+        pstr = f'%+.{precision}f'
+        txstr = pstr % m.degrees(nx)
+        if txstr[0] == '+': txstr = txstr[1:]
         return f'∆{txstr}º'
     except ZeroDivisionError:
         return '∆0º'
@@ -136,9 +140,28 @@ def normalize_list(data):
     if total == 0: return data
     return [x/total for x in data]
 
-def select(weights, selector):
+def select(weights:list[float], selector:float):
+    " return the index of the selected value "
+    if not weights: return 0
     target = list(accumulate(normalize_list(weights)))
+    result = len(weights) - 1
     for i in range(len(weights)):
-        if target[i] > selector:
-            return i
-    return len(weights)-1
+        if target[i] >= selector:
+            result = i
+            break
+    return result
+
+def max_width(items):
+    return max([len(str(x)) for x in items])
+
+def flat_list(l: list, *, max_depth: int=100) -> list:
+    def flat_list_recursive(l,depth):
+        for elem in l:
+            if isinstance(elem, list) and depth:
+                flat_list_recursive(elem,depth-1)
+            else:
+                out.append(elem)
+    if not isinstance(l, list): return [l]
+    out = []
+    flat_list_recursive(l,max_depth)
+    return out

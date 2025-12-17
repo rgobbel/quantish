@@ -6,8 +6,12 @@ from timeit import timeit
 for mode in ('Float', 'Symbolic'):
     qn.CalcMode.mode = mode
     angle = qn.qify('rad(30)')
-    p_plus = Particle('p', qn.qify(1+0j), 1)
-    p_minus = Particle('p', qn.qify(1+0j), -1)
+    # p_plus = Particle('p', qn.qify(1+0j), 1)
+    # p_minus = Particle('p', qn.qify(1+0j), -1)
+    one = qn.Complex("1")
+    minus_one = qn.Complex(-1)
+    p_plus = Particle('p', one, 1)
+    p_minus = Particle('p', one, -1)
     # g_basic = FredkinGate('g_basic', angle, alternative_measure=False)
     # g_alt = FredkinGate('g_alt', angle, alternative_measure=True)
     # g_0 = FredkinGate('g_0', angle, alternative_measure='cpair0')
@@ -23,15 +27,23 @@ for mode in ('Float', 'Symbolic'):
     # m_3 = lambda p: g_3.measure(p)
 
 
-    for meth in (False, True, 'cpair0', 'cpair1', 'cpair2', 'cpair3'):
-        gate = FredkinGate(f'g_{meth}', angle, alternative_measure=meth)
-        print(f'{gate=}')
-        for p in (p_plus, p_minus):
-            print(f'{p=}')
-            cpair_method = getattr(getattr(gate.__class__, 'cpair_m'), '__name__')
-            print(f'{cpair_method=}, {gate.measure(p)=}')
-            print(timeit(lambda: gate.measure(p), number=10000))
-        print()
+    # for meth in (False, True, 'cpair0', 'cpair1', 'cpair2', 'cpair3'):
+    #     gate = FredkinGate(f'g_{meth}', angle, alternative_measure=meth)
+    #     print(f'{gate=}')
+    #     for p in (p_plus, p_minus):
+    #         print(f'{p=}')
+    #         cpair_method = getattr(getattr(gate.__class__, 'cpair_m'), '__name__')
+    #         print(f'{cpair_method=}, {gate.measure(p)=}')
+    #         print(timeit(lambda: gate.measure(p), number=10000))
+    #     print()
+
+    gate = FredkinGate('g', angle)
+    print(f'{gate=}')
+    for p in (p_plus, p_minus):
+        print(f'{p=}')
+        # cpair_method = getattr(getattr(gate.__class__, 'cpair_m'), '__name__')
+        print(f'{gate.measure(p)=}')
+        print(timeit(lambda: gate.measure(p), number=1))
 
 # for gate in (g_basic, g_alt, g_0, g_1, g_2, g_3):
 #     print(f'{gate=}')

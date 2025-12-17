@@ -30,7 +30,7 @@ class Simulation:
         self.sample = config.get('sample', False)
         self.qvars = {vname: vval for vname, vval in config['variables'].items()}
         self.links = config['links']
-        self.reverse_links = {v: k for k, v in self.links.items()}
+        self.sources = {v: k for k, v in self.links.items()}
         self.particles = {}
         self.sinks = {}
         self.phases = config['phases']
@@ -41,7 +41,6 @@ class Simulation:
         self.initial_values = defaultdict(dict)
         self.normalize_outputs = config.get('normalize_weights', {}).get('output', False)
         self.normalize_inputs = config.get('normalize_weights', {}).get('input', False)
-        self.scale_by_control = config.get('normalize_weights', {}).get('by_control', False)
         self.control_threshold = Real(config.get('probability_threshold', {}).get('control', 0))
         self.forwarding_threshold = Real(config.get('probability_threshold', {}).get('forwarding', 0))
         self.presence_threshold = Real(config.get('probability_threshold', {}).get('presence', 0))
@@ -49,16 +48,6 @@ class Simulation:
         log.info(f'merge before measure={self.merge_before_measure}, merge before forwarding={self.merge_before_forward}, combine signs={self.combine_signs}')
         log.info(f'normalize inputs={self.normalize_inputs}, normalize outputs={self.normalize_outputs}')
         log.info('')
-        for gname, gval in config['gates'].items():
-            print(f'{gname=}, {gval["angle"]=}')
-            gate = FredkinGate(gname, gval['angle'], alternative_measure=self.alternative_measure)
-            self.gates[gname] = gate
-            tid = Gensym('tangle')
-            self.tangles[tid] = GateState(tid, gate)
-            # self.inputs[gname] += [default_wires()]
-        for dgname in config['delay_gates']:
-            dgate = DelayGate(dgname)
-            self.delay_gates[dgname] = dgate
         for pname, pval in config['particles'].items():
             pweight = Complex(pval['weight'])
             position = self.links.get(pname)
@@ -72,7 +61,23 @@ class Simulation:
                 self.particles[pname] = particle
                 self.initial_values[gate_name][wire] = [particle]
                 log.info(f'PARTICLE: {particle.pid} -> {position}')
-        self.order = topo_sort(self.links)
+        for gname, gval in config['gates'].items():
+            print(f'{gname=}, {gval["angle"]=}')
+            gate = FredkinGate(
+                gname, gval['angle'],
+                sources=self.sources,
+                alternative_measure=self.alternative_measure)
+            self.gates[gname] = gate
+            tid = Gensym('tangle')
+            self.tangles[tid] = GateState(tid, gate)
+            # self.inputs[gname] += [default_wires()]
+        for gate in self.gates.values():
+            gate.sim_gates = self.gates
+            gate.sim_particles = self.particles
+        # for dgname in config['delay_gates']:
+        #     dgate = DelayGate(dgname)
+        #     self.delay_gates[dgname] = dgate
+        self.order = topo_sort(self.sources)
         log.info('')
         log.info(f'{self.qvars=}')
         log.info(f'{self.phases=}')
@@ -88,6 +93,10 @@ class Simulation:
         log.info(f'{self.normalize_inputs=}, {self.normalize_outputs=}')
         log.info('')
         log.info(f'EXECUTION ORDER: {", ".join(self.order)}')
+        for obname in self.order:
+            if obname in self.gates.keys():
+                gate = self.gates[obname]
+                print(f'{gate.name}: control:{gate.port_weights("control")}, upper:{gate.port_weights("upper")}, lower: {gate.port_weights("lower")}')
         log.info('')
 
     def run(self):
@@ -104,7 +113,6 @@ class Simulation:
         combine_signs = self.combine_signs
         normalize_inputs = self.normalize_inputs
         normalize_outputs = self.normalize_outputs
-        scale_by_control = self.scale_by_control
         add_with_signs = self.add_with_signs
         sample = self.sample
 
