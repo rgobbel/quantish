@@ -301,7 +301,7 @@ def _(
                     new_lower_trace = f'{gate.name}{SEP}lower->{ldest}'
                     print('')
                     print(f'MEASURE {gate}:c={control}, up={upper}, lo={lower}')
-                    m_up, m_lo = gate.measure(control, upper, lower)
+                    m_up, m_lo = gate.measure(control)
                     # print(f'type(m_up)={type(m_up)}, type(m_lo)={type(m_lo)}')
                     print(f'{m_up=}, {m_lo=}')
                     if control is not None and self.links.get(ctrl_pos) is not None:
@@ -422,7 +422,7 @@ def simulation_class(
                     new_lower_trace = f'{gate.name}{SEP}lower->{ldest}'
                     print('')
                     print(f'MEASURE {gate}:c={control},up={upper},lo={lower}')
-                    m_up, m_lo = gate.measure(control, upper, lower)
+                    m_up, m_lo = gate.measure(control)
                     if swap: upper, lower = lower, upper
                     print(f'{m_up=}, {m_lo=}')
                     if control is not None and self.links.get(ctrl_pos) is not None:
@@ -766,7 +766,7 @@ def _(cpair_sym, tts):
 
 @app.cell(hide_code=True)
 def g_30_measure_p1(g_30, p1):
-    m_sym_30 = g_30.measure(None, upper=p1)
+    m_sym_30 = g_30.measure(None)
     md('### m_sym_30 = g_30.measure(None, upper=p1)')
     return (m_sym_30,)
 
@@ -827,19 +827,19 @@ def p1_up_val(p1_up):
 
 @app.cell
 def m_p1_up(g_30, p1_up):
-    m_p1_up = g_30.measure(None, p1_up)
+    m_p1_up = g_30.measure(None)
     return (m_p1_up,)
 
 
 @app.cell
 def m_p1_up_a(g_30, p1_up_a):
-    m_p1_up_a = g_30.measure(None, p1_up_a)
+    m_p1_up_a = g_30.measure(None)
     return (m_p1_up_a,)
 
 
 @app.cell
 def m_p1_up_b(g_30, p1_up_b):
-    m_p1_up_b = g_30.measure(None, p1_up_b)
+    m_p1_up_b = g_30.measure(None)
     return (m_p1_up_b,)
 
 
@@ -866,13 +866,13 @@ def fancy_latex_psum(p1_c2a, p1_c2b):
 
 @app.cell
 def m_p1_c2a(g_30, p1_c2a):
-    m_p1_c2a = g_30.measure(None, p1_c2a)
+    m_p1_c2a = g_30.measure(None)
     return (m_p1_c2a,)
 
 
 @app.cell
 def m_p1_c2b(g_30, p1_c2b):
-    m_p1_c2b = g_30.measure(None, p1_c2b)
+    m_p1_c2b = g_30.measure(None)
     return (m_p1_c2b,)
 
 
@@ -890,7 +890,7 @@ def p1outs_minus_p2outs(p1outs, p2outs):
 
 @app.cell
 def measure_for_latex_1(g_30, p1_c2b):
-    g_30.measure(None, p1_c2b)
+    g_30.measure(None)
     return
 
 
