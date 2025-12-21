@@ -47,6 +47,12 @@ def enough(x, threshold):
     # return (not np.isclose(flx, 0)) and flx >= threshold
     return flx >= tx
 
+ZERO_THRESHOLD = 1e-15
+
+def filter_weights(particles):
+    return particles
+    # return [p for p in particles if enough(p.probability, ZERO_THRESHOLD)]
+
 class QLogger(StreamHandler):
     def __init__(self, stream=None):
         super().__init__(sys.stdout)
@@ -76,18 +82,11 @@ def angstr(theta, precision=0):
         if type(nx) not in (int, float, sym.Float):
             nx = cm.phase(nx)
         if nx == 0: nx = 0
-        pstr = f'%+.{precision}f'
-        txstr = pstr % m.degrees(nx)
-        if txstr[0] == '+': txstr = txstr[1:]
-        return f'∆{txstr}º'
+        return f'∆{m.degrees(nx):.{precision}f}º'
     except ZeroDivisionError:
         return '∆0º'
 
 def wstr(xc, precision=1):
-    # theta = xc.phase
-    pstr = f'%+.{precision}f'
-    zstr = (f'%+.{precision}f' % 0.0)
-    mstr = zstr.replace('+', '-')
     if isq(xc):
         xc = xc.v
     if issym(xc):
@@ -96,11 +95,7 @@ def wstr(xc, precision=1):
     else:
         frep = xc.real
         fimp = xc.imag
-    freps = pstr % frep
-    if freps == mstr: freps = zstr
-    fimps = pstr % fimp
-    if fimps == mstr: fimps = zstr
-    return f'{freps}{fimps}j{wangle(xc)}'
+    return f'{frep:.{precision}f}{fimp:+.{precision}f}j{wangle(xc)}'
 
 def sstr(sign:int):
     return '+' if sign > 0 else '-'
