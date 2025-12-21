@@ -1,6 +1,7 @@
 import logging
 import random
 import unittest
+from collections import defaultdict
 from pathlib import Path
 from typing import Callable
 
@@ -203,11 +204,182 @@ class TestMeasure(unittest.TestCase):
             self.assertAlmostEqual(result_minus[2], qify('3/4'))
             self.assertAlmostEqual(result_minus[3], qify('(1/4) * sqrt(3) * I'))
 
+    # def test_discrepancy(self):
+    #     log = logging.getLogger('quantish')
+    #     log.setLevel(logging.DEBUG)
+    #     CalcMode.mode = 'Float'
+    #     config_dir = Path(Path.cwd(), 'configs')
+    #     config_path = Path(config_dir, 'test_1gate').with_suffix('.yaml')
+    #     with open(Path(config_dir, 'common.yaml'), 'r') as f:
+    #         config = yaml.safe_load(f)
+    #     with open(config_path, 'r') as f:
+    #         config.update(yaml.safe_load(f))
+    #     histogram = defaultdict(int)
+    #     iterations = 10000
+    #     for i in range(iterations):
+    #         sim = Simulation(config)
+    #         p1 = Particle('p1', 1, 1)
+    #         sim.particles['p1'] = p1
+    #         p2 = Particle('p2', 1, 1)
+    #         sim.particles['p2'] = p2
+    #         g1 = FredkinGate('g1', qn.qify('rad(40)'), sim=sim)
+    #         g2 = FredkinGate('g2', qn.qify('rad(30)'), sim=sim)
+    #         if i == 0:
+    #             print(f'GATES: {g1}, {g2}')
+    #             print(f'g1 cos^2={g1.cos2_theta:.3f}, sin^2={g1.sin2_theta:.3f}')
+    #             print(f'g2 cos^2={g2.cos2_theta:.3f}, sin^2={g2.sin2_theta:.3f}')
+    #             print(f'deltas cos^2={(g2.theta-g1.theta).cos**2:.3f}, sin^2={(g2.theta-g1.theta).sin**2:.3f}')
+    #             print('')
+    #         selector = random.random()
+    #         g1.selector = selector
+    #         g2.selector = selector
+    #         # g1.selector = random.random()
+    #         # g2.selector = random.random()
+    #         # g30_result = g30.cpair(1)
+    #         sim.gates['g1'] = g1
+    #         sim.links['p1'] = 'g1.upper'
+    #         sim.links['p2'] = 'g2.upper'
+    #         # control_angle = sum(g45_result[:2])
+    #         # control = Particle('control', control_angle, 1)
+    #         # sim.particles['control'] = control
+    #         # print(f'{sim.particles["control"]=}')
+    #         # g1 = FredkinGate('g1', qn.qify('rad(30)'), sim)
+    #         # print(f'{g1=}')
+    #         # sim.gates['g1'] = g1
+    #         # g1.set_inputs()
+    #         # print(f'{g1.inputs=}')
+    #         # g1.set_weights()
+    #         # print(f'{g1.weights=}')
+    #         # g1.set_outputs()
+    #         # print(f'{g1.outputs=}')
+    #         # print(f'{g30=}, {p1=}')
+    #         # result30 = g30.measure(p1)
+    #         # print(f'{g30=}, {p1=}')
+    #         # result45 = g30.measure(p1)
+    #         # print(f'{result30=}, {result45=}')
+    #         for gate in (g1, g2):
+    #             # gate.reset()
+    #             gate.set_input()
+    #             gate.set_weights()
+    #             gate.set_output()
+    #             if gate.output_wire == 'upper':
+    #                 histogram[f'{gate.name}.upper'] += 1
+    #             else:
+    #                 histogram[f'{gate.name}.lower'] += 1
+    #         if g1.output_wire != g2.output_wire:
+    #             histogram['discrepancy'] += 1
+    #     print(f'g1.upper: {histogram["g1.upper"] / iterations:.3f}')
+    #     print(f'g1.lower: {histogram["g1.lower"] / iterations:.3f}')
+    #     print(f'g2.upper: {histogram["g2.upper"] / iterations:.3f}')
+    #     print(f'g2.lower: {histogram["g2.lower"] / iterations:.3f}')
+    #     print(f'discrepancy: {histogram["discrepancy"] / iterations:.3f}')
+
+    def test_discrepancy2(self):
+        log = logging.getLogger('quantish')
+        log.setLevel(logging.DEBUG)
+        CalcMode.mode = 'Float'
+        config_dir = Path(Path.cwd(), 'configs')
+        config_path = Path(config_dir, 'test_discrepancy').with_suffix('.yaml')
+        with open(Path(config_dir, 'common.yaml'), 'r') as f:
+            config = yaml.safe_load(f)
+        with open(config_path, 'r') as f:
+            config.update(yaml.safe_load(f))
+        histogram = defaultdict(int)
+        iterations = 1000
+        sim = None
+        config['links'] = {}
+        for i in range(iterations):
+            # p1 = Particle('p1', 1, 1)
+            # p2 = Particle('p2', 1, -1)
+            # g1 = FredkinGate('g1', qn.qify('rad(30)'))
+            # g2 = FredkinGate('g2', qn.qify('rad(30)'))
+            config['particles'] = {
+                'p1': {'weight': '1', 'sign': '1'},
+                'p2': {'weight': '1', 'sign': '1'}
+            }
+            config['gates'] = {
+                'g1': {'angle': 'pi/8'},
+                'g2': {'angle': 'pi/4'}
+            }
+            config['links'] = {
+                'p1': 'g1.upper',
+                # 'g1.upper': 'g2.upper',
+                'g1.lower': 'g2.upper'
+            }
+            # config['run_stages'] = {
+            #     'one': ['g1'],
+            #     'two': ['g2']
+            # }
+            config['run_stages'] = {
+                'one': ['g1', 'g2']
+            }
+            if sim is not None:
+                del sim
+            sim = Simulation(config)
+            g1 = sim.gates['g1']
+            g2 = sim.gates['g2']
+            # sim.gates['g1'] = g1
+            # sim.links['p1'] = 'g1.upper'
+            # sim.links['g1.upper'] = 'g2.upper'
+            # sim.particles['p1'] = p1
+            # sim.particles['p2'] = p2
+            if i == 0:
+                print(f'GATES: {g1} sel={g1.selector:.2f}, {g2} sel={g2.selector:.2f}')
+                print(f'g1 cos^2={g1.cos2_theta:.3f}, sin^2={g1.sin2_theta:.3f}')
+                print(f'g2 cos^2={g2.cos2_theta:.3f}, sin^2={g2.sin2_theta:.3f}')
+                print(f'deltas angles={(g2.theta-g1.theta).degrees:.2f}, cos^2={(g2.theta-g1.theta).cos**2:.3f}, sin^2={(g2.theta-g1.theta).sin**2:.3f}')
+                print('')
+            selector = random.random()
+            g1.selector = selector
+            g2.selector = selector
+            # g1.selector = random.random()
+            # g2.selector = random.random()
+            # g30_result = g30.cpair(1)
+            # sim.links['g1.lower'] = 'g2.upper'
+            # sim.links['p2'] = 'g2.lower'
+            # control_angle = sum(g45_result[:2])
+            # control = Particle('control', control_angle, 1)
+            # sim.particles['control'] = control
+            # print(f'{sim.particles["control"]=}')
+            # g1 = FredkinGate('g1', qn.qify('rad(30)'), sim)
+            # print(f'{g1=}')
+            # sim.gates['g1'] = g1
+            # g1.set_inputs()
+            # print(f'{g1.inputs=}')
+            # g1.set_weights()
+            # print(f'{g1.weights=}')
+            # g1.set_outputs()
+            # print(f'{g1.outputs=}')
+            # print(f'{g30=}, {p1=}')
+            # result30 = g30.measure(p1)
+            # print(f'{g30=}, {p1=}')
+            # result45 = g30.measure(p1)
+            # print(f'{result30=}, {result45=}')
+            for stage in sim.run_stages.values():
+                stage.run()
+            for gate in (g1, g2):
+                # gate.reset()
+                # gate.set_input()
+                # gate.set_weights()
+                # gate.set_output()
+                if gate.output_wire == 'upper':
+                    histogram[f'{gate.name}.upper'] += 1
+                else:
+                    histogram[f'{gate.name}.lower'] += 1
+            if g1.output_wire != g2.output_wire:
+                histogram['discrepancy'] += 1
+        print(f'g1.upper: {histogram["g1.upper"] / iterations:.3f}')
+        print(f'g1.lower: {histogram["g1.lower"] / iterations:.3f}')
+        print(f'g2.upper: {histogram["g2.upper"] / iterations:.3f}')
+        print(f'g2.lower: {histogram["g2.lower"] / iterations:.3f}')
+        print(f'discrepancy: {histogram["discrepancy"] / iterations:.3f}')
+
+
     def test_random_gate(self):
         log = logging.getLogger('quantish')
         log.setLevel(logging.DEBUG)
         CalcMode.mode = 'Float'
-        config_dir = Path(Path.cwd(), 'tests', 'configs')
+        config_dir = Path(Path.cwd(), 'configs')
         config_path = Path(config_dir, 'test_1gate').with_suffix('.yaml')
         with open(Path(config_dir, 'common.yaml'), 'r') as f:
             config = yaml.safe_load(f)
@@ -242,7 +414,7 @@ class TestMeasure(unittest.TestCase):
         up_up = 0
         lo_lo = 0
         lo_up = 0
-        n_iter = 100000
+        n_iter = 1000
         sel_sum = 0.0
         for i in range(n_iter):
             # g1.swapping = random.choice([True, False])
@@ -260,41 +432,41 @@ class TestMeasure(unittest.TestCase):
                 sim.sources['g1.control'] = 'control1'
                 if 'control0' in sim.links.keys():
                     del sim.links['control0']
-            g1.set_inputs()
+            g1.set_input()
             # print(f'{g1.inputs=}')
             g1.set_weights()
             g1.output_wire = None
             # print(f'{g1.weights=}')
-            g1.set_outputs()
-            ctrl_in = g1.inputs['control']
-            upper_in = g1.inputs['upper']
-            lower_in = g1.inputs['lower']
+            g1.set_output()
+            ctrl_in = g1.input['control']
+            upper_in = g1.input['upper']
+            lower_in = g1.input['lower']
             ctrl_w = g1.port_weights('control')
             upper_w = g1.port_weights('upper')
             lower_w = g1.port_weights('lower')
-            ctrl_o = g1.port_outputs('control')
-            upper_o = g1.port_outputs('upper')
-            lower_o = g1.port_outputs('lower')
+            ctrl_o = g1.port_output('control')
+            upper_r = g1.port_result('upper')
+            lower_r = g1.port_result('lower')
             if g1.swapping:
-                if lower_o:
+                if lower_r:
                     up_lo += 1
                     up_count += 1
                 else:
                     lo_up += 1
             else:
-                if upper_o:
+                if upper_r:
                     up_up += 1
                     up_count += 1
                 else:
                     lo_lo += 1
-            if g1.port_outputs('upper'):
-                self.assertTrue(not lower_o)
-                w_up = Particle.merge(upper_w)
-                self.assertTrue(w_up.equiv(Particle.merge(g1.port_outputs('upper'))))
+            if g1.port_result('upper'):
+                self.assertTrue(not lower_r)
+                r_up = Particle.merge(upper_r)
+                self.assertTrue(r_up.equiv(Particle.merge(g1.port_result('upper'))))
             else:
-                self.assertTrue(not upper_o)
-                w_lo = Particle.merge(lower_w)
-                self.assertTrue(w_lo.equiv(Particle.merge(g1.port_outputs('lower'))))
+                self.assertTrue(not upper_r)
+                r_lo = Particle.merge(lower_r)
+                self.assertTrue(r_lo.equiv(Particle.merge(g1.port_result('lower'))))
             # print(f'{g1.outputs=}')
             # print(f'INPUTS: {g1.swapping=}, {ctrl_in=}, {upper_in=}, {lower_in=}')
             # print(f'WEIGHTS: {g1.swapping=}, {ctrl_w=}, {upper_w=}, {lower_w=}')

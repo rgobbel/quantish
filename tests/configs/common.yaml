@@ -18,6 +18,7 @@ probability_threshold:      # threshold values determine whether or not particle
    control: 0               # controls whether or not a superposed control particle is "present"
    forwarding: 0            # particles whose probabilities are less than this are dropped
    presence: 0              # particles whose probabilities are less than this are not added to sinks
+forward_all_weights: false
 
 string_precision: 2         # float precision to use when printing weight values. Does not affect computation
 
