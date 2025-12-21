@@ -1,46 +1,44 @@
-import math
+import logging
+import math as m
 import random
 import subprocess
-from argparse import ArgumentParser, BooleanOptionalAction, SUPPRESS, ArgumentDefaultsHelpFormatter
-import logging
-from collections import defaultdict, OrderedDict
-from pathlib import Path
 import time
-import sympy as sym
-import math as m
-from tqdm import tqdm
+from argparse import ArgumentParser, BooleanOptionalAction, SUPPRESS, ArgumentDefaultsHelpFormatter
+from collections import defaultdict
+from pathlib import Path
 
 import numpy as np
+import sympy as sym
 import yaml
-from quantish.simulation import Simulation
-from quantish.visualizations import diagram
-from quantish.qnumber import CalcMode
-from quantish.util import QLogger, max_width, flat_list, SEP
+from tqdm import tqdm
+
 from quantish.config_space import WIRES
-from quantish.sink import SinkEncoder
-from quantish.particle import Particle
 from quantish.gate import FredkinGate, DelayGate
-import json
+from quantish.particle import Particle
+from quantish.qnumber import CalcMode
+from quantish.simulation import Simulation
+from quantish.util import QLogger, max_width, flat_list, SEP
+from quantish.visualizations import diagram
 
 def main():
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-c', '--config', required=True, help="Path to YAML configuration file")
+    parser.add_argument('-c', '--config', required=True, help="REQUIRED Path to YAML configuration file")
     parser.add_argument('--configs-dir', default='models', help='Directory for model files')
     parser.add_argument('--use-common', action=BooleanOptionalAction, default=True, help='Load default values from common.yaml before individual model files')
     parser.add_argument('-s', '--simulate', action=BooleanOptionalAction, default=True, help='Run simulation')
     parser.add_argument('-l', '--log', default=None, type=str, help='Log file')
-    parser.add_argument('--loglevel', choices=['debug', 'info', 'warning', 'error'])
-    parser.add_argument('--preserve-log', action='store_true', help='Preserve existing log file. Default is to wipe it out and start over')
+    parser.add_argument('--loglevel', choices=['debug', 'info', 'warning', 'error'], help='Default is info if not sampling, warning if sampling', default='info')
+    parser.add_argument('--preserve-log', action='store_true', help='Preserve existing log file')
     parser.add_argument('-d', '--diagram', type=str, help="Create a Mermaid diagram of the gate network on the named file with default extension '.mmd'")
     parser.add_argument('--no-diagram', action='store_true', default=SUPPRESS, help='Do not create a diagram')
     parser.add_argument('--diagram-dir', type=str, default='mermaid', help='Directory for Mermaid diagrams')
-    parser.add_argument('--svg-diagram', action=BooleanOptionalAction, default=True, help='Create an SVG version of the diagram')
+    parser.add_argument('--svg-diagram', action=BooleanOptionalAction, default=True, help='Create an SVG version of the diagram. Requires mmdc command-line Mermaid renderer')
     parser.add_argument('--diagram-when', choices=['before', 'after', 'both'], default='after', help='When to create a diagram, before or after simulation')
     parser.add_argument('--control-threshold', type=float, default=SUPPRESS, help='Probability threshold for considering a control input "present"')
     parser.add_argument('--forward-threshold', type=float, default=SUPPRESS, help='Probability threshold for forwarding output')
     parser.add_argument('--presence-threshold', type=float, default=SUPPRESS, help='Probability threshold for considering a particle "present"')
     parser.add_argument('--normalize-input', action='store_true', help='Normalize weights before measuring')
-    parser.add_argument('--normalize-output', action='store_true', help='Normalize weights after measuring')
+    parser.add_argument('--normalize-output', action='store_true', help='Normalize weights before forwarding')
     parser.add_argument('--symbolic', action='store_true', default=SUPPRESS, help='Force symbolic math')
     parser.add_argument('--numeric', action='store_true', default=SUPPRESS, help='Force numeric math')
     parser.add_argument('--merge-before-measure', action='store_true', help='Merge input particles before measuring')
@@ -48,10 +46,10 @@ def main():
     parser.add_argument('--add-with-signs', action='store_true', help='Multiply weight values by particle sign when adding particles')
     parser.add_argument('--combine-signs', action=BooleanOptionalAction, default=True, help='Merge plus and minus-signed particles')
     parser.add_argument('--combine-names', action=BooleanOptionalAction, default=True, help='Merge particles with different names')
-    parser.add_argument('--sample', action='store_true', help='Take gate output as distributions, run with one random sample')
-    parser.add_argument('--n-samples', type=int, default=1, help='Run this many sample executions, collect statistics on results')
+    parser.add_argument('--sample', action='store_true', help='Run multiple trials and collect a histogram of results')
+    parser.add_argument('--n-samples', type=int, default=1, help='Run this many sampling trials')
     parser.add_argument('--epr-stats', action='store_true', help='Run statistics on EPR experiment model (book figure 4.16)')
-    parser.add_argument('--measure-discrepancy', action='store_true', help='Measure discrepancy ')
+    parser.add_argument('--measure-discrepancy', action='store_true', help='Measure discrepancy for EPR experiment. Assumes a network consistent with book figure 4.16')
     parser.add_argument('--full-stats', action='store_true', help='Include particle names and probabilities in results')
     args = parser.parse_args()
     config_path = Path(args.configs_dir, args.config).with_suffix('.yaml')
@@ -69,7 +67,10 @@ def main():
     elif 'loglevel' in config.keys():
         loglevel = config['loglevel'].upper()
     else:
-        loglevel = logging.INFO
+        if config.get('sample'):
+            loglevel = logging.WARN
+        else:
+            loglevel = logging.INFO
     if args.log is not None:
         log_path = Path(args.log).with_suffix('.log')
         if not args.preserve_log:
@@ -89,24 +90,15 @@ def main():
     symbolic = config.get('symbolic')
     CalcMode.mode = 'Symbolic' if symbolic else 'Float'
     log.info(f'QUANTISH PHYSICS SIMULATION STARTING: {config["title"]} at {time.asctime()}')
-    if 'forward_threshold' in args:
-        config['probability_threshold']['fowarding'] = args.forward_threshold
-    if 'control_threshold' in args:
-        config['probability_threshold']['control'] = args.control_threshold
-    if 'presence_threshold' in args:
-        config['probability_threshold']['presence'] = args.presence_threshold
-    if args.normalize_input:
-        config['normalize_weights']['input'] = True
-    if args.normalize_output in args:
-        config['normalize_weights']['output'] = True
-    if args.merge_before_measure:
-        config['merge']['before_measure'] = True
-    if args.merge_before_forward:
-        config['merge']['before_forwarding'] = True
-    if args.measure_discrepancy:
-        config['measure_discrepancy'] = True
-    elif 'measure_discrepancy' not in config.keys():
-        config['measure_discrepancy']  = False
+    if 'forward_threshold' in args: config['probability_threshold']['fowarding'] = args.forward_threshold
+    if 'control_threshold' in args: config['probability_threshold']['control'] = args.control_threshold
+    if 'presence_threshold' in args: config['probability_threshold']['presence'] = args.presence_threshold
+    if args.normalize_input: config['normalize_weights']['input'] = True
+    if args.normalize_output in args: config['normalize_weights']['output'] = True
+    if args.merge_before_measure: config['merge']['before_measure'] = True
+    if args.merge_before_forward: config['merge']['before_forwarding'] = True
+    if args.measure_discrepancy: config['measure_discrepancy'] = True
+    elif 'measure_discrepancy' not in config.keys(): config['measure_discrepancy']  = False
     log.info(f"{'SYMBOLIC' if symbolic else 'FLOATING POINT'} MODE")
     q1 = None
     q2 = None
@@ -127,7 +119,7 @@ def main():
                     subprocess.run(['mmdc', '-i', before_path, '-o', svg_path])
     if args.simulate:
         if not sim.sample:
-            experiment_results = sim.propagate_weights()
+            experiment_results = sim.run()
             has_run = True
         else:
             print('PARTICLES:')

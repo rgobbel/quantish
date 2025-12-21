@@ -6,6 +6,7 @@ import math as m
 import cmath as cm
 import re as rex
 import scipy.special as sci
+
 from quantish.qconstants import float_methods, complex_methods
 
 log = logging.getLogger('quantish')

@@ -1,11 +1,12 @@
-import logging
 from collections import defaultdict
+import logging
+import random
+
 from quantish.particle import Particle
 from quantish.gate import DelayGate, FredkinGate
-from quantish.config_space import WIRES, STRAIGHT, SWAPPED, RunStage, OTHER
-from quantish.qnumber import Real, qify, softmax, probability, Complex, PI
-from quantish.util import topo_sort, SEP, wstr, enough, to_float, Gensym, select, flat_list
-import random
+from quantish.config_space import WIRES, RunStage
+from quantish.qnumber import Real, qify, softmax, Complex, PI
+from quantish.util import SEP
 
 log = logging.getLogger('quantish')
 
@@ -105,7 +106,7 @@ class Simulation:
         log.info(f'{self.normalize_input=}, {self.normalize_output=}')
         log.info('')
 
-    def propagate_weights(self):
+    def run(self):
         astr = lambda x: ', '.join([str(s) for s in x]) if x else 'None'
         merge_before_measure = self.merge_before_measure
         merge_before_forward = self.merge_before_forward

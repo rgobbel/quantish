@@ -1,12 +1,13 @@
 import logging
 import random
 from enum import StrEnum, auto
-from quantish.qnumber import qify, Complex, Real, ZERO, PI
+
 import quantish.qnumber as qn
 from quantish.angle import Angle
+from quantish.config_space import default_switches, OTHER, WIRES, SWITCH_WIRES
 from quantish.particle import Particle
-from quantish.config_space import default_switches, default_wires, OTHER, WIRES, SWITCH_WIRES, WorldState
-from quantish.util import Gensym, enough, select, astr, flat_list, SEP, filter_weights, ZERO_THRESHOLD
+from quantish.qnumber import qify, Real, ZERO
+from quantish.util import Gensym, enough, select, flat_list, SEP, filter_weights, ZERO_THRESHOLD
 
 log = logging.getLogger('quantish')
 

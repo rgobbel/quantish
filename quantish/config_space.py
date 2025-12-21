@@ -1,7 +1,7 @@
 import logging
 import random
 
-from particle import Particle
+from quantish.particle import Particle
 from quantish.util import SEP
 
 log = logging.getLogger('quantish')

@@ -1,10 +1,13 @@
-import json
 from collections import defaultdict
-from quantish.util import wstr, enough
-from quantish.particle import Particle
+import json
 import logging
 
+from quantish.util import wstr
+from quantish.particle import Particle
+
 log = logging.getLogger('quantish')
+
+## This module is more or less obsolete now
 
 class Sink:
     def __init__(self, name, pid, presence_threshold=0, initial_values=None,

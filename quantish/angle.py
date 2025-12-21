@@ -1,7 +1,11 @@
-from quantish.qnumber import PI, isq, CalcMode, qify
-from quantish.util import angstr
 import sympy as sym
 import math as m
+import logging
+
+from quantish.qnumber import PI, isq, CalcMode, qify
+from quantish.util import angstr
+
+log = logging.getLogger('quantish')
 
 class Angle:
     def __init__(self, value, unit='degrees'):

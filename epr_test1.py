@@ -81,7 +81,7 @@ def run1(histogram):
         # if i == 0:
         #     print(f'{sim.gates["g5"]=}, {sim.gates["g6"]=}')
         result = {}
-        run_result = sim.propagate_weights()
+        run_result = sim.run()
         # for obname in sim.order:
         #     if obname in sim.gates.keys():
         #         g = sim.gates[obname]

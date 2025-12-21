@@ -1,6 +1,7 @@
 import random
 from typing import Self, Union
 import cmath as cm
+
 from quantish.util import wstr, Gensym
 from quantish.qnumber import qify, probability, isq, Complex, PI
 

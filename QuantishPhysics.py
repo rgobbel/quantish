@@ -524,7 +524,7 @@ def run_sim(diagram, mo, run_button, sim):
     # run_button.disabled = False
     mo.stop(output='Press RUN button to run simulation with current settings', predicate=not run_button.value)
     # print('after stop')
-    simresult = sim.propagate_weights()
+    simresult = sim.run()
     # for _pname, _particle in run_results.items():
     #     simresult[_pname] = Sink(_pname, _pname, initial_values=[_particle])
     # rr0 = {x.name: list(x.value.values())[0] for x in simresult.values() if len(x.value.values()) > 0 and list(x.value.values())[0].name != 'temp' and list(x.value.values())[0].weight != 0}

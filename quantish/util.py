@@ -68,14 +68,6 @@ def wangle(weight:Complex):
     # else:
     return f'{angstr(cm.phase(weight))}'
 
-# def angstr(theta):
-#     if hasattr(theta, 'radians'):
-#         theta = theta.radians
-#     if type(theta) in (int, float):
-#         theta = float(theta)
-#     degs = float(theta.degrees)
-#     return f'∆{degs:.0f}º'
-
 def angstr(theta, precision=0):
     try:
         nx = N(theta)
