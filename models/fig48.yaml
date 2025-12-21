@@ -23,7 +23,7 @@ variables:
    r60: &r60  "0.5+0.87j"
    q1: &q1 "rad(20)"
    q2: &q2 "rad(30)"
-phases:
+run_stages:
    run: [g1, g2]
 particles:
    control:

@@ -15,6 +15,7 @@ string_precision: 2
 
 sample: true
 n_samples: 10000
+loglevel: warning
 
 variables:
    zero: &zero  "0j"
@@ -29,8 +30,8 @@ variables:
    q90: &q90 "rad(90)"
    q120: &q120 "rad(120)"
 
-phases:
-   phase1: [g1]
+run_stages:
+   stage1: [g1]
 particles:
    control:
       sign: 1

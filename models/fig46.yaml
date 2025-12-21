@@ -19,7 +19,7 @@ variables:
    one: &one  "1+0j"
    r60: &r60  "0.5+0.87j"
    q: &q "rad(30)"
-phases:
+run_stages:
    run: [g1, g2]
 particles:
    c:

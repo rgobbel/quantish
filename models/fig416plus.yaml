@@ -1,25 +1,40 @@
 title: Quantish EPR Experiment
 
 run_stages:
-   prepare: [g1, g2]
-   couple_1: [d1, g3, d2, d3]
-   couple_2: [d4, d5, g4, d6]
+#   prepare: [g1, g2]
+   prepare_1: [g1]
+   prepare_2: [g2]
+#   couple_1: [d1, g3, d2, d3]
+#   couple_2: [d4, d5, g4, d6]
+   couple_1: [g3]
+   couple_2: [g4]
    observe: [g5, g6]
-   store: [d7, d8, d9, d10]
+#   store: [d7, d8, d9, d10]
+diagram_groups:
+   prepare: [g1, g2]
+#   couple_1: [d1, g3, d2, d3]
+#   couple_2: [d4, d5, g4, d6]
+   couple: [g3, g4]
+   observe: [g5, g6]
 
-#merge:
-#   before_measure: true
-#   before_forwarding: true
-#   combine_signs: true
-#   combine_names: false
+merge:
+   before_measure: false
+   before_forwarding: true
+   combine_signs: true
+   combine_names: false
 
-probability_threshold:
-   # selector: >= 0: constant
-   #             -1: random constant
-   #             -2: random phase between 0 and pi/2
-   #             -3: random, calculated every time
-   selector: -3
+#probability_threshold:
+#   # selector: >= 0: constant
+#   #             -1: random constant
+#   #             -2: random phase between 0 and pi/2
+#   #             -3: random, calculated every time
+#   selector: -3
 #   control: 0
+
+normalize_weights:          # whether or not to normalize weights so that their sum is one
+   input: false             # normalize values of input particles before measurement
+   output: false            # normalize values of output particles before returning from measurement
+always_forward_weights: false
 
 sample: true
 loglevel: warning
@@ -32,21 +47,13 @@ variables:
    minus_one: &minus_one '-1+0j'
    eye: &eye '1j'
    minus_eye: &minus_eye '-1j'
+   pi8pi8: &pi8pi8 '0.39269908169872414+0.39269908169872414j'
    cweight: &cweight '1'
-   qa: &qa 'rad(0)'
-#   qb: &qb 'rad(45)'
-#   qc: &qc 'rad(45)'
-   qb: &qb 'pi/8'
-#   qb_paper: &qb_paper 'arg(cos(pi/8)+sin(pi/8)*I)'
-#   qb: &qb 'pi/6'
-   qc: &qc 'pi/4'
-#   q0: &q0 '0'
-#   qa: &qa 0
-#   qb: &qb 'rad(45)'
-#   qc: &qc 'rad(90)'
+   q0: &q0 '0'
    q10: &q10 'rad(10)'
    q15: &q15 'rad(15)'
    q20: &q20 'rad(20)'
+   qp8: &qp8 'pi/8'
    q30: &q30 'rad(30)'
    q35: &q35 'rad(35)'
    q40: &q40 'rad(40)'
@@ -65,6 +72,10 @@ variables:
    qm45: &qm45 '-rad(45)'
    qm60: &qm60 '-rad(60)'
    cw: &cw '0'
+
+   qa: &qa '0'
+   qb: &qb 'pi/8'
+   qc: &qc 'pi/4'
 particles:
 #   c1: {weight: *zero, sign: 1}
 #   c2: {weight: *zero, sign: 1}
@@ -72,15 +83,16 @@ particles:
    p2: {weight: *one, sign: 1}
    p3: {weight: *one, sign: 1}
 gates:
-   g1: {angle: *q30}
-   g2: {angle: *q30}
+   g1: {angle: 'rad(30)'}
+   g2: {angle: 'rad(30)'}
    g3: {angle: 0}
    g4: {angle: 0}
-   g5: {angle: 0}
-   g6: {angle: 0}
+   g5: {angle: 'rad(20)'}
+   g6: {angle: 'rad(20)'}
 #   g7: {angle: 0}
 #   g8: {angle: 0}
-delay_gates: [d1, d2, d3, d4, d5, d6, d7, d8, d9, d10]
+#delay_gates: [d1, d2, d3, d4, d5, d6, d7, d8, d9, d10]
+#delay_gates: [d7, d8, d9, d10]
 
 links:
 #   c1: g1.control
@@ -92,33 +104,37 @@ links:
 
    # phase 1 - split
    g1.upper: g3.control
-   g1.lower: d1.input
+#   g1.lower: d1.input
+   g1.lower: g5.lower
 
-   g2.upper: d2.input
-   g2.lower: d3.input
+#   g2.upper: d2.input
+   g2.upper: g4.control
+#   g2.lower: d3.input
+   g2.lower: g6.lower
 
    # phase 2a - couple from g1
-   d1.output: d5.input
+#   d1.output: d5.input
 
-   g3.control: d4.input
+#   g3.control: d4.input
+   g3.control: g5.upper
    g3.upper: g4.upper
    g3.lower: g4.lower
 
-   d2.output: g4.control
+#   d2.output: g4.control
 
-   d3.output: d6.input
+#   d3.output: d6.input
 
    # phase 2b - couple from g2
-   d4.output: g5.upper
-   d5.output: g5.lower
+#   d4.output: g5.upper
+#   d5.output: g5.lower
 
    g4.control: g6.upper
 
-   d6.output: g6.lower
+#   d6.output: g6.lower
 
    # phase 3 - observe
-   g5.upper: d7.input
-   g5.lower: d8.input
-
-   g6.upper: d9.input
-   g6.lower: d10.input
+#   g5.upper: d7.input
+#   g5.lower: d8.input
+#
+#   g6.upper: d9.input
+#   g6.lower: d10.input

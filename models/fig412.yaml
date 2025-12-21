@@ -1,18 +1,17 @@
 title: Figure 4.12
-symbolic: true
+symbolic: false
 string_precision: 2
-merge:
-   before_measure: false
-   before_forwarding: false
-   combine_signs: true
-normalize_weights:
-   output: false
-   input: false
-probability_threshold:
-   control: 0
-   forwarding: 0
-   presence: 0
-winner_take_all: true
+#merge:
+#   before_measure: false
+#   before_forwarding: false
+#   combine_signs: true
+#normalize_weights:
+#   output: false
+#   input: false
+#probability_threshold:
+#   control: 0
+#   forwarding: 0
+#   presence: 0
 
 variables:
    zero: &zero "0j"
@@ -23,7 +22,7 @@ variables:
    q2: &q2 "acos(4/5)"
    q3: &q3 '0.8+0.6j'
    q4: &q4 'rad(15)'
-phases:
+run_stages:
    prepare: [g0]
    split: [g1]
    merge: [g2]
