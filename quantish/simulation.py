@@ -2,7 +2,7 @@ import logging
 from collections import defaultdict
 from quantish.particle import Particle
 from quantish.gate import DelayGate, FredkinGate
-from quantish.config_space import WIRES, STRAIGHT, SWAPPED, RunStage
+from quantish.config_space import WIRES, STRAIGHT, SWAPPED, RunStage, OTHER
 from quantish.qnumber import Real, qify, softmax, probability, Complex, PI
 from quantish.util import topo_sort, SEP, wstr, enough, to_float, Gensym, select, flat_list
 import random
@@ -17,6 +17,7 @@ class Simulation:
         self.symbolic = config.get('symbolic', False)
         self.precision = config.get('string_precision', 2)
         self.add_with_signs = config.get('add_with_signs', False)
+        self.always_forward_weights = config.get('always_forward_weights', False)
         self.alternative_measure = config.get('alternative_measure', False)
         self.merge_before_measure = config.get('merge', {'before_measure': False}).get('before_measure', False)
         self.merge_before_forward = config.get('merge', {'before_forwarding': False}).get('before_forwarding', False)
@@ -44,7 +45,8 @@ class Simulation:
                 val = random.random()
                 self.selector = lambda: val
             elif self.selector_value == -2:
-                self.selector = lambda: ((random.random() * PI() * 2) % (PI()/2))
+                val = (random.random() * PI() / 2).cos ** 2
+                self.selector = lambda: val
             elif self.selector_value == -3:
                 self.selector = random.random
             else:
@@ -84,34 +86,19 @@ class Simulation:
                          add_with_signs=self.add_with_signs))
             log.info(f'PARTICLE: {self.particles[pname]}')
         log.info('')
-        # self.order = [g for g in topo_sort(self.links).filter if
-        #               g in list(config['gates'].keys() + list(config['delay_gates'].keys()))]
-        # log.info(f'EXECUTION ORDER: {", ".join(self.order)}')
-        # log.info('')
         for gname, gval in config['gates'].items():
             self.gates[gname] = FredkinGate(
                 gname, gval['angle'],
                 sim=self)
         for dgname in config.get('delay_gates', []):
             self.gates[dgname] = DelayGate(dgname, sim=self)
+        self.diagram_groups = config.get('diagram_groups')
         for stage_name, gate_names in config['run_stages'].items():
-            next_stage = RunStage([self.gates[gname] for gname in gate_names])
+            next_stage = RunStage(stage_name, [self.gates[gname] for gname in gate_names])
             self.run_stages[stage_name] = next_stage
 
-        # initial_gate_states = [GateState(g) for g in self.gates.values()]
-        # initial_world_state = WorldState(initial_gate_states)
-        # self.world_state = initial_world_state
-        # for obname in self.order:
-        #     if obname in self.gates.keys():
-        #         gate = self.gates[obname]
-        #         log.info(f'{gate=}')
-        #         cval = gate.port_weights('control')
-        #         uval = gate.port_weights('upper')
-        #         lval = gate.port_weights('lower')
-        #         swap = gate.p_swap
-        #         log.info(f'   {swap} control:{cval}, upper:{uval}, lower: {lval}')
         log.info(f'{self.qvars=}')
-        log.info(f'{self.run_stages=}')
+        log.info(f'run stages={", ".join([f"{v}" for v in self.run_stages.values()])}')
         log.info(f'{self.gates=}')
         log.info(f'{self.particles=}')
         log.info(f'{self.control_threshold=}, {self.forwarding_threshold=}, {self.presence_threshold=}')
@@ -145,226 +132,10 @@ class Simulation:
                 group = [] if not group else [group]
             return group
 
-        # world_state = WorldState()
-        # for pname, particle in self.particles.items():
-        #     destination = self.links[pname]
-        #     gname, gwire = destination.split(SEP)
-        #     if gname in world_state.gates.keys():
-        #         gstate = world_state.gates[gname]
-        #     else:
-        #         gstate = GateState(self.gates[gname])
-        #         world_state.gates[gname] = gstate
-        #     gstate.input[gwire] = [particle]
-        # for outer_phase in self.phases.values():
-        #     if isinstance(outer_phase[0], list):
-        #         working_phase = outer_phase[0]
-        #     else:
-        #         working_phase = outer_phase
-        #
-        #     for gname in working_phase:
-        #         gate = self.gates[gname]
-        #         gate.set_input(world_state)
-        #         gate.set_weights()
-        #         world_state[gname] = GateState(gate)
         for stage in self.run_stages.values():
             stage.run()
-        # if obname in self.particles.keys():
-        #     particle = self.particles[obname]
-        #     destination = self.links[obname]
-        #     log.info(f'PARTICLE: {particle} -> {destination}')
-        #     self.state_dict[destination] += [particle]
-        #     log.info('')
-        # if obname in self.gates.keys():
-        #     # grab pieces to operate on
-        # self.world_state.successors = [WorldState(self.gates, predecessors=self.world_state)]
-        # self.world_state = self.world_state.successors[0]
-        # for gname in self.order:
-        #     gate = self.gates[gname]
-        #     if gate.control is not None and Particle.merge(flat_list(gate.control)).superposed:
-        #         pass
-        # gate_positions = {wire: f'{obname}{SEP}{wire}' for wire in WIRES}
-                # input = gate.input
-                # weights = gate.weights
-                # output = gate.output
-                # destinations = default_wires()
-                # for wire in WIRES: # look up sources and destinations for all wires in this gate
-                #     pos = gate_positions[wire]
-                #     destinations[wire] = self.links.get(pos)
-                #     weights[wire] = gate.port_weights(wire)
-                #         # weights[wire] = []
-                # # log.info(f'GATE {gate} weights:')
-                # # for wire in WIRES:
-                # #     log.info(f'   {wire}_input= {astr(gate.input[wire])} -> {destinations[wire]}')
-                # # log.info('')
-                #
-                # ## Set up control input
-                # swap = 'swapped' if gate.swapping else 'straight'
-                # if weights['control']:
-                #     if type(weights['control']) is list:
-                #         control = Particle.merge(weights['control'])
-                #     else:
-                #         control = weights['control']
-                #     gate.control = control
-                #     # if destinations['control'] is not None: # forward control, regardless of probability
-                #     #     self.state_dict[destinations['control']] += weights['control']
-                #     #     if not self.sinks.get(gate_positions['control']):
-                #     #         self.sinks[gate_positions['control']] = Sink(
-                #     #             gate_positions['control'],
-                #     #             control.pid,
-                #     #             presence_threshold=self.presence_threshold,
-                #     #             initial_values=weights['control'], precision=self.precision,
-                #     #             combine_signs=combine_signs,
-                #     #             combine_names=combine_names)
-                # else:
-                #     # pname = Gensym('null_control').name
-                #     # placeholder = Particle(pname, 0, 1)
-                #     # self.sinks[gate_positions['control']] = Sink(
-                #     #     gate_positions['control'],
-                #     #     placeholder.pid,
-                #     #     presence_threshold=self.presence_threshold,
-                #     #     initial_values=[placeholder], precision=self.precision,
-                #     #     combine_signs=combine_signs)
-                #     # control = placeholder
-                #     control = None
-                #     swap = 'straight'
-                #
-                # if normalize_input:
-                #     for wire in SWITCH_WIRES:
-                #         if weights[wire]: norm_input_particles(weights[wire])
-                # # if merge_before_measure:
-                # #     log.info('MERGING INput')
-                # #     for wire in SWITCH_WIRES:
-                # #         weights[wire] = merge_input(weights[wire])
-                #
-                # ## Log weights and set up variables for output.
-                # log.info(f'   INput:')
-                # presence_str = 'PRESENT' if swap == 'swapped' else 'NOT PRESENT'
-                # log.info(f'      control: {control} {presence_str}')
-                # # log.info(f'      control= {control}')
-                # for wire in SWITCH_WIRES:
-                #     v = input[wire]
-                #     if isinstance(v, list):
-                #         v = astr(v)
-                #     log.info(f'      {wire}:   {v}')
-                # switch_results = default_switches()
-                # # m_result_dict = defaultdict(list)
-                #
-                # ## Sequence through and measure weights. Don't deal with control input-based swap yet.
-                # # for input_wire in SWITCH_WIRES:
-                # #     input_particles = weights[input_wire]
-                # #     for p_in in input_particles:
-                # #         if to_float(p_in.probability) > 0: # Zero probability particles are discarded
-                # #             log.info(f'      measure {p_in}')
-                # #             # get raw measurements
-                # #             measurement_results = gate.measure(p_in)
-                # #             # normalize to sum == 1 if we're doing that
-                # #             if normalize_output:
-                # #                 for i in range(len(measurement_results)):
-                # #                     measurement_results[i] *= 1/p_in.weight
-                # #
-                # #             signs = [p_in.sign, -p_in.sign, p_in.sign, -p_in.sign]
-                # #             output_wires = [input_wire, input_wire, OTHER[input_wire], OTHER[input_wire]] # internal forwarding only!
-                # #             components = [f'c{component}{subc}' for component in ['2', '3'] for subc in ['a', 'b']]
-                # #
-                # #             for i, (sign, component, output_wire) in enumerate(zip(signs, components, output_wires)):
-                # #                 pname = f'{p_in.name}>{gate.name}.{output_wire}'
-                # #                 m_result_particle = Particle(
-                # #                     pname, measurement_results[i], sign,
-                # #                     precision=self.precision, add_with_signs=self.add_with_signs)
-                # #                 log.info(f'        ->{gate.name} {input_wire}({component})->{output_wire} {m_result_particle}')
-                # #                 m_result_dict[f'{output_wire}_{component}'] += [m_result_particle]
-                # # gather results from upper and lower INput
-                # # for input_wire in SWITCH_WIRES:
-                # #     switch_results[input_wire] += \
-                # #         (m_result_dict[f'{input_wire}_c2a'] +
-                # #          m_result_dict[f'{input_wire}_c2b'] +
-                # #          m_result_dict[f'{input_wire}_c3a'] +
-                # #          m_result_dict[f'{input_wire}_c3b'])
-                #
-                # for input_wire in SWITCH_WIRES:
-                #     # in_pos = gate_positions[input_wire]
-                #     switch_results[input_wire] = weights[input_wire]
-                #     # if switch_results[input_wire]:
-                #         # if self.combine_signs:
-                #         #     switch_results[input_wire] = [Particle.merge(switch_results[input_wire])]
-                #         # gate.output[input_wire] = switch_results[input_wire]
-                #         # self.state_dict[gate_positions[input_wire]] = switch_results[input_wire]
-                #         # sink = Sink(in_pos, presence_threshold=self.presence_threshold,
-                #         #             pid=control.pid if control else 'EMPTY',
-                #         #             initial_values=switch_results[input_wire],
-                #         #             precision=self.precision, combine_signs=combine_signs)
-                #         # self.sinks[in_pos] = sink
-                # log.info('   OUTput:')
-                # for wire in WIRES:
-                #     output[wire] = gate.port_output(wire)
-                #     log.info(f'      {wire:7s}: {gate.port_output(wire)}')
-                # # if swap:
-                # #     log.info('   SWAPPING UPPER<->LOWER')
-                # # output_choices = []
-                # # for input_wire in SWITCH_WIRES:
-                # #     for pval in switch_results[input_wire]:
-                # #         output_choices += [[input_wire, pval]]
-                # # if output_choices:
-                # #     out_max = softmax([x[1].weight.real for x in output_choices])
-                # #     output = output_choices[select([abs(x[1].weight.real) for x in output_choices], selector())]
-                # #     output_wire = output[0] if not swap else OTHER[output[0]]
-                # #     log.info('   OUTPUT:')
-                # #     if destinations[output_wire]:
-                # #         log.info(f'      {f'{gate.name}{SEP}{output[0]}'}->{output_wire}->{destinations[output_wire]}: {output[1]}')
-                # #         self.state_dict[destinations[output_wire]] += [output[1]]
-                # #         self.run_results[gate_positions[output_wire]] = output[1]
-                # #     else:
-                # #         log.info(f'      {f'{gate.name}{SEP}{output[0]}'}->{output_wire}->SINK: {output[1]}')
-                # #         self.run_results[gate_positions[output_wire]] = output[1]
-                # # if enough(probability(pval.weight), self.forwarding_threshold):
-                # #         if not destinations[output_wire]:
-                # #             pname = f'{pval.name}>{out_pos}'
-                # #         else:
-                # #             pname = f'{pval.name}>{out_pos}>{destinations[output_wire]}'
-                # #         output[output_wire].append(Particle(pname, pval.weight, pval.sign,
-                # #                                 precision=self.precision,
-                # #                                 add_with_signs=self.add_with_signs))
-                # #         log.info(f'        {input_wire}->{output_wire}')
-                # #         out_pos = f'{gate.name}.{output_wire}'
-                # #         log.info(f'   OUTput:')
-                # #         output = default_switches()
-                # #         if output[output_wire]:
-                # #             sink = Sink(out_pos, presence_threshold=self.presence_threshold,
-                # #                         pid=control.pid if control else 'EMPTY',
-                # #                         precision=self.precision, combine_signs=combine_signs,
-                # #                         combine_names=combine_names)
-                # #             self.sinks[out_pos] = sink
-                # #             if not merge_before_forward:
-                # #                 sink.add(output[output_wire])
-                # #                 for output_particle in output[output_wire]:
-                # #                     log.info(f'            {output_particle}')
-                # #                     if destinations[output_wire]:
-                # #                         self.state_dict[destinations[output_wire]].append(output_particle)
-                # #             else: # merging
-                # #                 log.info(f'        MERGED OUTput')
-                # #                 if combine_signs:
-                # #                     merged = Particle.merge(output)
-                # #                     if not merged and enough(merged.probability, self.forwarding_threshold):
-                # #                         log.info(f'           ->  {merged}')
-                # #                         self.state_dict[destinations[output_wire]].append(merged)
-                # #                         sink.add([merged])
-                # #                     else:
-                # #                         log.info(f'           None')
-                # #                 else:
-                # #                     for sign_test, sign_str in [('__gt__', 'plus'), ('__lt__', 'minus')]:
-                # #                         merged = Particle.merge([x for x in output if getattr(x, sign_test)(0)])
-                # #                     if not merged and enough(merged.probability, self.forwarding_threshold):
-                # #                         log.info(f'           {sign_str}->  {merged}')
-                # #                         self.state_dict[destinations[output_wire]].append(merged)
-                # #                         sink.add([merged])
-                # #                     else:
-                # #                         log.info(f'           {sign_str}:  None')
-                # #         else:
-                # #             log.info(f'            NO OUTPUT')
-                #
-                # log.info('')
-
         log.info('')
+
         for g in self.gates.values():
             if type(g) is FredkinGate:
                 for wire in WIRES:
@@ -378,26 +149,7 @@ class Simulation:
             if v is not None:
                 log.info(f'   {k}: {v}')
         log.info('')
-        # log.info(f'CONTROL THRESHOLD = {self.control_threshold}')
-        # log.info('')
-        # log.info('SINK VALUE SUMMARIES:')
-        # self.gate_weights = defaultdict(dict)
-        # for sink_name, sink in self.sinks.items():
-        #     if len(sink.values.values()) == 0:
-        #         continue
-        #         # pname = Gensym('null').name
-        #         # placeholder = Particle(pname, 0, 1)
-        #         # sink.add([placeholder])
-        #     sink_gate, sink_wire = sink_name.split('.')
-        #     sink_str = sink.vstr
-        #     self.gate_weights[sink_gate][sink_wire] = sink_str
-        #     gsum = Particle.merge(sink.values.values())
-        #     if sink_str == 'None':
-        #         pstr = ''
-        #     else:
-        #         pstr = f': {"+" if gsum.sign == 1 else "-"}{gsum.name.split('>')[0]}({gsum.probability:.2f})'
-        #     log.info(f'   {sink_name} -> {sink.vstr}{pstr}')
-        # log.info('')
+
         log.info('RESULT VALUES BY GATE:')
         gate_results = defaultdict(dict)
         for k, v in self.run_results.items():
@@ -413,95 +165,19 @@ class Simulation:
 
         return self.run_results #, self.sinks, self.particles
 
-    # def run_experiment(self):
-    #     experiment_input = defaultdict(list)
-    #     experiment_results = defaultdict(list)
-    #     selector = random.random()
-    #     print('')
-    #     for obname in self.order:
-    #         if obname in self.particles.keys():
-    #             particle = self.particles[obname]
-    #             destination = self.links[obname]
-    #             if destination and particle.probability >= 0.5:
-    #                 log.debug(f'PARTICLE: {particle} -> {destination}')
-    #                 experiment_input[destination] += [particle]
-    #         elif obname in self.gates.keys():
-    #             gate = self.gates[obname]
-    #             control_pos = f'{gate.name}.control'
-    #             control_input = experiment_input.get(control_pos, [])
-    #             if len(control_input) > 1:
-    #                 raise RuntimeError(f'invalid control_state: {control_input}')
-    #             control_present = len(control_input) > 0 and control_input[0].probability >= random.random()
-    #             out_wires = SWAPPED if control_present else STRAIGHT
-    #             upper_in_wire = f'{gate.name}.upper'
-    #             upper_out_wire = out_wires['upper']
-    #             lower_in_wire = f'{gate.name}.lower'
-    #             lower_out_wire = out_wires['lower']
-    #             upper_in_present = experiment_input.get(upper_in_wire) is not None
-    #             lower_in_present = experiment_input.get(lower_in_wire) is not None
-    #             choices = []
-    #             upper_outs = self.sinks.get(f'{gate.name}.{upper_out_wire}')
-    #             if upper_in_present and upper_outs is not None and upper_outs.value:
-    #                 choices += [[upper_out_wire, p] for p in upper_outs.values.values()]
-    #             lower_outs = self.sinks.get(f'{gate.name}.{lower_out_wire}')
-    #             if lower_in_present and lower_outs is not None and lower_outs.value:
-    #                 choices += [[lower_out_wire, p] for p in lower_outs.values.values()]
-    #             # if upper_in_maybe is not None:
-    #             #     upper_ins = upper_in_maybe
-    #             # else:
-    #             #     upper_ins = []
-    #             # if lower_in_maybe is not None:
-    #             #     lower_ins = lower_in_maybe
-    #             # else:
-    #             #     lower_ins = []
-    #             # # choices = [['upper', p] for p in upper_outs if p.probability > 0] + \
-    #             # #           [['lower', p] for p in lower_outs if p.probability > 0]
-    #             # choices = [[upper_out_wire, p] for p in upper_ins] + [[lower_out_wire, p] for p in lower_ins]
-    #             if choices:
-    #                 # random.shuffle(choices)
-    #                 # choices = sorted(choices, key=lambda x: x[1].probability, reverse=True)
-    #                 out_wire, out_particle = choices[select([p[1].probability for p in choices], selector)]
-    #                 # print(f'{out_wire=}, out_particle={out_particle.ps(short=True)}, dest={out_particle.name.split('>')[-1]}')
-    #                 switch_output = f'{gate.name}.{out_wire}'  # Fixed: need full position, not just 'upper'/'lower'
-    #                 switch_destination = self.links.get(switch_output)
-    #                 if switch_destination: # forward to next stage
-    #                     if switch_destination in experiment_input.keys():
-    #                         raise RuntimeError(f'destination already set: {experiment_input[switch_destination]}, new value is {out_particle}')
-    #
-    #                     experiment_input[switch_destination] += [out_particle]
-    #                     experiment_results[switch_output] += [out_particle]
-    #                     # if len(experiment_results[switch_output]) > 1:
-    #                     #     raise RuntimeError(f'invalid result: {experiment_results[switch_output]}')
-    #                 else: # record final state for this particle
-    #                     final_destination = out_particle.name.split('>')[-1]
-    #                     if final_destination in experiment_results.keys():
-    #                         raise RuntimeError(f'result for {final_destination} was already set: {experiment_results[final_destination]}, new value is {out_particle}')
-    #                     experiment_results[final_destination] += [out_particle]
-    #                     # if len(experiment_results[final_destination]) > 1:
-    #                     #     raise RuntimeError(f'invalid result: {experiment_results[switch_output]}')
-    #             control_destination = self.links.get(control_pos)
-    #             if len(control_input) > 0:
-    #                 if control_destination:
-    #                     experiment_input[control_destination] = control_input
-    #                     # experiment_results[control_destination] = control_input
-    #                 else:
-    #                     experiment_results[control_pos] = control_input
-    #
-    #     print('EXPERIMENT STATE:')
-    #     for k, v in experiment_input.items():
-    #         print(f'   {k}: {v}')
-    #
-    #     print('EXPERIMENT RESULT:')
-    #     for k, v in experiment_results.items():
-    #         print(f'   {k}: {v}')
-    #
-    #     return experiment_results, experiment_input
-
-    def pos_value_str(self, pos):
-        values = self.state_dict[pos]
-        if not values: return '0'
-        merged = Particle.merge(values)
-        ss = f"{'+' if merged.sign > 0 else '-'}"
-        pname = merged.name.split('>')[0]
-        return f'{ss}{pname}: {wstr(merged.weight, precision=self.precision)}'
+    def pos_value_str(self, pos, val_type='results'):
+        parts = pos.split('.')
+        if len(parts) == 1:
+            merged = self.particles[parts]
+        else:
+            gname, gwire = parts
+            gate = self.gates[gname]
+            # if val_type == 'output' and swap_output and gate.swapping:
+            #     gwire = OTHER[gwire]
+            values = getattr(gate, val_type)[gwire]
+            if not values: return None
+            merged = Particle.merge(values)
+            ss = f"{'+' if merged.sign > 0 else '-'}"
+            pname = merged.name.split('>')[0]
+        return f'{merged}' #f'{ss}{pname}: {wstr(merged.weight, precision=self.precision)}'
 
