@@ -27,7 +27,7 @@ def main():
     parser.add_argument('--use-common', action=BooleanOptionalAction, default=True, help='Load default values from common.yaml before individual model files')
     parser.add_argument('-s', '--simulate', action=BooleanOptionalAction, default=True, help='Run simulation')
     parser.add_argument('-l', '--log', default=None, type=str, help='Log file')
-    parser.add_argument('--loglevel', choices=['debug', 'info', 'warning', 'error'], help='Default is info if not sampling, warning if sampling', default='info')
+    parser.add_argument('--loglevel', choices=['debug', 'info', 'warning', 'error'], help='Default is info if not sampling, warning if sampling')
     parser.add_argument('--preserve-log', action='store_true', help='Preserve existing log file')
     parser.add_argument('-d', '--diagram', type=str, help="Create a Mermaid diagram of the gate network on the named file with default extension '.mmd'")
     parser.add_argument('--no-diagram', action='store_true', default=SUPPRESS, help='Do not create a diagram')
