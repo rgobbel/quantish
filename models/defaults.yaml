@@ -3,10 +3,10 @@
 
 symbolic: false             # symbolic or numerical processing. Symbolic uses exact values when possible.
 
-merge:                      # whether or not to merge measurement results before processing
+merge:            # whether or not to merge measurement results before processing
    before_measure: false    # merge on the way in
    before_forwarding: false # merge on the way out
-   combine_signs: true      # combine particles of opposite signs
+   combine_signs: false      # combine particles of opposite signs
    add_with_signs: false     # multiply by sign when adding particles
    combine_names: true
 
@@ -14,10 +14,15 @@ normalize_weights:          # whether or not to normalize weights so that their 
    input: false             # normalize values of input particles before measurement
    output: false            # normalize values of output particles before returning from measurement
 
-probability_threshold:      # threshold values determine whether or not particles are considered to exist
-   control: 0               # controls whether or not a superposed control particle is "present"
-   forwarding: 0            # particles whose probabilities are less than this are dropped
-   presence: 0              # particles whose probabilities are less than this are not added to sinks
+always_forward:
+   control_weights: false
+   switch_weights: false
+swap_if_selected: false
+
+#probability_threshold:      # threshold values determine whether or not particles are considered to exist
+#   selector: -3
+#   swap: -3               # controls whether or not a superposed control particle is "present"
+#   forwarding: -3            # particles whose probabilities are less than this are dropped. zero means always forward.
 
 string_precision: 2         # float precision to use when printing weight values. Does not affect computation
 
