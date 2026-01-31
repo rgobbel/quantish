@@ -1,0 +1,222 @@
+{
+    "bridge": {
+        "name": "Homebridge",
+        "username": "AA:BB:CC:DD:EE:FF",
+        "manufacturer": "homebridge.io",
+        "model": "homebridge",
+        "port": 9100,
+        "pin": "123-45-678"
+    },
+    "description": "HomeKit Bridge",
+    "ports": {
+        "start": 9101,
+        "end": 9150,
+        "comment": "In this section set the port for Homebridge accessories."
+    },
+    "accessories": [],
+    "platforms": [
+        {
+            "platform": "DenonTv",
+            "devices": [
+                {
+                    "name": "AV Main Zone",
+                    "host": "192.168.1.5",
+                    "port": 8080,
+                    "generation": 1,
+                    "zoneControl": 0,
+                    "inputs": {
+                        "getFromDevice": false,
+                        "getFavoritesFromDevice": false,
+                        "getQuickSmartSelectFromDevice": false,
+                        "displayOrder": 0,
+                        "data": [
+                            {
+                                "name": "Xbox One",
+                                "reference": "GAME"
+                            },
+                            {
+                                "name": "Television",
+                                "reference": "TV"
+                            }
+                        ]
+                    },
+                    "buttons": [
+                        {
+                            "name": "MASTER POWER ON",
+                            "reference": "0PWON",
+                            "displayType": 0,
+                            "namePrefix": false
+                        },
+                        {
+                            "name": "ZM POWER ON",
+                            "reference": "0ZMON",
+                            "displayType": 0,
+                            "namePrefix": false
+                        }
+                    ],
+                    "sensors": [
+                        {
+                            "displayType": 0,
+                            "mode": 0,
+                            "name": "",
+                            "reference": "",
+                            "pulse": false,
+                            "namePrefix": false,
+                            "level": 0
+                        }
+                    ],
+                    "power": {
+                        "zone": 0
+                    },
+                    "volume": {
+                        "displayType": 0,
+                        "zone": 0,
+                        "name": "Volume",
+                        "namePrefix": false,
+                        "max": 0
+                    },
+                    "infoButtonCommand": "MNINF",
+                    "refreshInterval": 5,
+                    "log": {
+                        "deviceInfo": true,
+                        "success": true,
+                        "info": false,
+                        "warn": true,
+                        "error": true,
+                        "debug": false
+                    },
+                    "restFul": {
+                        "enable": false,
+                        "port": 3000
+                    },
+                    "mqtt": {
+                        "enable": false,
+                        "host": "",
+                        "port": 1883,
+                        "clientId": "",
+                        "prefix": "",
+                        "auth": {
+                            "enable": false,
+                            "user": "",
+                            "passwd": ""
+                        }
+                    }
+                },
+                {
+                    "name": "AV Zone 1",
+                    "host": "192.168.1.5",
+                    "port": 8080,
+                    "generation": 1,
+                    "zoneControl": 1,
+                    "inputs": {
+                        "getFromDevice": false,
+                        "getFavoritesFromDevice": false,
+                        "getQuickSmartSelectFromDevice": false,
+                        "displayOrder": 0,
+                        "data": [
+                            {
+                                "name": "Xbox One",
+                                "reference": "GAME"
+                            },
+                            {
+                                "name": "Television",
+                                "reference": "TV"
+                            }
+                        ]
+                    },
+                    "buttonsZ1": [
+                        {
+                            "name": "Z2 POWER ON",
+                            "reference": "1ON",
+                            "displayType": 0
+                        }
+                    ],
+                    "sensors": [
+                        {
+                            "displayType": 0,
+                            "mode": 0,
+                            "name": "",
+                            "reference": "",
+                            "pulse": false,
+                            "namePrefix": false,
+                            "level": 0
+                        }
+                    ],
+                    "power": {
+                        "zone": 0
+                    },
+                    "volume": {
+                        "displayType": 0,
+                        "zone": 0,
+                        "name": "Volume",
+                        "namePrefix": false,
+                        "max": 0
+                    },
+                    "infoButtonCommand": "MNINF",
+                    "refreshInterval": 5,
+                    "log": {
+                        "deviceInfo": true,
+                        "success": true,
+                        "info": false,
+                        "warn": true,
+                        "error": true,
+                        "debug": false
+                    },
+                    "restFul": {
+                        "enable": false,
+                        "port": 3001
+                    },
+                    "mqtt": {
+                        "enable": false,
+                        "host": "",
+                        "port": 1883,
+                        "clientId": "",
+                        "prefix": "",
+                        "auth": {
+                            "enable": false,
+                            "user": "",
+                            "passwd": ""
+                        }
+                    }
+                },
+                {
+                    "name": "AV Surrounds",
+                    "host": "192.168.1.5",
+                    "port": 8080,
+                    "generation": 1,
+                    "zoneControl": 3,
+                    "surrounds": {
+                        "displayOrder": 0,
+                        "data": [
+                            {
+                                "name": "Stereo",
+                                "reference": "STEREO"
+                            }
+                        ]
+                    },
+                    "sensors": [
+                        {
+                            "displayType": 0,
+                            "mode": 0,
+                            "name": "",
+                            "referenceSurround": "",
+                            "pulse": false,
+                            "namePrefix": false,
+                            "level": 0
+                        }
+                    ],
+                    "infoButtonCommand": "MNINF",
+                    "refreshInterval": 5,
+                    "log": {
+                        "deviceInfo": true,
+                        "success": true,
+                        "info": false,
+                        "warn": true,
+                        "error": true,
+                        "debug": false
+                    }
+                }
+            ]
+        }
+    ]
+}

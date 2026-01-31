@@ -56,9 +56,10 @@ class TestCPair(unittest.TestCase):
                 return False
         return True
 
-    @unittest.skip
+    #@unittest.skip
     def test_cpair_methods(self):
         print('test_cpair_methods:\n')
+        methods = ('cpair', 'cpairx')
         # methods = ('cpair', 'cpair_alt', 'cpair0', 'cpair1', 'cpair2', 'cpair3')
         for mode in Modes:
             CalcMode.mode = mode
@@ -67,11 +68,11 @@ class TestCPair(unittest.TestCase):
             self.assertAlmostEqual(sum(canon_quadm), -1)
             self.assertAlmostEqual(sum(canon_quadp_t), 1)
             self.assertAlmostEqual(sum(canon_quadm_t), -1)
-            # with self.subTest(mode=mode):
-                # for method_str in methods:
-                #     with self.subTest(method=method_str):
-                #         method: Callable = getattr(g, method_str)
-            # method: Callable = getattr(g, method_str)
+            with self.subTest(mode=mode):
+                for method_str in methods:
+                    with self.subTest(method=method_str):
+                        method: Callable = getattr(g, method_str)
+            method: Callable = getattr(g, method_str)
             for twist in (False, True):
                 for sign in (1, -1):
                     with self.subTest(sign=sign):
@@ -102,7 +103,18 @@ class TestCPair(unittest.TestCase):
     #             print(f'cpair{ss} ({mode}) = {result}')
     #             self.assertTrue(self.check_quads(result, canon), f'cpair{ss} ({mode}) failed')
     #     print()
-    #
+
+    # @unittest.skip
+    # def test_cpairx(self):
+    #     for mode in Modes:
+    #         CalcMode.mode = mode
+    #         one, m_one, angle, twist, g, canon_quadp, canon_quadm = self.setup()
+    #         for ss, v, canon in zip(('+', '-'), (one, m_one), (canon_quadp, canon_quadm)):
+    #             result = g.cpairx(v, angle)
+    #             print(f'cpair_alt{ss} ({mode}) = {result}')
+    #             self.assertTrue(self.check_quads(result, canon), f'cpair_alt{ss} ({mode}) failed')
+    #     print()
+
     # @unittest.skip
     # def test_cpair_alt(self):
     #     for mode in Modes:
@@ -210,7 +222,7 @@ class TestMeasure(unittest.TestCase):
     #     CalcMode.mode = 'Float'
     #     config_dir = Path(Path.cwd(), 'configs')
     #     config_path = Path(config_dir, 'test_1gate').with_suffix('.yaml')
-    #     with open(Path(config_dir, 'common.yaml'), 'r') as f:
+    #     with open(Path(config_dir, 'defaults.yaml'), 'r') as f:
     #         config = yaml.safe_load(f)
     #     with open(config_path, 'r') as f:
     #         config.update(yaml.safe_load(f))
@@ -259,9 +271,9 @@ class TestMeasure(unittest.TestCase):
     #         # print(f'{result30=}, {result45=}')
     #         for gate in (g1, g2):
     #             # gate.reset()
-    #             gate.set_input()
+    #             gate.set_inputs()
     #             gate.set_weights()
-    #             gate.set_output()
+    #             gate.set_outputs()
     #             if gate.output_wire == 'upper':
     #                 histogram[f'{gate.name}.upper'] += 1
     #             else:
@@ -280,7 +292,7 @@ class TestMeasure(unittest.TestCase):
         CalcMode.mode = 'Float'
         config_dir = Path(Path.cwd(), 'configs')
         config_path = Path(config_dir, 'test_discrepancy').with_suffix('.yaml')
-        with open(Path(config_dir, 'common.yaml'), 'r') as f:
+        with open(Path(config_dir, 'defaults.yaml'), 'r') as f:
             config = yaml.safe_load(f)
         with open(config_path, 'r') as f:
             config.update(yaml.safe_load(f))
@@ -359,9 +371,9 @@ class TestMeasure(unittest.TestCase):
                 stage.run()
             for gate in (g1, g2):
                 # gate.reset()
-                # gate.set_input()
+                # gate.set_inputs()
                 # gate.set_weights()
-                # gate.set_output()
+                # gate.set_outputs()
                 if gate.output_wire == 'upper':
                     histogram[f'{gate.name}.upper'] += 1
                 else:
@@ -381,7 +393,7 @@ class TestMeasure(unittest.TestCase):
         CalcMode.mode = 'Float'
         config_dir = Path(Path.cwd(), 'configs')
         config_path = Path(config_dir, 'test_1gate').with_suffix('.yaml')
-        with open(Path(config_dir, 'common.yaml'), 'r') as f:
+        with open(Path(config_dir, 'defaults.yaml'), 'r') as f:
             config = yaml.safe_load(f)
         with open(config_path, 'r') as f:
             config.update(yaml.safe_load(f))
@@ -432,21 +444,21 @@ class TestMeasure(unittest.TestCase):
                 sim.sources['g1.control'] = 'control1'
                 if 'control0' in sim.links.keys():
                     del sim.links['control0']
-            g1.set_input()
+            g1.init_inputs()
             # print(f'{g1.inputs=}')
             g1.set_weights()
             g1.output_wire = None
             # print(f'{g1.weights=}')
-            g1.set_output()
+            g1.set_outputs()
             ctrl_in = g1.input['control']
             upper_in = g1.input['upper']
             lower_in = g1.input['lower']
             ctrl_w = g1.port_weights('control')
             upper_w = g1.port_weights('upper')
             lower_w = g1.port_weights('lower')
-            ctrl_o = g1.port_output('control')
-            upper_r = g1.port_result('upper')
-            lower_r = g1.port_result('lower')
+            ctrl_o = g1.port_outputs('control')
+            upper_r = g1.port_results('upper')
+            lower_r = g1.port_results('lower')
             if g1.swapping:
                 if lower_r:
                     up_lo += 1
@@ -459,14 +471,14 @@ class TestMeasure(unittest.TestCase):
                     up_count += 1
                 else:
                     lo_lo += 1
-            if g1.port_result('upper'):
+            if g1.port_results('upper'):
                 self.assertTrue(not lower_r)
                 r_up = Particle.merge(upper_r)
-                self.assertTrue(r_up.equiv(Particle.merge(g1.port_result('upper'))))
+                self.assertTrue(r_up.equiv(Particle.merge(g1.port_results('upper'))))
             else:
                 self.assertTrue(not upper_r)
                 r_lo = Particle.merge(lower_r)
-                self.assertTrue(r_lo.equiv(Particle.merge(g1.port_result('lower'))))
+                self.assertTrue(r_lo.equiv(Particle.merge(g1.port_results('lower'))))
             # print(f'{g1.outputs=}')
             # print(f'INPUTS: {g1.swapping=}, {ctrl_in=}, {upper_in=}, {lower_in=}')
             # print(f'WEIGHTS: {g1.swapping=}, {ctrl_w=}, {upper_w=}, {lower_w=}')

@@ -1,0 +1,162 @@
+---
+config:
+   layout: elk
+   elk:
+      forceNodeModelOrder: true
+      nodePlacementStrategy: LINEAR_SEGMENTS
+      considerModelOrder: NODES_AND_EDGES
+title:
+ Quantish EPR Experiment after run at Wed Nov 19 11:09:05 2025 not normalizing inputs, not normalizing outputs, not merging before measuring, not combining signs, FLOATING POINT
+---
+flowchart LR
+  c1(["+c1(+0.00+0.00j∆0º|0.00)"])
+  c2(["+c2(+0.00+0.00j∆0º|0.00)"])
+  p1(["+p1(+1.00+0.00j∆0º|1.00)"])
+  p2(["+p2(-1.00+0.00j∆180º|1.00)"])
+  p3(["+p3(+1.00+0.00j∆0º|1.00)"])
+  g1.control_sink(["CONTROL: None"])
+  g2.control_sink(["CONTROL: None"])
+  g4.upper_sink(["UPPER: +p3 +1.00+0.00j∆0º|1.00"])
+  g4.lower_sink(["LOWER: None"])
+  g5.control_sink(["CONTROL: None"])
+  g6.control_sink(["CONTROL: None"])
+  g7.control_sink(["CONTROL: None"])
+  g7.upper_sink(["UPPER: +p1 +0.77+0.00j∆0º|0.59, -p1 +0.00+0.64j∆90º|0.41"])
+  g7.lower_sink(["LOWER: +p1 -0.77+0.00j∆180º|0.59, -p1 +0.00-0.64j∆-90º|0.41"])
+  g1.upper_in -.-> g1.upper_out
+  g1.upper_in -.-> g1.lower_out
+  g1.lower_in -.-> g1.lower_out
+  g1.lower_in -.-> g1.upper_out
+  g2.upper_in -.-> g2.upper_out
+  g2.upper_in -.-> g2.lower_out
+  g2.lower_in -.-> g2.lower_out
+  g2.lower_in -.-> g2.upper_out
+  g3.upper_in -.-> g3.upper_out
+  g3.upper_in -.-> g3.lower_out
+  g3.lower_in -.-> g3.lower_out
+  g3.lower_in -.-> g3.upper_out
+  g4.upper_in -.-> g4.upper_out
+  g4.upper_in -.-> g4.lower_out
+  g4.lower_in -.-> g4.lower_out
+  g4.lower_in -.-> g4.upper_out
+  g5.upper_in -.-> g5.upper_out
+  g5.upper_in -.-> g5.lower_out
+  g5.lower_in -.-> g5.lower_out
+  g5.lower_in -.-> g5.upper_out
+  g6.upper_in -.-> g6.upper_out
+  g6.upper_in -.-> g6.lower_out
+  g6.lower_in -.-> g6.lower_out
+  g6.lower_in -.-> g6.upper_out
+  g7.upper_in -.-> g7.upper_out
+  g7.upper_in -.-> g7.lower_out
+  g7.lower_in -.-> g7.lower_out
+  g7.lower_in -.-> g7.upper_out
+  g1.control ---> g1.control_sink
+  p1 ---> g1.upper_in
+  g1.upper_out ---> g3.control
+  g1.lower_out ---> g5.lower_in
+  g2.control ---> g2.control_sink
+  p2 ---> g2.upper_in
+  g2.upper_out ---> g4.control
+  g2.lower_out ---> g6.lower_in
+  g3.control ---> g5.upper_in
+  p3 ---> g3.upper_in
+  g3.upper_out ---> g4.upper_in
+  g3.lower_out ---> g4.lower_in
+  g4.control ---> g6.upper_in
+  g4.upper_out ---> g4.upper_sink
+  g4.lower_out ---> g4.lower_sink
+  g5.control ---> g5.control_sink
+  g5.upper_out ---> g7.upper_in
+  g5.lower_out ---> g7.lower_in
+  g6.control ---> g6.control_sink
+  g6.upper_out ---> g7.upper_in
+  g6.lower_out ---> g7.lower_in
+  g7.control ---> g7.control_sink
+  g7.upper_out ---> g7.upper_sink
+  g7.lower_out ---> g7.lower_sink
+  subgraph prepare
+    subgraph g1["g1: 30º"]
+      g1.control["CONTROL: None"]
+      subgraph g1.inputs[inputs]
+        g1.upper_in["UPPER: +p1: +1.00+0.00j∆0º"]
+        g1.lower_in["None"]
+      end
+      subgraph g1.outputs[outputs]
+        g1.upper_out["UPPER: +p1 +0.75+0.00j∆0º|0.56, -p1 +0.00+0.43j∆90º|0.19"]
+        g1.lower_out["LOWER: +p1 +0.25+0.00j∆0º|0.06, -p1 +0.00-0.43j∆-90º|0.19"]
+      end
+    end
+    subgraph g2["g2: 120º"]
+      g2.control["CONTROL: None"]
+      subgraph g2.inputs[inputs]
+        g2.upper_in["UPPER: +p2: -1.00+0.00j∆180º"]
+        g2.lower_in["None"]
+      end
+      subgraph g2.outputs[outputs]
+        g2.upper_out["UPPER: +p2 -0.25+0.00j∆180º|0.06, -p2 +0.00+0.43j∆90º|0.19"]
+        g2.lower_out["LOWER: +p2 -0.75+0.00j∆180º|0.56, -p2 +0.00-0.43j∆-90º|0.19"]
+      end
+    end
+  end
+  subgraph couple
+    subgraph g3["g3: 0º"]
+      g3.control["CONTROL: +p1 +0.75+0.00j∆0º|0.56, -p1 +0.00+0.43j∆90º|0.19"]
+      subgraph g3.inputs[inputs]
+        g3.upper_in["UPPER: +p3: +1.00+0.00j∆0º"]
+        g3.lower_in["None"]
+      end
+      subgraph g3.outputs[outputs]
+        g3.upper_out["UPPER: None"]
+        g3.lower_out["LOWER: +p3 +1.00+0.00j∆0º|1.00"]
+      end
+    end
+    subgraph g4["g4: 0º"]
+      g4.control["CONTROL: +p2 -0.25+0.00j∆180º|0.06, -p2 +0.00+0.43j∆90º|0.19"]
+      subgraph g4.inputs[inputs]
+        g4.upper_in["None"]
+        g4.lower_in["LOWER: +p3: +1.00+0.00j∆0º"]
+      end
+      subgraph g4.outputs[outputs]
+        g4.upper_out["UPPER: +p3 +1.00+0.00j∆0º|1.00"]
+        g4.lower_out["LOWER: None"]
+      end
+    end
+  end
+  subgraph split
+    subgraph g5["g5: 20º"]
+      g5.control["CONTROL: None"]
+      subgraph g5.inputs[inputs]
+        g5.upper_in["UPPER: +p1: +0.75+0.43j∆30º"]
+        g5.lower_in["LOWER: -p1: +0.25-0.43j∆-60º"]
+      end
+      subgraph g5.outputs[outputs]
+        g5.upper_out["UPPER: +p1 +0.97+0.00j∆0º|0.94, -p1 +0.00-0.17j∆-90º|0.03"]
+        g5.lower_out["LOWER: +p1 +0.03+0.00j∆0º|0.00, -p1 +0.00+0.17j∆90º|0.03"]
+      end
+    end
+    subgraph g6["g6: 20º"]
+      g6.control["CONTROL: None"]
+      subgraph g6.inputs[inputs]
+        g6.upper_in["UPPER: -p2: -0.25+0.43j∆120º"]
+        g6.lower_in["LOWER: +p2: -0.75-0.43j∆-150º"]
+      end
+      subgraph g6.outputs[outputs]
+        g6.upper_out["UPPER: +p2 -0.03+0.00j∆180º|0.00, -p2 +0.00-0.17j∆-90º|0.03"]
+        g6.lower_out["LOWER: +p2 -0.97+0.00j∆180º|0.94, -p2 +0.00+0.17j∆90º|0.03"]
+      end
+    end
+  end
+  subgraph decompose
+    subgraph g7["g7: 10º"]
+      g7.control["CONTROL: None"]
+      subgraph g7.inputs[inputs]
+        g7.upper_in["UPPER: +p1: +0.94-0.34j∆-20º"]
+        g7.lower_in["LOWER: +p1: -0.94+0.34j∆160º"]
+      end
+      subgraph g7.outputs[outputs]
+        g7.upper_out["UPPER: +p1 +0.77+0.00j∆0º|0.59, -p1 +0.00+0.64j∆90º|0.41"]
+        g7.lower_out["LOWER: +p1 -0.77+0.00j∆180º|0.59, -p1 +0.00-0.64j∆-90º|0.41"]
+      end
+    end
+  end

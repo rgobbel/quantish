@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.16.0"
+__generated_with = "0.18.4"
 app = marimo.App(width="medium")
 
 with app.setup(hide_code=True):
@@ -17,6 +17,21 @@ with app.setup(hide_code=True):
 
 
 @app.cell(hide_code=True)
+def _(comp_select, sign_check, theta_slide, w_slide):
+    w = w_slide.value + 0j
+    theta = radians(theta_slide.value)
+    sign = 1 if sign_check.value else -1
+    selected_compoments = comp_select.value
+    return selected_compoments, sign, theta, w
+
+
+@app.cell(hide_code=True)
+def _(measure, sign, theta, w):
+    measurement = np.array(measure(w, theta, sign))
+    return (measurement,)
+
+
+@app.cell(hide_code=True)
 def _(comp_i):
     w_slide = mo.ui.slider(0, 1, step=0.1, value=1, debounce=True, label=f'$w$')
     theta_slide = mo.ui.slider(0, 360, step=5, value=30, debounce=False, label=rf'${{\theta}}$')
@@ -27,32 +42,12 @@ def _(comp_i):
 
 
 @app.cell
-def _(comp_select, sign_check, theta_slide, w_slide):
-    w = w_slide.value + 0j
-    theta = radians(theta_slide.value)
-    sign = 1 if sign_check.value else -1
-    selected_compoments = comp_select.value
-    return selected_compoments, sign, theta, w
-
-
-@app.cell
-def _(measure, sign, theta, w):
-    measurement = np.array(measure(w, theta, sign))
-    return (measurement,)
-
-
-@app.cell
-def _():
-    return
-
-
-@app.cell
 def _(measurement, plot_weights, selected_compoments):
     plot_weights(data=measurement, selections=tuple(selected_compoments))
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _():
     def cpair(w, theta):
         "basic weight rotation with trig scaling"

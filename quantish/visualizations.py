@@ -1,5 +1,7 @@
 from quantish.simulation import Simulation
 from quantish.util import SEP, parse_position
+from quantish.particle import Particle
+import quantish.qnumber as qn
 import python_mermaid.diagram as pmd
 import python_mermaid.node as pm
 from collections import namedtuple
@@ -42,7 +44,7 @@ gate_fields = {'upper': DiagramFields(field='upper', label='UPPER'),
 #         title='Quantish Weights')
 #     return final_chart
 
-def make_gnode(sim, gname, inout, wire, mermaid_nodes):
+def make_gnode(sim, gname, inout, wire, mermaid_nodes, show_ratios=False, ratios=None):
     sink_nodes = []
     def make1(node_id, content, shape='normal', bold=False):
         if bold: # HACK!!
@@ -60,10 +62,10 @@ def make_gnode(sim, gname, inout, wire, mermaid_nodes):
     graph_node_id = f'{position}{sep}{inout}'
     gcontent = f'{gate_fields[wire].label}'
     if inout == 'in':
-        parts = position.split('.')
+        parts = position.split(SEP)
         gname, gwire = parts
-        if sim.gates[gname].input[gwire]:
-            pos_str = sim.pos_value_str(position, 'input')
+        if sim.gates[gname].inputs[gwire]:
+            pos_str = sim.pos_value_str(position, 'inputs')
             # pos_str = str(sim.gates[gname].input[gwire])
             cs = f'{pos_str}'
             make1(graph_node_id, f'{gcontent}:\n{cs}')
@@ -71,18 +73,23 @@ def make_gnode(sim, gname, inout, wire, mermaid_nodes):
             make1(graph_node_id, f'{gcontent}: None')
     elif inout == 'out':
         out_pos = f'{gname}{SEP}{wire}'
-        gname, gwire = out_pos.split('.')
+        gname, gwire = out_pos.split(SEP)
         gate = sim.gates[gname]
         selected = gwire == gate.output_wire
-        out_value_str = sim.pos_value_str(out_pos, 'output')
+        out_value_str = sim.pos_value_str(out_pos, 'weights')
         # pos_sink = sim.sinks.get(out_pos)
         if out_value_str is None:
             cs = f'None'
         else:
             cs = f'{out_value_str}'
         if out_pos not in sim.links.keys():
+            if show_ratios:
+                ratio = ratios[gwire]
+                ratio_str = f' ({ratio:.0%})'
+            else:
+                ratio_str = ''
             sink_node_id = f'{position}_sink'
-            sink_nodes += [make1(sink_node_id, f'{gcontent}:\n{cs}', shape='stadium-shape')]
+            sink_nodes += [make1(sink_node_id, f'{gcontent}:\n{cs}{ratio_str}', shape='stadium-shape')]
         make1(graph_node_id, f'{gcontent}:\n{cs}', bold=selected)
     elif inout == '':
         out_value_str = sim.pos_value_str(position, 'weights')
@@ -93,29 +100,70 @@ def make_gnode(sim, gname, inout, wire, mermaid_nodes):
         if position not in sim.links.keys():
             sink_node_id = f'{position}_sink'
             sink_nodes += [make1(sink_node_id, f'{gcontent}:\n{cs}', shape='stadium-shape')]
-        make1(graph_node_id, f'{gcontent}: {cs}')
+        make1(graph_node_id, f'{gcontent}: {cs}', bold=sim.pos_value_str(position, 'results'))
     return sink_nodes
 
 def gnodes(sim, gname, mermaid_nodes):
+    gate = sim.gates[gname]
+    upper = f'{gname}{SEP}upper'
+    lower = f'{gname}{SEP}lower'
+    if upper not in sim.links.keys() and lower not in sim.links.keys():
+        show_ratio = True
+        gate = sim.gates[gname]
+        upper_probability = Particle.merge(gate.weights['upper']).probability
+        lower_probability = Particle.merge(gate.weights['lower']).probability
+        total_probability = upper_probability + lower_probability
+        if total_probability == 0:
+            ratios = {'upper': 0, 'lower': 0}
+        else:
+            ratios = {'upper': upper_probability / total_probability, 'lower': lower_probability / total_probability}
+    else:
+        show_ratio = False
+        ratios = None
     sink_nodes = []
     sink_nodes += make_gnode(sim, gname, '', 'control', mermaid_nodes)
     for switch_set in ('upper', 'lower'):
         for inout in ('in', 'out'):
-            sink_nodes += make_gnode(sim, gname, inout, switch_set, mermaid_nodes)
+            sink_nodes += make_gnode(sim, gname, inout, switch_set, mermaid_nodes, show_ratio, ratios)
     return sink_nodes
 
 def diagram(sim:Simulation, output_file=None, has_run=False):
     mermaid_nodes = {}
-    norm_in = f'{"not " if not sim.normalize_input else ""}normalizing input'
-    norm_out = f'{"not " if not sim.normalize_output else ""}normalizing output'
-    merge = f'{"not " if not sim.merge_before_measure else ""}merging before measuring'
-    combine = f'{"not " if not sim.combine_signs else ""}combining signs'
-    parms = f'{norm_in}, {norm_out}, {merge}, {combine}'
-    mode = f'{"SYMBOLIC" if sim.symbolic else "FLOATING POINT"}'
-    title = f"{sim.title} {'after' if has_run else 'before'} run at {time.asctime()} {parms}, {mode}"
+    # norm_in = f'{"not " if not sim.normalize_input else ""}normalizing input'
+    # norm_out = f'{"not " if not sim.normalize_output else ""}normalizing output'
+    # merge = f'{"not " if not sim.merge_before_measure else ""}merging before measuring'
+    # combine = f'{"not " if not sim.combine_signs else ""}combining signs'
+    # always_forward_controls = f'{"always forward control weights, " if sim.always_forward_control_weights else ""}'
+    # always_forward_switches = f'{"always forward switch weights, " if sim.always_forward_switch_weights else ""}'
+    # parms = f'{always_forward_controls}{always_forward_switches}{norm_in}, {norm_out}, {merge}, {combine}'
+    # mode = f'{"SYMBOLIC" if sim.symbolic else "FLOATING POINT"}'
+    # title = f"{sim.title} {'after' if has_run else 'before'} run at {time.asctime()} {parms}, {mode}"
+    if has_run:
+        title = f'{sim.title} after run at {time.asctime()}'
+    else:
+        title = f'{sim.title}, {time.asctime()}'
     diag = pmd.Diagram(title=title, orientation='left to right')
     phase_graphs = {}
     mermaid_links = []
+    if has_run:
+        legend = pmd.Node(id='Legend')
+        legend.content = f"""**Parameters**
+    **numerics**: {qn.CalcMode.mode}
+    **combine**:
+    &nbsp;&nbsp;&nbsp;&nbsp;**signs**: {f"{sim.combine_signs}".lower()}
+    &nbsp;&nbsp;&nbsp;&nbsp;**names**: {f"{sim.combine_names}".lower()}
+    **normalize**
+    &nbsp;&nbsp;&nbsp;&nbsp;**input**: {f"{sim.normalize_input}".lower()}
+    &nbsp;&nbsp;&nbsp;&nbsp;**output**: {f"{sim.normalize_output}".lower()}
+    **merge before**
+    &nbsp;&nbsp;&nbsp;&nbsp;**measure**: {f"{sim.merge_before_measure}".lower()}
+    &nbsp;&nbsp;&nbsp;&nbsp;**forward**: {f"{sim.merge_before_forward}".lower()}
+    **always forward**
+    &nbsp;&nbsp;&nbsp;&nbsp;**control weights**: {f"{sim.always_forward_control_weights}".lower()}
+    &nbsp;&nbsp;&nbsp;&nbsp;**switch weights**: {f"{sim.always_forward_switch_weights}".lower()}
+    **add with signs**: {f"{sim.add_with_signs}".lower()}
+    """
+        diag.add_nodes([legend])
     for particle_name, particle in sim.particles.items():
         pcontent = particle.ps(short=True)
         pname = particle_name.split('<')[0]
@@ -129,12 +177,22 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
     #     dgnode.content = dgcontent
     #     mermaid_nodes[delay_name] = dgnode
     for stage_name, stage in sim.diagram_groups.items():
-        pg = diag.add_subgraph(stage_name)
-        phase_graphs[stage_name] = pg
+        stage_id = f'{stage_name}_stage'
+        pg = diag.add_subgraph(stage_id)
+        pg.header = f'subgraph {stage_id}["{stage_name}"]'
+        phase_graphs[stage_id] = pg
         for gname in stage:
             gate = sim.gates[gname]
             gg = pg.add_subgraph(gname)
-            gg.header = f'subgraph {gname}["{gname}: {float(gate.theta.degrees):.0f}º, selector={gate.selector:.2f}"]'
+            if gate.last_swap_threshold is None:
+                swapstr = 'never used'
+            else:
+                swapstr = f'{gate.last_swap_threshold:.2f}'
+            if callable(gate.forwarding_threshold):
+                fwdstr = f'(call){gate.last_forwarding_threshold:.2f}'
+            else:
+                fwdstr = f'{gate.forwarding_threshold:.2f}'
+            gg.header = f'subgraph {gname}["{gname}: {float(gate.theta.degrees):.0f}º, thresholds: swap={swapstr}, fwd={fwdstr}"]'
             ggi = gg.add_subgraph(f'{gname}.input')
             ggi.header = f'subgraph {gname}.input[input]'
             ggo = gg.add_subgraph(f'{gname}.output')
@@ -202,7 +260,7 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
                     mermaid_links.append(pmd.Link(switch_node, dest_node))
 
     diag.add_links(mermaid_links)
-    diag.graph.header = 'flowchart LR'
+    diag.graph.header = 'flowchart LR\nstyle legend text-align:left'
     diag.pretty_print = True
     if output_file is not None:
         graph_config = """config:
@@ -210,7 +268,7 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
    elk:
       forceNodeModelOrder: true
       nodePlacementStrategy: LINEAR_SEGMENTS
-      considerModelOrder: NODES_AND_EDGES
+      considerModelOrder: PREFER_NODES
 title:
 """
         styled_diag = re.sub("title:", graph_config, str(diag))

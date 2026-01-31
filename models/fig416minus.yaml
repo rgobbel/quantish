@@ -20,7 +20,7 @@ measure_discrepancy: true
 #   #             -1: random constant
 #   #             -2: random phase between 0 and pi/2
 #   #             -3: random, calculated every time
-#   control: 0
+#   swap: 0
 merge:                      # whether or not to merge measurement results before processing
    before_measure: false    # merge on the way in
    before_forwarding: false # merge on the way out
@@ -31,7 +31,10 @@ merge:                      # whether or not to merge measurement results before
 normalize_weights:          # whether or not to normalize weights so that their sum is one
    input: false             # normalize values of input particles before measurement
    output: false            # normalize values of output particles before returning from measurement
-always_forward_weights: true
+
+always_forward:
+   switch_weights: true
+   control_weights: true
 
 variables:
    zero: &zero "0+0j"

@@ -8,14 +8,14 @@ normalize_weights:
    output: false
    input: true
 probability_threshold:
-   control: 0
+   swap: 0
    forwarding: 0
    presence: 0
 string_precision: 2
 
-sample: true
+sample: false
 n_samples: 10000
-loglevel: warning
+#loglevel: warning
 
 variables:
    zero: &zero  "0j"
@@ -30,10 +30,13 @@ variables:
    q90: &q90 "rad(90)"
    q120: &q120 "rad(120)"
 
-run_stages:
+run_stages: &rs
    stage1: [g1]
+
+diagram_groups: *rs
+
 particles:
-   control:
+   swap:
       sign: 1
       weight: *zero
    p1:

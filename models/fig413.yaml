@@ -1,18 +1,24 @@
 title: Figure 4.13
-symbolic: true
-merge:
-   before_measure: false
-   before_forwarding: false
-   combine_signs: true
-normalize_weights:
-   output: false
-   input: false
-probability_threshold:
-   control: 0
-   forwarding: 0
-   presence: 0
-winner_take_all: true
-string_precision: 2
+symbolic: false
+
+#merge:
+#   before_measure: false
+#   before_forwarding: false
+#   combine_signs: true
+#normalize_weights:
+#   output: false
+#   input: false
+#probability_threshold:
+#   swap: 0
+#   forwarding: 0
+#   presence: 0
+always_forward:
+   control_weights: false
+   switch_weights: false
+#string_precision: 2
+
+sample: true
+n_samples: 1000
 
 variables:
    zero: &zero '0j'
@@ -21,31 +27,43 @@ variables:
    q1: &q1 'rad(20)'
    q2: &q2 'rad(30)'
    q40: &q40 'rad(40)'
+   q15: &q15 'rad(15)'
+   q45: &q45 'rad(45)'
    q30: &q30 'rad(30)'
+   q60: &q60 'rad(60)'
+   q10: &q10 'rad(10)'
+   q120: &q120 'rad(120)'
 
-phases:
+run_stages:
    prepare: [g0]
-   split: [g1, g2]
+   split: [g1]
+   unsplit: [g2]
    test: [g3]
+
 particles:
    p1:
       sign: 1
       weight: *one
+
 gates:
    g0:
-      angle: *q40
+      angle: *q15
    g1:
-      angle: *q30
+      angle: *q60
    g2:
-      angle: *q30
+      angle: *q60
    g3:
-      angle: *q40
+      angle: *q15
+
 links:
    p1: g0.upper
+
    g0.control: g1.control
    g0.upper: g1.upper
+
    g1.control: g2.control
    g1.upper: g2.upper
+
    g2.control: g3.control
    g2.upper: g3.upper
    g2.lower: g3.lower

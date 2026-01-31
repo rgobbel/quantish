@@ -71,7 +71,7 @@ class Particle:
         for particle in particles:
             if result is None: result = particle
             else: result += particle
-        return result
+        return result or Particle('', 0, 1)
 
     def equiv(self, other):
         if self.weight == other.weight and self.sign == other.sign:

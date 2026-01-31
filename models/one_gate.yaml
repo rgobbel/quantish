@@ -35,27 +35,13 @@ variables:
    q4: &q4 'rad(15)'
 
 run_stages:
-   prepare: [g0]
-   split: [g1]
-   merge: [g2]
-   test: [g3]
+   run: [g0]
 
 particles:
    p1: {sign: 1, weight: *one}
 
 gates:
    g0: {angle: *q15}
-   g1: {angle: *q60}
-   g2: {angle: *q60}
-   g3: {angle: *q15}
 
 links:
    p1: g0.upper
-   g0.control: g1.control
-   g0.upper: g1.upper
-   g1.control: g2.control
-   g1.upper: g2.upper
-   g1.lower: g2.lower
-   g2.control: g3.control
-   g2.upper: g3.upper
-   g2.lower: g3.lower

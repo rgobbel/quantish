@@ -192,7 +192,7 @@ def main():
     angle_diff = G6_ANGLE-G5_ANGLE
     print(f'G5_ANGLE={angstr(G5_ANGLE, 1)}, G6_ANGLE={angstr(G6_ANGLE, 1)}, difference={angstr(angle_diff, 1)}')
     print(f'{coupled_count=}, rate={coupled_count/N_ITER:.3f}, {discrepancy_count=}, {predicted_discrepancy=:.3f}, {actual_discrepancy=:.3f}, {divergence=:.3f}')
-    print(f'{sim.selector=}, {sim.control_threshold=}, {sim.forwarding_threshold=}, {sim.presence_threshold=}')
+    print(f'{sim.selector=}, {sim.swap_threshold=}, {sim.choice_threshold=}, {sim.presence_threshold=}')
     # for k, v in histogram.items():
     #     print(f'{k}: {v}')
 

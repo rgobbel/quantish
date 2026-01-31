@@ -50,8 +50,8 @@ def enough(x, threshold):
 ZERO_THRESHOLD = 1e-15
 
 def filter_weights(particles):
-    return particles
-    # return [p for p in particles if enough(p.probability, ZERO_THRESHOLD)]
+    # return particles
+    return [p for p in particles if enough(p.probability, ZERO_THRESHOLD)]
 
 class QLogger(StreamHandler):
     def __init__(self, stream=None):

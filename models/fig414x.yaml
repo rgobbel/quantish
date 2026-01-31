@@ -1,10 +1,10 @@
 title: Figure 4.14
 symbolic: false
 
-#merge:
-#   before_measure: false
-#   before_forwarding: false
-#   combine_signs: true
+merge:
+   before_measure: false
+   before_forwarding: false
+   combine_signs: false
 #normalize_weights:
 #   output: false
 #   input: false
@@ -38,39 +38,33 @@ variables:
    q120: &q120 'rad(120)'
 
 run_stages:
-   prepare: [g0]
-   split: [g1]
-   observe: [g4]
+   prepare: [g1]
+   observe: [g3]
    unsplit: [g2]
-   test: [g3]
 
 particles:
    p1: {sign: 1, weight: *one}
    p2: {sign: 1, weight: *one}
 
-
 gates:
-   g0: {angle: 'rad(15)'}
-   g1: {angle: 'rad(60)'}
-   g2: {angle: 'rad(60)'}
-   g3: {angle: 'rad(15)'}
-   g4: {angle: 0}
+   g1: {angle: 'rad(30)'}
+   g2: {angle: 'rad(30)'}
+   g3: {angle: 'rad(0)'}
+#   d1: {angle: 0}
+#   d2: {angle: 0}
+
+#delay_gates: [d1, d2]
 
 links:
-   p1: g0.upper
-   p2: g4.upper
+   p1: g1.upper
+   p2: g3.upper
 
-   g0.control: g1.control
-   g0.upper: g1.upper
-
-#   g1.control: g2.control
-#   g1.upper: g2.upper
+#   g1.control: d1.control
+#   g1.upper: d2.control
    g1.control: g2.control
    g1.upper: g2.upper
-   g1.lower: g4.control
+   g1.lower: g3.control
 
-   g2.control: g3.control
-   g2.upper: g3.upper
-   g2.lower: g3.lower
-
-   g4.control: g2.lower
+#   d1.control: g2.control
+#   d2.control: g2.upper
+   g3.control: g2.lower

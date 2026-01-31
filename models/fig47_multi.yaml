@@ -1,4 +1,7 @@
 title: Figure 4.7
+
+symbolic: false
+
 variables:
    zero: &zero "0j"
    one: &one "1+0j"
@@ -11,7 +14,7 @@ variables:
    qx: &qx '0.64+0j'
    qy: &qy '0+0.48j'
 
-sample: true
+sample: false
 n_samples: 1000
 
 #loglevel: debug
@@ -22,16 +25,16 @@ n_samples: 1000
 
 merge:
    combine_signs: false
-   before_measure: false
+#   before_measure: true
 
 always_forward:
-   control_weights: false
-   switch_weights: false
+   control_weights: true
+   switch_weights: true
 #swap_if_selected: false
 
 run_stages: &rs
-   split: [g1]
-   unsplit: [g2]
+   split1: [g1]
+   split2: [g2]
 
 diagram_groups: *rs
 

@@ -1,0 +1,114 @@
+INFO:  QUANTISH PHYSICS SIMULATION STARTING: Figure 4.14 at Wed Jan 21 13:13:13 2026
+INFO:  FLOATING POINT MODE
+INFO:  merge option:
+INFO:     before measure=False
+INFO:     before forward=False
+INFO:  always forward:
+INFO:     switch weights=False
+INFO:     control weights=False
+INFO:  combine:
+INFO:     signs=False
+INFO:     names=True
+INFO:     add with signs=False
+INFO:  normalize:
+INFO:     before measure=False
+INFO:     before forwarding=False
+INFO:  swap if selected=False
+INFO:  
+INFO:  PARTICLE: +p1(1.00+0.00j∆0º|1.00)
+INFO:  PARTICLE: +p2(1.00+0.00j∆0º|1.00)
+INFO:  
+INFO:  self.qvars={'zero': '0j', 'one': '1+0j', 'r60': '0.5+0.87j', 'q1': 'rad(20)', 'q2': 'rad(30)', 'q15': 'rad(15)', 'q40': 'rad(40)', 'q45': 'rad(45)', 'q30': 'rad(30)', 'q60': 'rad(60)', 'q85': 'rad(85)', 'q10': 'rad(10)', 'q120': 'rad(120)'}
+INFO:  run stages=prepare: [g0(15.00º)], split: [g1(60.00º)], observe: [g4(0.00º)], unsplit: [g2(60.00º)], test: [g3(15.00º)]
+INFO:  self.gates={'g0': g0(15.00º), 'g1': g1(60.00º), 'g2': g2(60.00º), 'g3': g3(15.00º), 'g4': g4(0.00º)}
+INFO:  self.particles={'p1': +p1(1.00+0.00j∆0º|1.00), 'p2': +p2(1.00+0.00j∆0º|1.00)}
+INFO:  self.normalize_input=False, self.normalize_output=False
+INFO:  
+INFO:  Running 1000 trials
+INFO:  
+INFO:  PARTICLES:
+INFO:     +p1(1.00+0.00j∆0º|1.00)
+INFO:     +p2(1.00+0.00j∆0º|1.00)
+INFO:  GATES:
+INFO:     g0(15.00º) (threshold: swap=(call)0.00, fwd=(call)0.97)
+INFO:     g1(60.00º) (threshold: swap=(call)0.00, fwd=(call)0.97)
+INFO:     g2(60.00º) (threshold: swap=(call)0.00, fwd=(call)0.97)
+INFO:     g3(15.00º) (threshold: swap=(call)0.00, fwd=(call)0.97)
+INFO:     g4(0.00º) (threshold: swap=(call)0.00, fwd=(call)0.97)
+INFO:  FINAL OUTPUTS:
+INFO:     FREDKIN GATES:
+INFO:        g0.control : None
+INFO:        g0.upper   : +p1(0.93+0.25j∆15º|0.93)
+INFO:        g0.lower   : None
+INFO:        g1.control : None
+INFO:        g1.upper   : None
+INFO:        g1.lower   : +p1(0.59-0.34j∆-30º|0.47)
+INFO:        g2.control : None
+INFO:        g2.upper   : +p1(0.59-0.34j∆-30º|0.47)
+INFO:        g2.lower   : None
+INFO:        g3.control : None
+INFO:        g3.upper   : None
+INFO:        g3.lower   : -p1(0.13-0.47j∆-75º|0.23)
+INFO:        g4.control : +p1(0.59-0.34j∆-30º|0.47)
+INFO:        g4.upper   : None
+INFO:        g4.lower   : +p2(1.00+0.00j∆0º|1.00)
+INFO:  
+INFO:  GATE RATIOS (UPPER / LOWER)
+INFO:     WEIGHTS:
+INFO:        g0(15.00º): 93.30% / 6.70% (total = 1.000)
+INFO:        g1(60.00º): 50.00% / 50.00% (total = 0.933)
+INFO:        g2(60.00º): 100.00% / 0.00% (total = 0.467)
+INFO:        g3(15.00º): 50.00% / 50.00% (total = 0.467)
+INFO:        g4(0.00º): 0.00% / 100.00% (total = 1.000)
+INFO:  
+INFO:     OUTPUTS
+INFO:        g0(15.00º): 100.00% / 0.00% (total = 0.933)
+INFO:        g1(60.00º): 0.00% / 100.00% (total = 0.467)
+INFO:        g2(60.00º): 100.00% / 0.00% (total = 0.467)
+INFO:        g3(15.00º): 0.00% / 100.00% (total = 0.233)
+INFO:        g4(0.00º): 0.00% / 100.00% (total = 1.000)
+INFO:  
+INFO:     RESULTS
+INFO:        g0(15.00º): 100.00% / 0.00% (total = 0.933)
+INFO:        g1(60.00º): 0.00% / 100.00% (total = 0.467)
+INFO:        g2(60.00º): 100.00% / 0.00% (total = 0.467)
+INFO:        g3(15.00º): 0.00% / 100.00% (total = 0.233)
+INFO:        g4(0.00º): 0.00% / 100.00% (total = 1.000)
+INFO:  
+INFO:  RESULT COUNTS:
+INFO:     g0.upper  : 920 ( 92.0%) +p1(0.93+0.25j∆15º|0.93)
+INFO:     g0.lower  :  80 (  8.0%) -p1(0.07-0.25j∆-75º|0.07)
+INFO:     g1.upper  : 500 ( 50.0%) -p1(0.34+0.59j∆60º|0.47)
+INFO:     g1.lower  : 420 ( 42.0%) +p1(0.59-0.34j∆-30º|0.47)
+INFO:     g2.upper  : 920 ( 92.0%) +p1(0.59-0.34j∆-30º|0.47)
+INFO:     g3.upper  : 442 ( 44.2%) +p1(0.47+0.13j∆15º|0.23)
+INFO:     g3.lower  : 478 ( 47.8%) -p1(0.13-0.47j∆-75º|0.23)
+INFO:     g4.control: 420 ( 42.0%) +p1(0.59-0.34j∆-30º|0.47)
+INFO:     g4.upper  : 580 ( 58.0%) +p2(1.00+0.00j∆0º|1.00)
+INFO:     g4.lower  : 420 ( 42.0%) +p2(1.00+0.00j∆0º|1.00)
+INFO:  
+INFO:  GATE WEIGHT SQUARED MAGNITUDE RATIOS:
+INFO:     g0.upper: 0.93
+INFO:     g0.lower: 0.07
+INFO:     g1.upper: 0.50
+INFO:     g1.lower: 0.50
+INFO:     g2.upper: 1.00
+INFO:     g2.lower: 0.00
+INFO:     g3.upper: 0.50
+INFO:     g3.lower: 0.50
+INFO:     g4.upper: 0.50
+INFO:     g4.lower: 0.50
+INFO:  
+INFO:  FULL HISTOGRAM VALUES:
+INFO:     g0.upper: 920
+INFO:     g0.lower: 80
+INFO:     g1.upper: 500
+INFO:     g1.lower: 420
+INFO:     g2.upper: 920
+INFO:     g3.upper: 442
+INFO:     g3.lower: 478
+INFO:     g4.control: 420
+INFO:     g4.upper: 580
+INFO:     g4.lower: 420
+INFO:  Generating Mermaid diagram on mermaid/fig414_after.mmd
+INFO:  Saving SVG version of diagram to mermaid/fig414_after.svg

@@ -1,10 +1,10 @@
 import marimo
 
-__generated_with = "0.18.1"
+__generated_with = "0.18.4"
 app = marimo.App(width="full", app_title="Quantish Physics")
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _():
     import marimo as mo
     from marimo import md
@@ -16,6 +16,8 @@ def _():
     from quantish.gate import FredkinGate
     from quantish.particle import Particle
     from quantish.sink import Sink
+    from quantish.config_space import WIRES
+    from quantish.util import sstr, wstr, wangle, angstr
     from quantish.qnumber import Real
     from quantish.marimo_helpers import plot_weights, load_models, load_selected_model
     from quantish.visualizations import diagram
@@ -29,6 +31,7 @@ def _():
         Path,
         Real,
         Simulation,
+        WIRES,
         cm,
         diagram,
         load_models,
@@ -39,6 +42,8 @@ def _():
         plot_weights,
         qn,
         random,
+        sstr,
+        wstr,
         yaml,
     )
 
@@ -60,6 +65,8 @@ def _(mo):
         'control_threshold': mo.ui.number(label='Control:', start=0, stop=0.9),
         'forward_threshold': mo.ui.number(label='Forwarding:', start=0, stop=0.9),
         'presence_threshold': mo.ui.number(label='Presence:', start=0, stop=0.9),
+        'always_forward_switch_weights': mo.ui.checkbox(label='Switch weights'),
+        'always_forward_control_weights': mo.ui.checkbox(label='Control weights')
     })
     return (config_ui,)
 
@@ -70,7 +77,7 @@ def _(aa_probs):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(aa_probs, random):
     def _(iters, th1, th2, th3):
         disc_ab = disc_bc = disc_ac = 0
@@ -96,7 +103,7 @@ def _(qn):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(qn):
     #_angles = [(x*10, qn.qify(f'{x}*5'), qn.qify(f'90 - {x}*5')) for x in range(19)]
     g_angles = [(x, qn.qify(f'(pi/36)*(({x}*5)/10)'), qn.qify(f'(pi/2) - ((pi/36)*(({x}*5)/10))')) for x in range(37)]
@@ -124,13 +131,7 @@ def _(Particle, g_angles, qn):
 
 @app.cell
 def _(aa_probs):
-    [(k, aa_probs[k]) for k in aa_probs.keys()]
-    return
-
-
-@app.cell
-def _(aa_probs):
-    {'0': aa_probs['0'][1], '22.5': aa_probs['22.5'][1], '45': aa_probs['45'][1], 'd0-22.5': abs(aa_probs['0'][1] - aa_probs['22.5'][1]), 'd22.5-45': abs(aa_probs['22.5'][1] - aa_probs['45'][1])}
+    {'0': aa_probs['0.00'][1], '22.5': aa_probs['22.50'][1], '45': aa_probs['45.00'][1], 'd0-22.5': abs(aa_probs['0.00'][1] - aa_probs['22.50'][1]), 'd22.5-45': abs(aa_probs['22.50'][1] - aa_probs['45.00'][1])}
     return
 
 
@@ -153,10 +154,16 @@ def _(aap_diffs):
 
 
 @app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Custom configuration
+    """)
+    return
+
+
+@app.cell(hide_code=True)
 def _(config_ui, md):
     md(rf"""
-    ## Configuration
-
     - {config_ui['title']}
 
     - {config_ui['symbolic']}
@@ -186,12 +193,24 @@ def _(config_ui, md):
         -  {config_ui['forward_threshold']}
 
         -  {config_ui['presence_threshold']}
+    - Always forward:
+        - {config_ui['always_forward_switch_weights']}
+
+        - {config_ui['always_forward_control_weights']}
     """)
     return
 
 
 @app.cell(hide_code=True)
-def _(config_ui, gates, links, particles, phases):
+def _(mo):
+    mo.md(r"""
+    ### qconfig
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(config_ui, gates, links, md, mo, particles, phases):
     qconfig = {
         'title': config_ui['title'].value,
         'variables': {},
@@ -214,14 +233,28 @@ def _(config_ui, gates, links, particles, phases):
             'control': config_ui['control_threshold'].value, 
             'forwarding': config_ui['forward_threshold'].value, 
             'presence': config_ui['presence_threshold'].value,
+        },
+        'always_forward': {
+            'control_weights': config_ui['always_forward_control_weights'].value,
+            'switch_weights': config_ui['always_forward_switch_weights'].value
         }
     }
-    qconfig
+    md(rf"""
+    {mo.accordion(qconfig)}
+    """)
     return
 
 
-@app.cell
-def _(Angle, Real):
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ### angles
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(Angle, Real, md, mo):
     angles = {
         'theta30': Angle(30),
         'theta20': Angle(20),
@@ -229,11 +262,22 @@ def _(Angle, Real):
         'theta0': Angle(0),
         'theta90': Angle(90)
     }
+    md(rf"""
+    {mo.accordion(angles)}
+    """)
     return (angles,)
 
 
-@app.cell
-def _(FredkinGate, angles):
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ### gates
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(FredkinGate, angles, mo):
     gates = {
         'g0': FredkinGate('g0', angles['theta0']),
         'g1': FredkinGate('g1', angles['theta37']),
@@ -245,11 +289,22 @@ def _(FredkinGate, angles):
         'g30': FredkinGate('g30', angles['theta30']),
         'g90': FredkinGate('g90', angles['theta90'])
     }
+    mo.md(rf"""
+    {mo.accordion(gates)}
+    """)
     return (gates,)
 
 
-@app.cell
-def _(Particle):
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ### particles
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(Particle, md, mo):
     particles = {
         'control1': Particle('control1', weight=0, sign=1),
         'control2': Particle('control2', weight=0, sign=1),
@@ -265,6 +320,9 @@ def _(Particle):
         'p3': Particle('p3', weight=1, sign=1),
         'p90': Particle('p90', weight=1j, sign=1)
     }
+    md(rf"""
+    {mo.accordion(particles)}
+    """)
     return (particles,)
 
 
@@ -275,17 +333,32 @@ def _(gates, particles):
 
 
 @app.cell(hide_code=True)
-def phases(yaml):
+def _(mo):
+    mo.md(r"""
+    ### phases
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def phases(mo, yaml):
     phases = yaml.safe_load("""
-    phases:
+    run_stages:
        prepare: [g1, g2]
        couple: [g3, g4]
        split: [g5, g6]
-    # phases:
-    #     run: [g1, g2]
     """)
     phases
+    mo.refs(), mo.defs()
     return (phases,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Load and run from config file
+    """)
+    return
 
 
 @app.cell(hide_code=True)
@@ -311,7 +384,31 @@ def _(model_selector):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ### sim.config
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(md, mo, sim):
+    md(rf"""
+    {mo.accordion(sim.config)}
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Run the model
+    """)
+    return
+
+
+@app.cell(hide_code=True)
 def run_button(md, mo):
     run_button = mo.ui.run_button(label='RUN')
     # def set_run_enabled(_):
@@ -319,6 +416,39 @@ def run_button(md, mo):
     # init_sim = mo.ui.run_button(label='INIT SIM', on_change=set_run_enabled)
     md(f'{run_button}')
     return (run_button,)
+
+
+@app.cell(hide_code=True)
+def run_sim(run_and_diagram, run_button):
+    # mo.stop(output='Press INIT SIM button to initialize simulation', predicate=not init_sim.value)
+    # print('INIT SIM was pressed')
+    # diag = diagram(sim, has_run=False)
+    # init_sim.label = 'Initialized'
+    # run_button.disabled = False
+    # mo.stop(output='Press RUN button to run simulation with current settings', predicate=not run_button.value)
+    # print('after stop')
+    run_and_diagram() if run_button.value else 'Press RUN button to run simulation with current settings'
+    return
+
+
+@app.cell(hide_code=True)
+def _(Particle, diagram, mo, sim):
+    def run_and_diagram():
+        simresult = sim.run()
+        # for _pname, _particle in run_results.items():
+        #     simresult[_pname] = Sink(_pname, _pname, initial_values=[_particle])
+        # rr0 = {x.name: list(x.value.values())[0] for x in simresult.values() if len(x.value.values()) > 0 and list(x.value.values())[0].name != 'temp' and list(x.value.values())[0].weight != 0}
+        rr = {}
+        for k, v, in simresult.items():
+            if v is None:
+                continue
+            elif isinstance(v, list):
+                rr[k] = Particle.merge(v).weight.v
+            else:
+                rr[k] = v.weight.v
+        # rr = {f'{k}: {v}': v.weight.v for k, v in simresult.items()}
+        return mo.mermaid(f'{diagram(sim, has_run=True)}')
+    return (run_and_diagram,)
 
 
 @app.cell(hide_code=True)
@@ -362,23 +492,44 @@ def _(loaded_model):
     return
 
 
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ### config.ui.value
+    """)
+    return
+
+
 @app.cell
-def _(config_ui):
-    config_ui.value
+def _(config_ui, md, mo):
+    md(rf"""
+
+    {mo.accordion(config_ui.value)}
+    """)
     return
 
 
 @app.cell(hide_code=True)
-def show_objects(angles, config_ui, gates, md, mo, particles):
+def _(mo):
+    mo.md(r"""
+    ## Parameter summary
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def show_objects(angles, config_ui, gates, md, mo, particles, sstr, wstr):
     def _():
         calc_str = f'{config_ui['symbolic'].value[0]}'
-        pstrs = '\n'.join([rf'&{x}\\' for x in particles.values()])
-        gstrs = '\n'.join([rf'&{x}\\' for x in gates.values()])
+        pstrs = '\n'.join([rf'&{sstr(x.sign)}\textit{{{x.name}}}({wstr(x.weight)} | {x.probability:.2f})\\' for x in particles.values()])
+        gstrs = '\n'.join([rf'&\textit{{{x.name}}}({x.theta.degrees:.2f}º)\\' for x in gates.values()])
+        pstrs0 = '\n'.join([rf'&{x}\\' for x in particles.values()])
+        gstrs0 = '\n'.join([rf'&\text{{{x.name}}}({x.theta.degrees:.2f}º)\\' for x in gates.values()])
         return mo.left(md(rf"""
     $$
     \begin{{align*}}
     \text{{Calculation mode}}&=\text{{{calc_str}}}&\\
-    \text{{Angles}}&\\
+    \text{{Angles}}\\
     &\theta30={angles['theta30']}\\
     &\theta20={angles['theta20']}\\
     &\theta37={angles['theta37']}\\
@@ -390,6 +541,14 @@ def show_objects(angles, config_ui, gates, md, mo, particles):
     $$
     """))
     _()
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Randomness
+    """)
     return
 
 
@@ -413,33 +572,29 @@ def measure_parts(md):
 
 
 @app.cell(hide_code=True)
-def _(Particle, gates, md, measure_parts, mo, particles):
-    mp = particles['p1']
-    mg = gates['g30']
-    mpresult = mg.measure(mp)
-    mpdict = {k: v.v for k, v in zip(measure_parts, mpresult)}
-    mpresult2 = mg.measure(Particle('pc2b', mpdict['c2b'], sign=-1))
-    mp2dict = {k: v.v for k, v in zip(measure_parts, mpresult2)}
-    mpstr = '\n'.join([f'{k}&=&{v:+.2f}\\\\' for k, v in mpdict.items()])
-    mp2str = '\n'.join([f'{k}&=&{v:+.2f}\\\\' for k, v in mp2dict.items()])
+def _(Particle, gates, md, measure_parts, particles):
+    _mp = particles['p1']
+    _mg = gates['g30']
+    mpresult = _mg.measure(_mp)
+    _mpdict = {k: v.v for k, v in zip(measure_parts, mpresult)}
+    _mpresult2 = _mg.measure(Particle('pc2b', _mpdict['c2b'], sign=-1))
+    _mp2dict = {k: v.v for k, v in zip(measure_parts, _mpresult2)}
+    _mpstr = '\n'.join([f'&{k}&=&{v:+.2f}\\\\' for k, v in _mpdict.items()])
+    _mp2str = '\n'.join([f'&{k}&=&{v:+.2f}\\\\' for k, v in _mp2dict.items()])
 
-    mo.left(md(rf"""
-    ### {mp} through {mg}
+    md(rf"""
+    ### {_mp} through {_mg}
+
     $$
     \begin{{align*}}
-    {mpstr}
     \\\\
-    {mp2str}
+    {_mpstr}
+    \\
+    {_mp2str}
     \end{{align*}}
     $$
-    """))
-    return mpdict, mpresult
-
-
-@app.cell
-def _(mpdict):
-    mpdict['c2b']
-    return
+    """)#.style({'.katex-display': {'text-align': 'left !important', 'padding-left': '2em'}})
+    return (mpresult,)
 
 
 @app.cell
@@ -477,7 +632,7 @@ def _(gates, particles):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def links(yaml):
     links = yaml.safe_load("""
     # links:
@@ -515,45 +670,33 @@ def sim(Simulation, loaded_model):
     return (sim,)
 
 
-@app.cell(hide_code=True)
-def run_sim(diagram, mo, run_button, sim):
-    # mo.stop(output='Press INIT SIM button to initialize simulation', predicate=not init_sim.value)
-    # print('INIT SIM was pressed')
-    # diag = diagram(sim, has_run=False)
-    # init_sim.label = 'Initialized'
-    # run_button.disabled = False
-    mo.stop(output='Press RUN button to run simulation with current settings', predicate=not run_button.value)
-    # print('after stop')
-    simresult = sim.run()
-    # for _pname, _particle in run_results.items():
-    #     simresult[_pname] = Sink(_pname, _pname, initial_values=[_particle])
-    # rr0 = {x.name: list(x.value.values())[0] for x in simresult.values() if len(x.value.values()) > 0 and list(x.value.values())[0].name != 'temp' and list(x.value.values())[0].weight != 0}
-    rr = {}
-    for k, v, in simresult.items():
-        if v is None:
-            continue
-        elif isinstance(v, list):
-            if len(v) == 1:
-                rr[k] = v[0].weight.v
-            else:
-                rr[k] = [x.weight.v for x in v]
-        else:
-            rr[k] = v.weight.v
-    # rr = {f'{k}: {v}': v.weight.v for k, v in simresult.items()}
+@app.cell
+def _(sim):
+    list(sim.run_stages.values())[1]
+    return
 
-    mo.mermaid(f'{diagram(sim, has_run=True)}')
-    return rr, simresult
+
+@app.cell(hide_code=True)
+def _(sim):
+    list(sim.run_stages.values())[1].gates[0].inputs
+    return
 
 
 @app.cell
 def _(sim):
-    list(sim.gates.values())
+    sim.gates['g1'].outputs
     return
 
 
 @app.cell
 def _(rr):
     rr
+    return
+
+
+@app.cell
+def _(sim):
+    list(sim.gates.values())
     return
 
 
@@ -605,14 +748,14 @@ def _(sim):
 
 
 @app.cell
-def _(pattrs):
-    pattrs
+def _(g1attrs):
+    {f'{stage}.{wire}': g1attrs.get(stage).get(wire)[0].weight.v for stage in g1attrs.keys() for wire in ('control', 'upper', 'lower') if g1attrs.get(stage).get(wire) and g1attrs.get(stage).get(wire)[0].weight.v != 0}
     return
 
 
 @app.cell
-def _(pattrs):
-    pattr2 = {f'{g}.{stage}.{wire}': pattrs[g].get(stage).get(wire)[0].weight.v for g in pattrs.keys() for stage in pattrs[g].keys() for wire in ('control', 'upper', 'lower') if pattrs[g].get(stage).get(wire) is not None and pattrs[g].get(stage).get(wire)[0].weight.v != 0}
+def _(WIRES, pattrs):
+    pattr2 = {f'{g}.{stage}.{wire}': pattrs[g].get(stage).get(wire)[0].weight.v for g in pattrs.keys() for stage in pattrs[g].keys() for wire in WIRES if pattrs[g].get(stage).get(wire) and pattrs[g].get(stage).get(wire)[0].weight.v != 0}
     return (pattr2,)
 
 
@@ -624,7 +767,7 @@ def _(pattr2):
 
 @app.cell
 def _(g1attrs):
-    g1attr2 = {f'{stage}.{wire}': g1attrs.get(stage).get(wire)[0].weight.v for stage in g1attrs.keys() for wire in ('control', 'upper', 'lower') if g1attrs.get(stage).get(wire) is not None and g1attrs.get(stage).get(wire)[0].weight.v != 0}
+    g1attr2 = {f'{stage}.{wire}': g1attrs.get(stage).get(wire)[0].weight.v for stage in g1attrs.keys() for wire in ('control', 'upper', 'lower') if g1attrs.get(stage).get(wire) and g1attrs.get(stage).get(wire)[0].weight.v != 0}
     return (g1attr2,)
 
 
@@ -634,7 +777,7 @@ def _(g1attr2):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(g1attrs, md):
     g1s = '\n'.join([rf'&\text{{{k}}}:&\hspace*{{1em}}&{v}\\' for k, v in g1attrs.items()])
     md(fr"""
@@ -649,7 +792,7 @@ def _(g1attrs, md):
 
 @app.cell
 def _(g1attrs):
-    [x[0] for x in list(g1attrs['weights'].values())], list(g1attrs['weights'].keys())
+    [x[0] if isinstance(x, list) else x for x in list(g1attrs['weights'].values())], list(g1attrs['weights'].keys())
     return
 
 

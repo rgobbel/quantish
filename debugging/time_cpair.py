@@ -12,6 +12,7 @@ for mode in ('Float', 'Symbolic'):
     minus_one = qn.Complex(-1)
     p_plus = Particle('p', one, 1)
     p_minus = Particle('p', one, -1)
+    p = Particle('p', one, 1)
     # g_basic = FredkinGate('g_basic', angle, alternative_measure=False)
     # g_alt = FredkinGate('g_alt', angle, alternative_measure=True)
     # g_0 = FredkinGate('g_0', angle, alternative_measure='cpair0')
@@ -39,11 +40,23 @@ for mode in ('Float', 'Symbolic'):
 
     gate = FredkinGate('g', angle)
     print(f'{gate=}')
-    for p in (p_plus, p_minus):
-        print(f'{p=}')
+    # for p in (p_plus, p_minus):
+    #     print(f'{p=}')
         # cpair_method = getattr(getattr(gate.__class__, 'cpair_m'), '__name__')
-        print(f'{gate.measure(p)=}')
-        print(timeit(lambda: gate.measure(p), number=1))
+    print(f'{gate.cpair(p.weight)=}')
+    print(timeit(lambda: gate.cpair(p.weight), number=100000))
+    print('')
+    print(f'{gate.cpair(p.weight, twist=True)=}')
+    print(timeit(lambda: gate.cpair(p.weight, twist=True), number=100000))
+    print('')
+    # for p in (p_plus, p_minus):
+    #     print(f'{p=}')
+        # cpair_method = getattr(getattr(gate.__class__, 'cpair_m'), '__name__')
+    print(f'{gate.cpairx(p.weight)=}')
+    print(timeit(lambda: gate.cpairx(p.weight), number=100000))
+    print('')
+    print(f'{gate.cpairx(p.weight, twist=True)=}')
+    print(timeit(lambda: gate.cpairx(p.weight), number=100000))
 
 # for gate in (g_basic, g_alt, g_0, g_1, g_2, g_3):
 #     print(f'{gate=}')

@@ -2,6 +2,11 @@
 
 A simulation of "quantish" physics, as described in Chapter 4 of *Good and Real: Demystifying Paradoxes from Physics to Ethics* (Gary L. Drescher, 2006).
 
+### bulleted
+- normalize
+  - weights
+  - values
+
 ```
 usage: main.py [-h] -c CONFIG [-s | --simulate | --no-simulate] [-d DIAGRAM] [--diagram-when {before,after,both}] [-l LOG] [--loglevel {debug,info,warning,error}]
                [--control-threshold CONTROL_THRESHOLD] [--preserve-log] [--forward-threshold FORWARD_THRESHOLD] [--normalize-inputs | --no-normalize-inputs]

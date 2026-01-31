@@ -15,12 +15,12 @@ symbolic: false
 #alternative_measure: false
 #string_precision: 2
 
-always_forward:
-   switch_weights: true
-   control_weights: true
+#always_forward:
+#   switch_weights: false
+#   control_weights: false
 #swap_if_selected: false
 
-sample: true
+sample: false
 n_samples: 1000
 
 variables:
