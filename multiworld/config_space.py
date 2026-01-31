@@ -5,7 +5,7 @@ from collections import defaultdict, namedtuple, deque
 from dataclasses import dataclass
 import itertools
 from enum import Enum, auto
-from typing import Self, Optional, Dict, List, Tuple, Final
+from typing import Self, Optional, Dict, List, Tuple, Final, Set
 from copy import deepcopy
 from addict import Addict
 import networkx as nx
@@ -124,15 +124,23 @@ class CSCoordinate:
 
 @dataclass
 class ConfigSpacePoint:
-    __slots__ = ('step', 'pcvals',)
+    __slots__ = ('step', 'pcvals', 'predecessors', 'successors')
     pcvals: Dict[PCoordinate, Particle]
-    def __init__(self, step, initial_values:List[PCoordValue]):
+    def __init__(self, step, initial_values:List[PCoordValue],
+                 predecessors:Set[Self]=None, successors:Set[Self]=None):
         self.step = step
         self.pcvals = {x.pcoord.key: x for x in sorted(initial_values, key=lambda x: x.particle.pkey)}
+        if predecessors is None: predecessors = set()
+        self.predecessors = predecessors
+        if successors is None: successors = set()
+        self.successors = successors
 
     @property
     def key(self):
         return f'{self.step}/{"|".join([str(k) for k, v in sorted(self.pcvals.items(), key=lambda x: x[1].particle.pkey)])}'
+
+    def __hash__(self):
+        return self.key.__hash__()
 
     @property
     def weights(self):
@@ -147,7 +155,11 @@ class ConfigSpacePoint:
         return [p.particle for p in self.pcvals.values()]
 
     def add(self, other:Self, active_gates:set):
-        if self.key == other.key:
+        if self.key != other.key:
+            raise ValueError(f'keys do not match: self={self.key}, other={other.key}')
+        else:
+            self.predecessors.add(other)
+            other.successors.add(self)
             for k in self.pcvals.keys():
                 cur_pcv = self.pcvals[k]
                 other_pcv = other.pcvals[k]
@@ -168,8 +180,6 @@ class ConfigSpacePoint:
                 self.pcvals[k].particle = Particle(name=cur_part.name, sign=cur_part.sign,
                                                    weight=cur_part.weight+other_part.weight,
                                                    next_step=cur_part.next_step)
-        else:
-            raise ValueError(f'keys do not match: self={self.key}, other={other.key}')
 
 class ConfigSpace:
     __slots__ = ('index',)
@@ -244,88 +254,11 @@ class ConfigSpaceRunner:
                             assign_outs.append(result_value)
         return assign_outs
 
-    def run_gates(self, initial_point:ConfigSpacePoint):
-        sim = self.sim
-        results = []
-        all_worlds = [initial_point]
-        sunk = []
-        # initial_pcvs = list(initial_state.pcvals.values())
-        world_particles = sorted(initial_point.particles, key=lambda x: x.pkey)
-        worlds = deque([[initial_point]])
-        space = ConfigSpace(initial_point)
-        # worlds = [list(list(initial_space.index.values())[0].pcvals.values())]
-        stages = deque(sim.run_order[1:])
-        stage_input = defaultdict(list)
-        # for pcv in initial_point.pcvals.values():
-        #     dest_gate = pcv.pcoord.position.endpoint.gate
-        #     stage_input[dest_gate] = [initial_point]
-        stage_inputs = deque([[initial_point]])
-        step = 0
-        while len(stages) > 0:
-            next_stage_inputs = defaultdict(list)
-            stage_gates = {}
-            current_stage = stages.popleft()
-            inputs = stage_inputs.popleft()
-            for input_point in inputs:
-                for gate_name in current_stage:
-                    gate = sim.gates[gate_name]
-                    stage_gates[gate_name] = gate
-                    gate.reset()
-                    gate_inputs = [pcv for pcv in inputs[gate_name]]
-                    by_pkey = {}
-                    for pcv in gate_inputs:
-                        if pcv.particle.pkey in by_pkey.keys():
-                            by_pkey[pcv.particle.pkey].particle.weight += pcv.particle.weight
-                        else:
-                            by_pkey[pcv.particle.pkey] = pcv
-                    merged_inputs = list(by_pkey.values())
-                    by_particle = {}
-                    for pcv in merged_inputs:
-                        if pcv.particle.name in by_particle.keys():
-                            by_particle[pcv.particle.name].append(pcv)
-                        else:
-                            by_particle[pcv.particle.name] = [pcv]
-                    pcvs = list(by_particle.values())
-                    grouped_inputs = list(itertools.product(*pcvs))
-                    for input_tuple in grouped_inputs:
-                        gate.inputs_from(input_tuple)
-                        gate.set_weights()
-                        raw_outputs =  self.forward_results(step, stage_gates, sim.links)
-                        outputs = [pcv for pcv in raw_outputs if enough(pcv.particle.probability, ZERO_THRESHOLD)]
-                        print(outputs)
-                        by_pkey = {}
-                        for pcv in outputs:
-                            if pcv.particle.pkey in by_pkey.keys():
-                                by_pkey[pcv.particle.pkey].particle.weight += pcv.particle.weight
-                            else:
-                                by_pkey[pcv.particle.pkey] = pcv
-                        merged_outputs = list(by_pkey.values())
-                        by_particle = {}
-                        for pcv in merged_outputs:
-                            if pcv.particle.name in by_particle.keys():
-                                by_particle[pcv.particle.name].append(pcv)
-                            else:
-                                by_particle[pcv.particle.name] = [pcv]
-                        grouped_outputs = list(itertools.product(*list(by_particle.values())))
-                        for group in grouped_outputs:
-                            dest_gate = group[0].pcoord.position.endpoint.gate
-                            if dest_gate is not None:
-                                next_stage_inputs[dest_gate].append(list(group))
-                for gate_name in inputs:
-                    gate_deferred_inputs = inputs[gate_name]
-                    # for pcv in gate_deferred_inputs:
-                    #     pcv.pcoord.step = step + 1
-                    next_stage_inputs[gate_name] += gate_deferred_inputs
-                stage_inputs.append(next_stage_inputs)
-
-
     def run(self, initial_point:ConfigSpacePoint):
         sim = self.sim
         all_worlds = [initial_point]
-        # initial_pcvs = list(initial_state.pcvals.values())
         worlds = deque([[initial_point]])
         space = ConfigSpace(initial_point)
-        # worlds = [list(list(initial_space.index.values())[0].pcvals.values())]
         step = initial_point.step
         while len(worlds) > 0:
             this_cycle_points = worlds.popleft()
@@ -422,7 +355,8 @@ class ConfigSpaceRunner:
                         all_worlds.append(nonzero_successors)
 
                     for st in nonzero_successors:
-                        stpoint = ConfigSpacePoint(next_step, st)
+                        stpoint = ConfigSpacePoint(next_step, st, predecessors={cs_point})
+                        cs_point.successors.add(stpoint)
                         point_outputs.append(stpoint)
                     log.info(f'   finished processing {cs_point}')
                 if len(point_outputs) > 0:
@@ -433,6 +367,9 @@ class ConfigSpaceRunner:
                     log.info('   nothing for next cycle')
                 log.info('')
                 next_cycle_points += point_outputs
+                # for point in point_outputs:
+                #     point.predecessors.add(cs_point)
+                # cs_point.successors |= {*point_outputs}
             # done generating successors for this cycle, now filter and merge
 
             # report raw outputs

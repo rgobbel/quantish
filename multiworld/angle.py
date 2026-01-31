@@ -2,7 +2,8 @@ import sympy as sym
 import math as m
 import logging
 
-from multiworld.qnumber import PI, isq, CalcMode, qify
+from multiworld.qnumber import isq, CalcMode, qify
+import multiworld.qnumber as qn
 from multiworld.util import angstr
 
 log = logging.getLogger('multiworld')
@@ -12,11 +13,11 @@ class Angle:
         if not isq(value):
             value = qify(value)
         if unit == 'degrees':
-            if CalcMode.mode == 'Symbolic':
+            if CalcMode.default() == 'Symbolic':
                 value = sym.rad(value)
             else:
                 value = m.radians(qify(value))
-        twopi = 2 * PI
+        twopi = 2 * qn.PI
         modded = value % twopi
         self.value = modded
 

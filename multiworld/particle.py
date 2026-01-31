@@ -2,10 +2,11 @@ import random
 from collections import namedtuple
 from enum import Enum
 from typing import Self, Union, NamedTuple
-import cmath as cm
+# import cmath as cm
 
 from multiworld.util import wstr, Gensym, sstr, Sign, log
-from multiworld.qnumber import qify, probability, isq
+from multiworld.qnumber import qify, probability, isq, Complex
+import multiworld.qnumber as qn
 
 CompositeKey = namedtuple('CompositeKey', ['name', 'sign'])
 class PKey(CompositeKey):
@@ -19,7 +20,7 @@ class Particle:
         self.precision = precision
         self.name = name
         self.pid = Gensym(p_first(name))
-        self.weight = complex(qify(weight))
+        self.weight = Complex(weight)
         self.sign = Sign(sign)
         self.frozen = False
 
@@ -41,7 +42,7 @@ class Particle:
 
     @property
     def reality(self):
-        return 1.0 - abs(cm.phase(self.weight)) % (cm.pi/2)
+        return 1.0 - abs(self.weight.phase) % (qn.PI/2)
 
     @property
     def superposed(self):
@@ -49,17 +50,13 @@ class Particle:
 
     @property
     def v_0(self):
-        return complex(1+0j if self.sign == 1 else 1j)
+        return Complex(1 if self.sign == 1 else qn.I)
 
     @property
     def pkey(self):
         return PKey(name=self.name, sign=self.sign)
 
     def ps(self, with_id=False, short=False, name_only=False):
-        x = complex(self.weight)
-        ss = f'{sstr(self.sign)}'
-        pstr = f'%.{self.precision}f'
-        probstr = pstr % self.probability
         if name_only:
             return self.name.split('>')[0]
         if short:
@@ -68,7 +65,7 @@ class Particle:
             nstr = self.pid
         else:
             nstr = self.name
-        return f'{sstr(self.sign)}{nstr}({wstr(complex(self.weight), precision=self.precision)}|{self.probability:.{self.precision}f})'
+        return f'{sstr(self.sign)}{nstr}({wstr(self.weight, precision=self.precision)}|{self.probability:.{self.precision}f})'
 
     @classmethod
     def merge(cls, particles, next_step=0):
@@ -104,8 +101,8 @@ def random_particle(name, weight=None, phase=None, sign=None):
     if weight is None:
         weight = random.random()
     if phase is None:
-        phase = random.random() * 2 * cm.pi
-        weight = weight * cm.cos(phase) + weight * 1j * cm.sin(phase)
+        phase = random.random() * 2 * qn.PI
+        weight = weight * phase.cos + weight * qn.I * phase.sin
     return Particle(name, weight, sign)
 
 def p_last(p: Union[str|Particle]) -> str:

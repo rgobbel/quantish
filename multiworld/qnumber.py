@@ -11,6 +11,25 @@ from multiworld.qconstants import float_methods, complex_methods
 
 log = logging.getLogger('multiworld')
 
+CALC_MODE = 'Float'
+
+class CalcMode:
+    @classmethod
+    def default(cls, new_mode:str=None):
+        global I, PI, CALC_MODE
+        if new_mode is None or new_mode == '':
+            return CALC_MODE
+        else:
+            CALC_MODE = new_mode
+            if CALC_MODE == 'Float':
+                I = 1j
+                PI = m.pi
+            else:
+                I = sym.I
+                PI = sym.pi
+            return CALC_MODE
+
+
 # realtype = lambda x: type(x) in (int, float)
 def realtype(x):
     if isq(x):
@@ -84,7 +103,7 @@ def qify(x):
         return Complex(xval)
 
 def softmax(vec):
-    if CalcMode.mode == 'Float':
+    if CalcMode.default() == 'Float':
         if isq(vec[0]):
             xvec = [x.v for x in vec]
         elif iscplx(vec[0]):
@@ -111,43 +130,6 @@ def softmax(vec):
     else: fn = Complex
     return [fn(x) for x in sm]
 
-PI = None
-
-I = None
-
-class CalcMode:
-    _mode = 'Float'
-    @classmethod
-    def default(cls, new_mode:str=None):
-        global I, PI
-        if new_mode is None or new_mode == '':
-            return cls._mode
-        else:
-            cls._mode = new_mode
-            if cls._mode == 'Float':
-                I = 1j
-                PI = m.pi
-            else:
-                I = sym.I
-                PI = sym.pi
-            return cls._mode
-
-def PI_fn(mode=None):
-    global PI
-    mode = mode or CalcMode.default(mode)
-    if mode == 'Float':
-        return Real(m.pi, mode=mode)
-    else:
-        return Real(sym.pi, mode=mode)
-
-def I_fn(mode=None):
-    global I
-    mode = mode or CalcMode.default(mode)
-    if mode == 'Float':
-        return Complex(1j, mode=mode)
-    else:
-        return Complex(sym.I, mode=mode)
-
 class partialproperty:
     """Combine the functionality of property() and partialmethod()"""
     def __init__(self, getter, *args, **kwargs):
@@ -164,24 +146,13 @@ class partialproperty:
     def __get__(self, obj, objtype=None):
         return self.getter(obj, *self.args, **self.kwargs)
 
-    # def __set__(self, obj, value):
-    #     if self.setter is None:
-    #         raise AttributeError(f"{self._owner.__class__.__name__} object can't set attribute: {self._name}")
-    #
-    #     self.setter(obj, *self.args, value, **self.kwargs)
-    #
-    # def __delete__(self, obj):
-    #     if self.deleter is None:
-    #         raise AttributeError(f"{self._owner.__class__.__name__} object can't delete attribute: {self._name}")
-    #
-    #     self.deleter(obj, *self.args, **self.kwargs)
-
 ANumber = int | float | complex | sym.Mul | sym.Integer | sym.Float | sym.Expr
 
 class Complex(n.Number):
     def __new__(cls, value=0, mode:str=None):
         instance = super().__new__(cls)
-        mode = CalcMode.default(mode)
+        if mode is None:
+            mode = CalcMode.default()
         # cls.add_methods(value, mode)
         instance.__init__(value=value, mode=mode)
         return instance
@@ -189,7 +160,8 @@ class Complex(n.Number):
     def __init__(self, value, mode:str=None):
         self._value: ANumber = 0
         super().__init__()
-        mode = CalcMode.default(mode)
+        if mode is None:
+            mode = CalcMode.default()
         if isq(value):
             value = value.v
         if mode == 'Symbolic':
@@ -583,3 +555,25 @@ def runtest(x, y):
         return x % y
     except TypeError as e:
         log.error(e)
+
+def PI_fn(mode=None):
+    global PI
+    if mode is None:
+        mode = CALC_MODE
+    if mode == 'Float':
+        return Real(m.pi, mode)
+    else:
+        return Real(sym.pi, mode)
+
+def I_fn(mode=None):
+    global I
+    if mode is None:
+        mode = CALC_MODE
+    if mode == 'Float':
+        return Complex(1j, mode)
+    else:
+        return Complex(sym.I, mode)
+
+PI = PI_fn()
+I = I_fn()
+

@@ -147,7 +147,7 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
     if has_run:
         legend = pmd.Node(id='Legend')
         legend.content = f"""**Parameters**
-    **numerics**: {qn.CalcMode.mode}
+    **numerics**: {qn.CalcMode.default()}
     **combine**:
     &nbsp;&nbsp;&nbsp;&nbsp;**signs**: {f"{sim.combine_signs}".lower()}
     &nbsp;&nbsp;&nbsp;&nbsp;**names**: {f"{sim.combine_names}".lower()}

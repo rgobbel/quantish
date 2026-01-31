@@ -7,7 +7,9 @@ from multiworld.gate import DelayGate, FredkinGate
 from multiworld.config_space import (PCoordValue, Position, Wire, PCoordinate,
                                      ConfigSpacePoint, ConfigSpaceRunner, ConfigSpace,
                                      LIMBO)
-from multiworld.qnumber import Real, qify, softmax, Complex, PI
+import matplotlib.pyplot as plt
+import multiworld.qnumber as qn
+from multiworld.qnumber import Real, qify, softmax, Complex
 from multiworld.util import (SEP, sstr, WIRES, SWITCH_WIRES, OTHER,
                              path_lengths, normalize_list, topo_sort, expand_graph, simplify_graph)
 
@@ -200,7 +202,7 @@ class Simulation:
             self.delay_gates[dgname] = dgate
             self.gates[dgname] = dgate
         for pname, pval in particles.items():
-            pweight = Complex(pval.weight)
+            pweight = Complex(qify(pval.weight))
             new_particle = Particle(pname, pweight, qify(pval.sign), precision=self.precision)
             self.particles[pname] = new_particle
         for source, dest in links.items():
@@ -311,13 +313,48 @@ class Simulation:
         #                 else:
         #                     by_result_position[pos.gate][pos.port].weight += pcv.particle.weight
         if len(final_points) > 0:
+            pad_len = [0] * len(final_points[0].pcvals.values())
+            for point in final_points:
+                pcvals = list(point.pcvals.values())
+                positions = [p.pcoord.position.origin for p in pcvals]
+                particles = [p.particle for p in pcvals]
+                logstr = [f'{particle}@{pos}' for particle, pos in zip(particles, positions)]
+                for i, s in enumerate(logstr):
+                    pad_len[i] = max(pad_len[i], len(s))
             log.info('final results:')
             for point in final_points:
                 pcvals = list(point.pcvals.values())
                 positions = [p.pcoord.position.origin for p in pcvals]
                 particles = [p.particle for p in pcvals]
-                logstr = ''.join([f'{f"{particle}@{pos}":<35s}' for particle, pos in zip(particles, positions)])
+                logstr = '  |  '.join([f'{f"{particle}@{pos}":<{pad_len[i]}}' for i, (particle, pos) in enumerate(zip(particles, positions))])
                 log.info(f'   {logstr}')
+            exe_graph = nx.MultiDiGraph()
+            exe_graph.add_nodes_from(result_space.index.values())
+            exe_nodes = list(exe_graph.nodes)
+            cur_nodes = len(exe_nodes)
+            new_nodes = True
+            while new_nodes:
+                new_nodes = False
+                for node in exe_nodes:
+                    for succ in node.successors:
+                        if succ not in exe_graph:
+                            new_nodes = True
+                            exe_graph.add_node(succ)
+                    for pred in node.predecessors:
+                        if pred not in exe_graph:
+                            new_nodes = True
+                            exe_graph.add_node(pred)
+                exe_nodes = list(exe_graph.nodes)
+            for node in exe_nodes:
+                for succ in node.successors:
+                    exe_graph.add_edge(node, succ)
+            layers = defaultdict(list)
+            for p in exe_graph.nodes:
+                layers[p.key[0]] += [p]
+            pos = nx.multipartite_layout(exe_graph, layers)
+            nx.draw(exe_graph, pos=pos)
+            plt.draw()
+            plt.show()
                 # log.info(point)
             # for k, v in by_result_position.items():
             #     if 'upper' in by_result_position[k].keys() and 'lower' in by_result_position[k].keys():

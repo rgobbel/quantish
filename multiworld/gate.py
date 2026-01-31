@@ -8,7 +8,7 @@ import cmath as cm
 import multiworld.qnumber as qn
 from multiworld.angle import Angle
 from multiworld.particle import Particle
-from multiworld.qnumber import qify
+from multiworld.qnumber import qify, Complex, Real
 from multiworld.util import (Gensym, enough, select, flat_list, SEP, filter_weights, ZERO_THRESHOLD, sstr,
                            Sign, OTHER, WIRES, SWITCH_WIRES, INITIAL_WIRES, default_switches, default_wires)
 
@@ -22,8 +22,9 @@ class SourceType(StrEnum):
 INITIAL_WIRES = lambda: {k: 'undefined' for k in ['control', 'upper', 'lower']}
 
 class FredkinGate:
-    def __init__(self, name:str, theta:float=0, start_step=0, sim=None, norm_output=None):
+    def __init__(self, name:str, theta:Real=0, start_step=0, sim=None, norm_output=None):
         self.name = name
+        self.theta = qify(theta)
         self.start_step = start_step
         self.inputs = default_wires()
         self.weights = default_wires()
@@ -42,39 +43,39 @@ class FredkinGate:
                 self.norm_output = False
         else:
             self.norm_output = norm_output
-        if type(theta) is Angle:
-            self.atheta = theta
-            self.theta = theta.radians
+        if type(self.theta) is Angle:
+            self.atheta = self.theta
+            self.theta = self.theta.radians
         else:
-            self.atheta = Angle(theta, unit='radians')
+            self.atheta = Angle(self.theta, unit='radians')
             self.theta = self.atheta.radians
-        self.deg90 = cm.pi / 2
+        self.deg90 = qn.PI / 2
         self.twist = self.theta - self.deg90
 
         self.cos_theta = self.theta.cos
         self.sin_theta = self.theta.sin
         self.cos2_theta = self.cos_theta**2
-        self.cos_sin_theta = 1j * self.cos_theta * self.sin_theta
-        self.mcos_sin_theta = -1j * self.cos_theta * self.sin_theta
+        self.cos_sin_theta = self.cos_theta * self.sin_theta * qn.I
+        self.mcos_sin_theta = self.cos_theta * self.sin_theta * -qn.I
         self.sin2_theta = self.sin_theta**2
-        self.wplusf = self.cos_theta * cm.exp(1j * self.theta)
-        self.wminusf = self.sin_theta * cm.exp(1j * self.twist)
+        self.wplusf = self.cos_theta * (qn.I * self.theta).exp
+        self.wminusf = self.sin_theta * (qn.I * self.twist).exp
 
         self.cos_twist = self.twist.cos
         self.sin_twist = self.twist.sin
         self.cos2_twist = self.cos_twist**2
-        self.cos_sin_twist = 1j * self.cos_twist * self.sin_twist
-        self.mcos_sin_twist = -1j * self.cos_twist * self.sin_twist
+        self.cos_sin_twist = qn.I * self.cos_twist * self.sin_twist
+        self.mcos_sin_twist = -qn.I * self.cos_twist * self.sin_twist
         self.sin2_twist = self.sin_twist**2
-        self.wplusf_twist = self.cos_twist * cm.exp(1j * self.twist)
-        self.wminusf_twist = self.sin_twist * cm.exp(1j * self.twist)
+        self.wplusf_twist = self.cos_twist * (qn.I * self.twist).exp
+        self.wminusf_twist = self.sin_twist * (qn.I * self.twist).exp
 
-        self.c2_factor = cm.exp(1j*self.theta) * self.theta.cos
-        self.c3_factor = cm.exp(1j*self.twist) * self.theta.sin
-        self.c2t_factor = cm.exp(1j*self.twist) * self.twist.cos
-        self.c3t_factor = cm.exp(1j*self.twist) * self.twist.sin
+        self.c2_factor = (qn.I * self.theta).exp * self.theta.cos
+        self.c3_factor = (qn.I * self.twist).exp * self.theta.sin
+        self.c2t_factor = (qn.I * self.twist).exp * self.twist.cos
+        self.c3t_factor = (qn.I * self.twist).exp * self.twist.sin
 
-    def report_type(self): ## TOTAL HACK
+    def report_type(self): ## HACK TO AVOID A DEPENDENCY LOOP
         return 'FredkinGate'
 
     def run(self):
@@ -84,7 +85,7 @@ class FredkinGate:
     def __repr__(self):
         return f'{self.name}({self.atheta.degrees:.2f}º)'
 
-    def cpair(self, w, twist=False):
+    def cpair(self, w:Complex, twist=False):
         """This is from AIM-1026a"""
         if not twist:
             c2a = w * self.cos2_theta
@@ -118,7 +119,7 @@ class FredkinGate:
         c3b = c3.imag
         return c2a, c2b, c3a, c3b
 
-    def rot_theta(self, w, theta):
+    def rot_theta(self, w:Complex, theta:Real):
         """
             basic weight rotation with trig scaling
             This version computes the actual rotation in the complex plane
@@ -126,14 +127,14 @@ class FredkinGate:
         twist = theta - self.deg90
         wplus = w * theta.cos * cm.exp(1j * theta)
         wminus = w * theta.sin * cm.exp(1j * twist)
-        return complex(wplus.real), 1j*wplus.imag, complex(wminus.real), 1j*wminus.imag
+        return Complex(wplus.real), 1j*wplus.imag, Complex(wminus.real), 1j*wminus.imag
 
     # def cpair0(self, w, theta):
     #     """from AIM-1026a"""
     #     c2a = w * theta.cos**2
-    #     c2b = w * 1j * theta.cos * theta.sin
+    #     c2b = w * qn.I * theta.cos * theta.sin
     #     c3a = w * theta.sin**2
-    #     c3b = w * -1j * theta.sin * theta.cos
+    #     c3b = w * -qn.I * theta.sin * theta.cos
     #     return c2a, c2b, c3a, c3b
     #
     # def cpair1(self, w, twist=False):
@@ -141,17 +142,17 @@ class FredkinGate:
     #     """basic weight rotation with trig scaling"""
     #     theta = self.twist if twist else self.theta
     #     twisted = theta - self.deg90
-    #     wplus = w * theta.cos * cm.exp(1j * theta)
-    #     wminus = w * theta.sin * cm.exp(1j * twisted)
-    #     return Complex(wplus.real), 1j*wplus.imag, Complex(wminus.real), 1j*wminus.imag
+    #     wplus = w * theta.cos * (qn.I * theta).exp
+    #     wminus = w * theta.sin * (qn.I * twisted).exp
+    #     return Complex(wplus.real), qn.I * wplus.imag, Complex(wminus.real), qn.I * wminus.imag
     #
     # def cpair2(self, w, twist=False):
     #     theta = self.twist if twist else self.theta
     #     """This is from AIM-1026a, and is much much faster than doing the whole rotation"""
     #     c2a = w * theta.cos ** 2
-    #     c2b = w * 1j * theta.cos * theta.sin
+    #     c2b = w * qn.I * theta.cos * theta.sin
     #     c3a = w * theta.sin ** 2
-    #     c3b = w * -1j * theta.cos * theta.sin
+    #     c3b = w * -qn.I * theta.cos * theta.sin
     #     return c2a, c2b, c3a, c3b
     #
     # def cpair3(self, w, twist=False):
@@ -163,7 +164,7 @@ class FredkinGate:
     #     else:
     #         wplus = w * self.wplusf_twist
     #         wminus = w * self.wminusf_twist
-    #     return Complex(wplus.real), 1j*wplus.imag, Complex(wminus.real), 1j*wminus.imag
+    #     return Complex(wplus.real), qn.I * wplus.imag, Complex(wminus.real), qn.I * wminus.imag
 
     def relative_angle(self, p:Particle):
         return self.theta - p.v_0.phase

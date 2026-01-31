@@ -1,6 +1,6 @@
 title: Quantish EPR Experiment
 
-symbolic: true
+symbolic: false
 
 run_stages:
 #   run_all: [g1, g2, g3, g4, g5, g6]
@@ -59,11 +59,11 @@ measure_discrepancy: true
 epr_stats: false
 
 variables:
-   zero: &zero '0+0j'
-   one: &one '1+0j'
-   minus_one: &minus_one '-1+0j'
-   eye: &eye '1j'
-   minus_eye: &minus_eye '-1j'
+   zero: &zero '0+(I*0)'
+   one: &one '1+(I*0)'
+   minus_one: &minus_one '-1+(I*0)'
+   eye: &eye 'I'
+   minus_eye: &minus_eye '-I'
    pi8pi8: &pi8pi8 '0.39269908169872414+0.39269908169872414j'
    cweight: &cweight '1'
    q0: &q0 '0'

@@ -99,9 +99,8 @@ class Sink:
         for p in self.values.values():
             sign = int(float(p.sign))
             ss = f'{"+" if sign == 1 else "-"}'
-            weight = complex(p.weight)
             result.append(
-                {f'{ss}{p.name.split('>')[0]}': {'weight': [weight.real, weight.imag], 'sign': sign, 'probability': float(p.probability)}})
+                {f'{ss}{p.name.split('>')[0]}': {'weight': [p.weight.real, p.weight.imag], 'sign': sign, 'probability': float(p.probability)}})
         return result
 
 
@@ -111,7 +110,6 @@ class SinkEncoder(json.JSONEncoder):
             result = []
             for p in obj.values.values():
                 sign = int(float(p.sign))
-                weight = complex(p.weight)
-                result.append({p.name: {'weight': [weight.real, weight.imag], 'sign': sign, 'probability': float(p.probability)}})
+                result.append({p.name: {'weight': [p.weight.real, p.weight.imag], 'sign': sign, 'probability': float(p.probability)}})
             return result
         return super().default(obj)

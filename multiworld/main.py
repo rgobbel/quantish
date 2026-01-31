@@ -15,6 +15,7 @@ from addict import Addict
 
 from multiworld.gate import FredkinGate, DelayGate
 from multiworld.particle import Particle
+import multiworld.qnumber as qn
 from multiworld.qnumber import CalcMode, qify
 from multiworld.simulation import Simulation
 from multiworld.util import QLogger, max_width, flat_list, SEP, WIRES
@@ -67,6 +68,10 @@ def main():
     with open(config_path, 'r') as f:
         config_dict.update(yaml.safe_load(f))
     config = Addict(config_dict)
+    symbolic = config.symbolic or False
+    CalcMode.default('Symbolic' if symbolic else 'Float')
+    qn.I = qn.I_fn()
+    qn.PI = qn.PI_fn()
     config.config_path = args.config
     if args.loglevel is not None:
         loglevel = args.loglevel.upper()
@@ -93,8 +98,6 @@ def main():
     if args.sample:
         config.sample = True
         config.n_samples = args.n_samples
-    symbolic = config.get('symbolic')
-    CalcMode.mode = 'Symbolic' if symbolic else 'Float'
     log.info(f'QUANTISH PHYSICS SIMULATION STARTING: {config["title"]} at {time.asctime()}')
     # if 'forward_threshold' in args: config.probability_threshold.fowarding = args.forward_threshold
     # if 'control_threshold' in args: config.probability_threshold.control = args.control_threshold
@@ -130,7 +133,7 @@ def main():
                 if args.pdf_diagram:
                     pdf_path = Path(before_path).with_suffix('.pdf')
                     log.info(f'Saving PDF version of diagram to {pdf_path}')
-                    subprocess.run(['mmdc', '-i', before_path, '-o', pdf_path, '--pdffit'])
+                    subprocess.run(['mmdc', '-i', before_path, '-o', pdf_path, '--pdfFit'])
     if args.simulate:
         if not sim.sample:
             result_space, steps_run = sim.run()
@@ -755,7 +758,7 @@ def main():
             if args.pdf_diagram:
                 pdf_path = Path(after_path).with_suffix('.pdf')
                 log.info(f'Saving PDF version of diagram to {pdf_path}')
-                subprocess.run(['mmdc', '-i', after_path, '-o', pdf_path, '--pdffit'])
+                subprocess.run(['mmdc', '-i', after_path, '-o', pdf_path, '--pdfFit'])
 
 if __name__ == '__main__':
     main()

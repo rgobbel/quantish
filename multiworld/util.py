@@ -113,11 +113,11 @@ def wangle(weight:Complex):
 
 def angstr(theta, precision=0):
     try:
-        nx = N(theta)
-        if type(nx) not in (int, float, sym.Float):
-            nx = cm.phase(nx)
-        if nx == 0: nx = 0
-        return f'∆{m.degrees(nx):.{precision}f}º'
+        n_theta = N(theta)
+        if type(n_theta) not in (int, float, sym.Float):
+            n_theta = cm.phase(n_theta)
+        if n_theta == 0: n_theta = 0
+        return f'∆{m.degrees(n_theta):.{precision}f}º'
     except ZeroDivisionError:
         return '∆0º'
 
