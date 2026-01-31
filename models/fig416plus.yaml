@@ -1,45 +1,60 @@
 title: Quantish EPR Experiment
 
 run_stages:
-#   prepare: [g1, g2]
-   prepare_1: [g1]
-   prepare_2: [g2]
+#   run_all: [g1, g2, g3, g4, g5, g6]
+#   prepare: [g1, d0, g2]
+   prepare: [g1, g2]
+#   prepare_1: [g1]
+#   prepare_2: [g2]
 #   couple_1: [d1, g3, d2, d3]
 #   couple_2: [d4, d5, g4, d6]
+#   couple: [g3, g4]
    couple_1: [g3]
    couple_2: [g4]
    observe: [g5, g6]
+#   observe_1: [g5]
+#   observe_2: [g6]
+#   measure: [g7, g8]
+#   measure_1: [g7]
+#   measure_2: [g8]
 #   store: [d7, d8, d9, d10]
+
 diagram_groups:
    prepare: [g1, g2]
 #   couple_1: [d1, g3, d2, d3]
 #   couple_2: [d4, d5, g4, d6]
    couple: [g3, g4]
    observe: [g5, g6]
+#   measure: [g7, g8]
 
-merge:
+merge_option:
    before_measure: false
    before_forwarding: true
-   combine_signs: true
+   combine_signs: false
    combine_names: false
 
-#probability_threshold:
+probability_threshold:
 #   # selector: >= 0: constant
 #   #             -1: random constant
 #   #             -2: random phase between 0 and pi/2
 #   #             -3: random, calculated every time
-#   selector: -3
-#   control: 0
+   selector: -1
+#   swap: -1
+#   presence: 0
+#   forwarding: -1
 
 normalize_weights:          # whether or not to normalize weights so that their sum is one
    input: false             # normalize values of input particles before measurement
    output: false            # normalize values of output particles before returning from measurement
-always_forward_weights: false
 
-sample: true
-loglevel: warning
+always_forward:
+   switch_weights: true
+   control_weights: true
+
+sample: false
 n_samples: 1000
 measure_discrepancy: true
+epr_stats: false
 
 variables:
    zero: &zero '0+0j'
@@ -66,31 +81,43 @@ variables:
    q135: &q135 'rad(135)'
    q180: &q180 'rad(180)'
    q210: &q210 'rad(30+180)'
-   q2: &q2 'acos(1/3)'
    qr34: &qr34 'acos(3/4)'
    qr45: &qr45 'acos(4/5)'
    qm45: &qm45 '-rad(45)'
    qm60: &qm60 '-rad(60)'
    cw: &cw '0'
 
+   q1: &q1 'rad(30)'
+   q2: &q2 '0'
    qa: &qa '0'
    qb: &qb 'pi/8'
    qc: &qc 'pi/4'
+
 particles:
 #   c1: {weight: *zero, sign: 1}
 #   c2: {weight: *zero, sign: 1}
-   p1: {weight: *one, sign: 1}
-   p2: {weight: *one, sign: 1}
+#   p1: {weight: '0.7071067811865476+0.7071067811865476j', sign: 1}
+#   p2: {weight: '0.7071067811865476-0.7071067811865476j', sign: 1}
+   p1: {weight: 1, sign: 1}
+   p2: {weight: 1, sign: 1}
    p3: {weight: *one, sign: 1}
+
 gates:
-   g1: {angle: 'rad(30)'}
-   g2: {angle: 'rad(30)'}
+   g1: {angle: *q1}
+   g2: {angle: *q1}
    g3: {angle: 0}
    g4: {angle: 0}
-   g5: {angle: 'rad(20)'}
-   g6: {angle: 'rad(20)'}
-#   g7: {angle: 0}
-#   g8: {angle: 0}
+   g5: {angle: 'pi/8'}
+   g6: {angle: 'pi/4'}
+#   g7: {angle: *q1}
+#   g8: {angle: *q1}
+#   d0: {angle: 0}
+#   d1: {angle: 0}
+#   d2: {angle: 0}
+#   d3: {angle: 0}
+#   d4: {angle: 0}
+#   d5: {angle: 0}
+#   d6: {angle: 0}
 #delay_gates: [d1, d2, d3, d4, d5, d6, d7, d8, d9, d10]
 #delay_gates: [d7, d8, d9, d10]
 
@@ -101,36 +128,41 @@ links:
    p1: g1.upper
    p2: g2.upper
    p3: g3.upper
+#   p3: d0.control
+#   d0.control: g3.upper
 
    # phase 1 - split
    g1.upper: g3.control
-#   g1.lower: d1.input
+#   g1.lower: d1.control
    g1.lower: g5.lower
 
-#   g2.upper: d2.input
+#   g2.upper: d2.control
    g2.upper: g4.control
-#   g2.lower: d3.input
+#   g2.lower: d3.control
    g2.lower: g6.lower
 
    # phase 2a - couple from g1
-#   d1.output: d5.input
+#   d1.control: d5.control
 
-#   g3.control: d4.input
+#   g3.control: d4.control
    g3.control: g5.upper
    g3.upper: g4.upper
    g3.lower: g4.lower
 
-#   d2.output: g4.control
+#   d2.control: g4.control
 
-#   d3.output: d6.input
+#   d3.control: d6.control
 
    # phase 2b - couple from g2
-#   d4.output: g5.upper
-#   d5.output: g5.lower
+#   d4.control: g5.upper
+#   d5.control: g5.lower
 
    g4.control: g6.upper
 
-#   d6.output: g6.lower
+#   g5.upper: g7.upper
+#   g6.upper: g8.upper
+
+#   d6.control: g6.lower
 
    # phase 3 - observe
 #   g5.upper: d7.input

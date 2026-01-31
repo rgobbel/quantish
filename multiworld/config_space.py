@@ -72,6 +72,12 @@ class PCoordinate:
     step: int
     pkey: PKey # name and sign
     position: Position
+    _stepped: bool
+    def __init__(self, step, pkey, position, stepped=True):
+        self.step = step
+        self.pkey = pkey
+        self.position = position
+        self._stepped = stepped
     def __repr__(self):
         return self.key
     def __hash__(self):
@@ -80,16 +86,30 @@ class PCoordinate:
         return self.__repr__() == other.__repr__()
     def __lt__(self, other):
         return str(self) < str(other)
+
     @property
     def key(self):
-        return f'{self.step}/{self.pkey}@{self.position}'
+        if self._stepped:
+            return f'{self.step}/{self.pkey}@{self.position}'
+        else:
+            return f'{self.pkey}@{self.position}'
+
+    @property
+    def stepped(self):
+        return self._stepped
+    @stepped.setter
+    def stepped(self, value):
+        self._stepped = value
+
 
 # a PCoordValue is a PCoordinate plus a specific particle (for name and weight)
 # particle name and sign must match the coordinate
 @dataclass(slots=True)
 class PCoordValue:
+    # __slots__ = ('pcoord', 'particle', '_stepped')
     pcoord: PCoordinate # step, sign, name, position
     particle: Particle
+    _stepped: bool = True
     def __post_init__(self):
         if not isinstance(self.pcoord, PCoordinate):
             raise ValueError(f'pcoord is a {type(self.pcoord)}, not a PCoordinate: {self.pcoord}')
@@ -102,10 +122,19 @@ class PCoordValue:
     def __hash__(self):
         return tuple((self.pcoord.__hash__(), self.particle.weight.__hash__())).__hash__()
     def copy(self):
-        new_pcoord = PCoordinate(step=self.pcoord.step, pkey=self.pcoord.pkey, position=self.pcoord.position)
+        new_pcoord = PCoordinate(step=self.pcoord.step, pkey=self.pcoord.pkey,
+                                 position=self.pcoord.position, stepped=self._stepped)
         new_particle = Particle(self.particle.name, self.particle.weight, self.particle.sign,
                                 self.particle.next_step, self.particle.precision)
-        return PCoordValue(pcoord=new_pcoord, particle=new_particle)
+        return PCoordValue(pcoord=new_pcoord, particle=new_particle, _stepped=self._stepped)
+
+    @property
+    def stepped(self):
+        return self._stepped
+    @stepped.setter
+    def stepped(self, value):
+        self.pcoord.stepped = value
+        self._stepped = value
 
 # a complete ConfigSpace coordinate
 class CSCoordinate:
@@ -124,11 +153,12 @@ class CSCoordinate:
 
 @dataclass
 class ConfigSpacePoint:
-    __slots__ = ('step', 'pcvals', 'predecessors', 'successors')
+    __slots__ = ('step', 'pcvals', 'predecessors', 'successors', '_stepped')
     pcvals: Dict[PCoordinate, Particle]
     def __init__(self, step, initial_values:List[PCoordValue],
                  predecessors:Set[Self]=None, successors:Set[Self]=None):
         self.step = step
+        self._stepped = True
         self.pcvals = {x.pcoord.key: x for x in sorted(initial_values, key=lambda x: x.particle.pkey)}
         if predecessors is None: predecessors = set()
         self.predecessors = predecessors
@@ -137,10 +167,29 @@ class ConfigSpacePoint:
 
     @property
     def key(self):
-        return f'{self.step}/{"|".join([str(k) for k, v in sorted(self.pcvals.items(), key=lambda x: x[1].particle.pkey)])}'
+        return self.__repr__()
+        # if self._stepped:
+        #     return f'{self.step}/{"|".join([str(k) for k, v in sorted(self.pcvals.items(), key=lambda x: x[1].particle.pkey)])}'
+        # else:
+        #     return f'{"|".join([str(k) for k, v in sorted(self.pcvals.items(), key=lambda x: x[1].particle.pkey)])}'
+
+    def __repr__(self):
+        if self._stepped:
+            return f'{self.step}/{"|".join([str(k) for k, v in sorted(self.pcvals.items(), key=lambda x: x[1].particle.pkey)])}'
+        else:
+            return f'{"|".join([str(v) for k, v in sorted(self.pcvals.items(), key=lambda x: x[1].particle.pkey)])}'
 
     def __hash__(self):
         return self.key.__hash__()
+
+    @property
+    def stepped(self):
+        return self._stepped
+    @stepped.setter
+    def stepped(self, value):
+        self._stepped = value
+        for pcv in self.pcvals.values():
+            pcv.stepped = value
 
     @property
     def weights(self):
@@ -158,13 +207,17 @@ class ConfigSpacePoint:
         if self.key != other.key:
             raise ValueError(f'keys do not match: self={self.key}, other={other.key}')
         else:
-            self.predecessors.add(other)
-            other.successors.add(self)
+            for predecessor in other.predecessors:
+                predecessor.successors.add(self)
+            self.predecessors |= other.predecessors
             for k in self.pcvals.keys():
                 cur_pcv = self.pcvals[k]
                 other_pcv = other.pcvals[k]
-                if cur_pcv.pcoord.position.origin not in active_gates:
+                if cur_pcv.pcoord.position.endpoint == NOWHERE or \
+                        cur_pcv.pcoord.position.origin is None or \
+                        cur_pcv.pcoord.position.origin.gate not in active_gates:
                     continue
+                assert cur_pcv.particle.probability + other_pcv.particle.probability <= 1
                 cur_part = cur_pcv.particle
                 other_part = other_pcv.particle
                 cur_step = cur_part.next_step
@@ -182,8 +235,9 @@ class ConfigSpacePoint:
                                                    next_step=cur_part.next_step)
 
 class ConfigSpace:
-    __slots__ = ('index',)
+    __slots__ = ('index', '_stepped')
     def __init__(self, initial_point:ConfigSpacePoint):
+        self._stepped = True
         self.index = Addict({initial_point.key: initial_point})
 
     def add(self, other:Self):
@@ -209,6 +263,15 @@ class ConfigSpace:
     def add_coordinates(self, coords):
         for coord in coords:
             self.add_coordinate(coord)
+
+    @property
+    def stepped(self):
+        return self._stepped
+    @stepped.setter
+    def stepped(self, value):
+        self._stepped = value
+        for point in self.index.values():
+            point.stepped = value
 
 
 class ConfigSpaceRunner:
@@ -269,9 +332,9 @@ class ConfigSpaceRunner:
             for cs_point in this_cycle_points:
                 log.info(f'      {cs_point}')
             log.info('')
-            dest_gate_names = set()
             for cs_point in this_cycle_points:
                 by_position = defaultdict(list)
+                dest_gate_names = set()
                 dest_gates = {}
                 by_coord = {}
                 by_dest_coords = defaultdict(list)
@@ -345,19 +408,16 @@ class ConfigSpaceRunner:
                         else:
                             by_coord[pcv.pcoord] = [pcv.copy()]
                     successor_tuples = list(itertools.product(*[by_particle[x] for x in sorted(by_particle.keys())]))
-                    nonzero_successors = []
                     for st in successor_tuples:
+                        stpoint = ConfigSpacePoint(next_step, st, predecessors={cs_point})
+                        cs_point.successors.add(stpoint)
                         if not np.all([enough(p.particle.probability, ZERO_THRESHOLD) for p in st]):
                             log.info(f'   discarding {st} because it includes a zero weight')
                         else:
-                            nonzero_successors.append(st)
-                    if len(nonzero_successors) > 0:
-                        all_worlds.append(nonzero_successors)
+                            point_outputs.append(stpoint)
+                    if len(point_outputs) > 0:
+                        all_worlds.append(point_outputs)
 
-                    for st in nonzero_successors:
-                        stpoint = ConfigSpacePoint(next_step, st, predecessors={cs_point})
-                        cs_point.successors.add(stpoint)
-                        point_outputs.append(stpoint)
                     log.info(f'   finished processing {cs_point}')
                 if len(point_outputs) > 0:
                     log.info(f'   unfiltered point outputs:')

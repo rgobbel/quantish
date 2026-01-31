@@ -328,32 +328,44 @@ class Simulation:
                 particles = [p.particle for p in pcvals]
                 logstr = '  |  '.join([f'{f"{particle}@{pos}":<{pad_len[i]}}' for i, (particle, pos) in enumerate(zip(particles, positions))])
                 log.info(f'   {logstr}')
+            all_points = set(result_space.index.values())
+            # found_new = True
+            # while found_new:
+            #     found_new = False
+            #     new_points = set()
+            #     for point in all_points:
+            #         for succ in point.successors:
+            #             if succ not in all_points:
+            #                 found_new = True
+            #                 succ.stepped = True
+            #                 new_points.add(succ)
+            #         for pred in point.predecessors:
+            #             if pred not in all_points:
+            #                 found_new = True
+            #                 pred.stepped = True
+            #                 new_points.add(pred)
+            #     all_points |= new_points
+            layers = defaultdict(list)
+            for p in all_points:
+                layers[p.key[0]] += [p]
             exe_graph = nx.MultiDiGraph()
-            exe_graph.add_nodes_from(result_space.index.values())
+            exe_graph.add_nodes_from(all_points)
             exe_nodes = list(exe_graph.nodes)
-            cur_nodes = len(exe_nodes)
-            new_nodes = True
-            while new_nodes:
-                new_nodes = False
-                for node in exe_nodes:
-                    for succ in node.successors:
-                        if succ not in exe_graph:
-                            new_nodes = True
-                            exe_graph.add_node(succ)
-                    for pred in node.predecessors:
-                        if pred not in exe_graph:
-                            new_nodes = True
-                            exe_graph.add_node(pred)
-                exe_nodes = list(exe_graph.nodes)
             for node in exe_nodes:
                 for succ in node.successors:
-                    exe_graph.add_edge(node, succ)
-            layers = defaultdict(list)
-            for p in exe_graph.nodes:
-                layers[p.key[0]] += [p]
+                    if succ not in all_points: continue
+                    if node.key != succ.key and not exe_graph.has_edge(node, succ):
+                        log.info(f'add successor edge from {node.key}->{succ.key}')
+                        exe_graph.add_edge(node, succ)
+                # for pred in node.predecessors:
+                #     if pred.key != node.key and not exe_graph.has_edge(pred, node):
+                #         log.info(f'add predeccessor edge from {pred.key}->{node.key}')
+                #         exe_graph.add_edge(pred, node)
+            result_space.stepped = False
             pos = nx.multipartite_layout(exe_graph, layers)
+            # sizes = [len(layer) for layer in list(layers.values())]
             nx.draw(exe_graph, pos=pos)
-            plt.draw()
+            # plt.axis('equal')
             plt.show()
                 # log.info(point)
             # for k, v in by_result_position.items():
