@@ -16,6 +16,7 @@ class PKey(CompositeKey):
 
 class Particle:
     def __init__(self, name, weight, sign, next_step=0, precision=2):
+        assert isinstance(next_step, int)
         self.next_step = next_step
         self.precision = precision
         self.name = name

@@ -87,7 +87,7 @@ def enough(x, threshold):
     # return (not np.isclose(flx, 0)) and flx >= threshold
     return flx >= tx
 
-ZERO_THRESHOLD = 1e-19
+ZERO_THRESHOLD = 0
 
 def filter_weights(particles, threshold=ZERO_THRESHOLD):
     # return particles

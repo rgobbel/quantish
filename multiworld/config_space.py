@@ -95,6 +95,10 @@ class PCoordinate:
             return f'{self.pkey}@{self.position}'
 
     @property
+    def unstepped_key(self):
+        return f'{self.pkey}@{self.position}'
+
+    @property
     def stepped(self):
         return self._stepped
     @stepped.setter
@@ -127,6 +131,10 @@ class PCoordValue:
         new_particle = Particle(self.particle.name, self.particle.weight, self.particle.sign,
                                 self.particle.next_step, self.particle.precision)
         return PCoordValue(pcoord=new_pcoord, particle=new_particle, _stepped=self._stepped)
+
+    @property
+    def unstepped_key(self):
+        return f'{self.pcoord.unstepped_key}:{wstr(self.particle.weight, precision=2)}({self.particle.probability:.2f})'
 
     @property
     def stepped(self):
@@ -167,15 +175,18 @@ class ConfigSpacePoint:
 
     @property
     def key(self):
-        return self.__repr__()
-        # if self._stepped:
-        #     return f'{self.step}/{"|".join([str(k) for k, v in sorted(self.pcvals.items(), key=lambda x: x[1].particle.pkey)])}'
-        # else:
-        #     return f'{"|".join([str(k) for k, v in sorted(self.pcvals.items(), key=lambda x: x[1].particle.pkey)])}'
+        if self._stepped:
+            return f'{self.step}/{"|".join([str(k) for k, v in sorted(self.pcvals.items(), key=lambda x: x[1].particle.pkey)])}'
+        else:
+            return f'{"|".join([str(k) for k, v in sorted(self.pcvals.items(), key=lambda x: x[1].particle.pkey)])}'
+
+    @property
+    def unstepped_key(self):
+        return f'{"|".join([v.pcoord.unstepped_key for v in sorted(self.pcvals.values(), key=lambda x: x.particle.pkey)])}'
 
     def __repr__(self):
         if self._stepped:
-            return f'{self.step}/{"|".join([str(k) for k, v in sorted(self.pcvals.items(), key=lambda x: x[1].particle.pkey)])}'
+            return f'{self.step}/{"|".join([str(v) for k, v in sorted(self.pcvals.items(), key=lambda x: x[1].particle.pkey)])}'
         else:
             return f'{"|".join([str(v) for k, v in sorted(self.pcvals.items(), key=lambda x: x[1].particle.pkey)])}'
 
@@ -203,7 +214,7 @@ class ConfigSpacePoint:
     def particles(self):
         return [p.particle for p in self.pcvals.values()]
 
-    def add(self, other:Self, active_gates:set):
+    def add(self, other:Self, active_particles:Set[Particle]=None):
         if self.key != other.key:
             raise ValueError(f'keys do not match: self={self.key}, other={other.key}')
         else:
@@ -213,41 +224,50 @@ class ConfigSpacePoint:
             for k in self.pcvals.keys():
                 cur_pcv = self.pcvals[k]
                 other_pcv = other.pcvals[k]
-                if cur_pcv.pcoord.position.endpoint == NOWHERE or \
-                        cur_pcv.pcoord.position.origin is None or \
-                        cur_pcv.pcoord.position.origin.gate not in active_gates:
+                # if cur_pcv.pcoord.position.endpoint == NOWHERE:
+                #     log.info(f'not adding {other_pcv} to {cur_pcv} because endpoint == NOWHERE')
+                #     continue
+                if cur_pcv.pcoord.position.origin is None:
+                    log.info(f'not adding {other_pcv} to {cur_pcv} because cur_pcv origin is None')
                     continue
-                assert cur_pcv.particle.probability + other_pcv.particle.probability <= 1
+                if active_particles and cur_pcv.particle.name not in active_particles:
+                    log.info(
+                        f'not adding {other_pcv} to {cur_pcv} because '
+                        f'particle {cur_pcv.particle.name} not in active_particles'
+                        f' ({", ".join(list(active_particles))})')
+                    continue
                 cur_part = cur_pcv.particle
                 other_part = other_pcv.particle
                 cur_step = cur_part.next_step
                 other_step = other_part.next_step
                 if other_pcv.pcoord.step != self.step:
                     log.info(f'{self.step=}, {cur_step=}, {other_step=}, not adding')
-                    log.info(f'{self=}, {cur_pcv=}, {other_pcv=}')
-                    continue
-                # if cur_step == 0 or cur_step < self.step:
-                #     log.info(f'{self.step=}, {cur_step=}, {other_step=}, not adding')
                 #     log.info(f'{self=}, {cur_pcv=}, {other_pcv=}')
                 #     continue
+                if cur_step < self.step:
+                    log.info(f'{self.step=}, {cur_step=}, {other_step=}, not adding')
+                #     log.info(f'{self=}, {cur_pcv=}, {other_pcv=}')
+                #     continue
+                # assert cur_pcv.particle.probability + other_pcv.particle.probability <= 1
                 self.pcvals[k].particle = Particle(name=cur_part.name, sign=cur_part.sign,
                                                    weight=cur_part.weight+other_part.weight,
                                                    next_step=cur_part.next_step)
 
 class ConfigSpace:
-    __slots__ = ('index', '_stepped')
+    __slots__ = ('index', '_stepped', 'unstepped_index')
     def __init__(self, initial_point:ConfigSpacePoint):
         self._stepped = True
         self.index = Addict({initial_point.key: initial_point})
+        self.unstepped_index = Addict({initial_point.unstepped_key: initial_point})
 
     def add(self, other:Self):
         for other_key, other_value in other.index.items():
             if other_key in self.index.keys():
                 self.index[other_key].add(other_value)
 
-    def add_point(self, point:ConfigSpacePoint):
+    def add_point(self, point:ConfigSpacePoint, active_particles:Set[Particle]):
         if point.key in self.index.keys():
-            self.index[point.key].add(point)
+            self.index[point.key].add(point, active_particles)
         else:
             self.index[point.key] = point
 
@@ -273,6 +293,8 @@ class ConfigSpace:
         for point in self.index.values():
             point.stepped = value
 
+    def update_unstepped_index(self):
+        self.unstepped_index = Addict({p.unstepped_key: p for p in self.index.values()})
 
 class ConfigSpaceRunner:
     def __init__(self, sim=None):
@@ -309,7 +331,7 @@ class ConfigSpaceRunner:
                     dest_gate, dest_port = None, None
                 if gates[gate.name].weights[port]:
                         for p in gates[gate.name].weights[port]:
-                            p.next_step = self.sim.gate_step[dest_gate]
+                            p.next_step = self.sim.gate_step.get(dest_gate, 0)
                             dest_pos = Position(origin=Wire(gate.name, port),
                                                 endpoint=Wire(dest_gate, dest_port))
                             pcoord = PCoordinate(step=next_step, pkey=p.pkey, position=dest_pos)
@@ -323,18 +345,23 @@ class ConfigSpaceRunner:
         worlds = deque([[initial_point]])
         space = ConfigSpace(initial_point)
         step = initial_point.step
+        processed_points = set()
+        dest_gate_names = None
         while len(worlds) > 0:
             this_cycle_points = worlds.popleft()
             next_cycle_points = []
+            active_particles = set()
             next_step = step + 1
             log.info(f'begin step {step}')
-            log.info(f'   input values:')
             for cs_point in this_cycle_points:
-                log.info(f'      {cs_point}')
-            log.info('')
-            for cs_point in this_cycle_points:
-                by_position = defaultdict(list)
+                if cs_point.key in processed_points:
+                    raise RuntimeError(f'point {cs_point} has alredy run')
+                processed_points.add(cs_point.key)
+                log.info(f'      processing {cs_point}')
+                log.info('')
                 dest_gate_names = set()
+                by_position = defaultdict(list)
+                source_gate_names = defaultdict(set)
                 dest_gates = {}
                 by_coord = {}
                 by_dest_coords = defaultdict(list)
@@ -344,23 +371,27 @@ class ConfigSpaceRunner:
                 for pcv in cs_point.pcvals.values():
                     log.debug(f'{pcv=}')
                     if pcv.particle.next_step != step:
-                        log.info(f'   deferring {pcv} because {pcv.particle.next_step=} and {step=}')
+                        log.info(f'         deferring {pcv} because {pcv.particle.next_step=} and {step=}')
                         deferred.append(pcv)
                     else:
-                        ppos = pcv.pcoord.position.endpoint
-                        if ppos.gate is not None:
-                            dest_gate_name = ppos.gate
-                            by_position[ppos].append(deepcopy(pcv))
-                            by_dest_coords[(ppos, pcv.particle.sign)] += [deepcopy(pcv)]
+                        if pcv.pcoord.position.origin is None:
+                            source_gate_names['ORIGIN'].add(pcv)
+                        else:
+                            source_gate_names[pcv.pcoord.position.origin.gate].add(pcv)
+                        destination = pcv.pcoord.position.endpoint
+                        if destination.gate is not None:
+                            dest_gate_name = destination.gate
+                            by_position[destination].append(deepcopy(pcv))
+                            by_dest_coords[(destination, pcv.particle.sign)] += [deepcopy(pcv)]
                             dest_gate_names.add(dest_gate_name)
 
                 if len(dest_gate_names) > 0:
-                    log.info(f'   next point {cs_point.key}: {", ".join([str(p) for p in cs_point.particles])}')
-                    log.info(f'      destination gates: {", ".join([str(sim.gates[g]) for g in dest_gate_names])}')
+                    # log.info(f'      next point {cs_point.key}: {", ".join([str(p) for p in cs_point.particles])}')
+                    log.info(f'         destination gates: {", ".join([str(sim.gates[g]) for g in dest_gate_names])}')
                     bpvals = sorted(flat_list(list(by_position.values())), key=lambda x: x.particle.pkey)
-                    log.info(f'      input weights:')
+                    log.info(f'         input weights:')
                     for v in bpvals:
-                        log.info(f'         {v}')
+                        log.info(f'            {v}')
 
                     # reset all gate internal states
                     for gate_name in dest_gate_names:
@@ -378,6 +409,7 @@ class ConfigSpaceRunner:
 
                     # ensure all inputs have real values (not "undefined"), calculate weights
                     for gate in dest_gates.values():
+                        log.info(f'setting weights for {gate} with input {gate.inputs}')
                         gate.set_weights()
 
                     outputs = self.forward_results(step=step, gates=dest_gates, links=sim.links)
@@ -394,14 +426,16 @@ class ConfigSpaceRunner:
                         for pcv in deferred:
                             log.info(f'      {pcv}')
 
-                for pcv in outputs:
-                    if pcv.pcoord.position.endpoint == NOWHERE:
-                        log.info(f'   {pcv} going nowhere, next_step set to 0')
-                        pcv.particle.next_step = 0
+                # for pcv in outputs:
+                #     if pcv.pcoord.position.endpoint == NOWHERE:
+                #         log.info(f'   {pcv} going nowhere, next_step set to 0')
+                #         pcv.particle.next_step = 0
 
                 point_outputs = []
                 if outputs:
                     for pcv in outputs:
+                        if pcv.pcoord.position.origin is not None and pcv.pcoord.position.origin.gate in dest_gates:
+                            active_particles.add(pcv.particle.name)
                         by_particle[pcv.particle.name] += [pcv.copy()]
                         if pcv.pcoord in by_coord.keys():
                             by_coord[pcv.pcoord] += [pcv]
@@ -418,13 +452,13 @@ class ConfigSpaceRunner:
                     if len(point_outputs) > 0:
                         all_worlds.append(point_outputs)
 
-                    log.info(f'   finished processing {cs_point}')
                 if len(point_outputs) > 0:
-                    log.info(f'   unfiltered point outputs:')
+                    log.info('')
+                    log.info(f'         point outputs:')
                     for point in point_outputs:
-                        log.info(f'      {point}')
+                        log.info(f'            {point}')
                 else:
-                    log.info('   nothing for next cycle')
+                    log.info(f'      nothing for next cycle')
                 log.info('')
                 next_cycle_points += point_outputs
                 # for point in point_outputs:
@@ -434,9 +468,11 @@ class ConfigSpaceRunner:
 
             # report raw outputs
             if len(next_cycle_points) > 0:
-                log.info(f'   unfiltered cycle outputs')
+                log.info(f'   cycle outputs:')
+                log.info(f'      before merging:')
                 for point in next_cycle_points:
-                    log.info(f'      {point}')
+                    log.info(f'         {point}')
+                log.info('')
             else:
                 log.info(f'   NO OUTPUTS')
 
@@ -444,7 +480,7 @@ class ConfigSpaceRunner:
             by_key = {}
             for point in next_cycle_points:
                 if point.key in by_key.keys():
-                    by_key[point.key].add(point, dest_gate_names)
+                    by_key[point.key].add(point, active_particles)
                 else:
                     by_key[point.key] = point
             merged_points = list(by_key.values())
@@ -453,31 +489,39 @@ class ConfigSpaceRunner:
             # all nonzero values are added to config space, even if no further output
             nonzero_values = []
             if len(merged_points) > 0:
-                log.info(f'   merged:')
+                log.info(f'      merged:')
                 for point in merged_points:
                     if enough(abs(point.weight), ZERO_THRESHOLD):
-                        log.info(f'      {point}')
+                        log.info(f'         {point}')
                         nonzero_values.append(point)
                     else:
                         log.info(f'      discarding {point}, not passing {ZERO_THRESHOLD}')
+                log.info('')
             if len(nonzero_values) > 0:
-                log.info(f'   nonzero values:')
+                log.info(f'      nonzero values:')
                 for point in nonzero_values:
-                    log.info(f'      {point}')
-                    space.add_point(point)
+                    log.info(f'         {point}')
+                    space.add_point(point, active_particles)
+                log.info('')
 
+            active_particles = set()
             # nonzero_values -> filtered_values
             filtered_values = []
             for point in nonzero_values:
-                if np.all([pcv.pcoord.position.endpoint == NOWHERE or pcv.pcoord.position.origin is None for pcv in point.pcvals.values()]):
-                    log.info(f'      ignoring {point}')
+                if np.all([pcv.pcoord.position.endpoint == NOWHERE for pcv in point.pcvals.values()]):
+                    log.info(f'      ignoring {point} because all particles go nowhere')
+                    continue
+                if np.all([pcv.pcoord.position.origin is None for pcv in point.pcvals.values()]):
+                    log.info(f'      ignoring {point} because all components are at origin')
                     continue
                 filtered_values.append(point)
 
             # filtered_values -> worlds
-            for point in filtered_values:
-                log.info(f'   {point}')
             if len(filtered_values) > 0:
+                log.info(f'   final cycle outputs:')
+                for point in filtered_values:
+                    log.info(f'      {point}')
+                log.info('')
                 worlds.append(filtered_values)
                 log.info(f'   added {len(filtered_values)} points for next step')
 
