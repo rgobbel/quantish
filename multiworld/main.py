@@ -5,6 +5,7 @@ import subprocess
 import time
 from argparse import ArgumentParser, BooleanOptionalAction, SUPPRESS, ArgumentDefaultsHelpFormatter
 from collections import defaultdict
+from copy import deepcopy
 from pathlib import Path
 
 import numpy as np
@@ -15,13 +16,17 @@ import yaml
 from tqdm import tqdm
 from addict import Addict
 
+from multiworld.config_space import PCoordValue
 from multiworld.gate import FredkinGate, DelayGate
 from multiworld.particle import Particle
 import multiworld.qnumber as qn
 from multiworld.qnumber import CalcMode, qify
 from multiworld.simulation import Simulation
 from multiworld.util import QLogger, max_width, flat_list, SEP, WIRES
+import multiworld.util as util
 from multiworld.visualizations import diagram
+
+float_zero_threshold = 1-18
 
 def main():
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
@@ -72,6 +77,10 @@ def main():
     config = Addict(config_dict)
     symbolic = config.symbolic or False
     CalcMode.default('Symbolic' if symbolic else 'Float')
+    if CalcMode.default() == 'Symbolic':
+        util.ZERO_THRESHOLD = qify(0)
+    else:
+        util.ZERO_THRESHOLD = float_zero_threshold
     qn.I = qn.I_fn()
     qn.PI = qn.PI_fn()
     config.config_path = args.config
@@ -137,7 +146,8 @@ def main():
                     log.info(f'Saving PDF version of diagram to {pdf_path}')
                     subprocess.run(['mmdc', '-i', before_path, '-o', pdf_path, '--pdfFit'])
     if args.simulate:
-        result_space, steps = sim.run()
+        result_space = sim.run()
+        steps = result_space.max_step
         has_run = True
         # if not sim.sample:
         #     result_space, steps_run = sim.run()
@@ -754,19 +764,50 @@ def main():
         log.info('')
         if len(final_points) > 0:
             pad_len = [0] * len(final_points[0].pcvals.values())
+            by_pname_gate_pos = defaultdict(list)
             for point in final_points:
                 pcvals = list(point.pcvals.values())
+                for p in pcvals:
+                    key = f'{p.particle.name}@{p.pcoord.position.origin}'
+                    if key in by_pname_gate_pos.keys():
+                        by_pname_gate_pos[key] = PCoordValue(
+                            pcoord = p.pcoord, particle=Particle(
+                                name=p.particle.name,
+                                sign=p.particle.sign,
+                                weight=by_pname_gate_pos[key].particle.weight + p.particle.weight))
+                    else:
+                        by_pname_gate_pos[key] = p
                 positions = [p.pcoord.position.origin for p in pcvals]
                 particles = [p.particle for p in pcvals]
-                logstr = [f'{particle}@{pos}' for particle, pos in zip(particles, positions)]
+                logstr = [f'{particle.ps(short=True)}@{pos}' for particle, pos in zip(particles, positions)]
                 for i, s in enumerate(logstr):
                     pad_len[i] = max(pad_len[i], len(s))
+            by_particle = defaultdict(lambda: defaultdict(dict))
+            for k, v in by_pname_gate_pos.items():
+                pname = v.particle.name
+                gname = v.pcoord.position.origin.gate
+                port = v.pcoord.position.origin.port
+                by_particle[pname][gname][port] = v
+            normed = {}
+            for pname, vals in by_particle.items():
+                gname = list(vals.keys())[0]
+                upper = vals[gname]['upper']
+                lower = vals[gname]['lower']
+                normed_upper, normed_lower = util.normalize_list([upper.particle.weight, lower.particle.weight])
+                normed_sum = normed_upper + normed_lower
+                normed[f'{pname}@{gname}'] = {'upper': Particle(pname, sign=1, weight=normed_upper), 'lower': Particle(pname, sign=1, weight=normed_lower)}
+            log.info('result summary:')
+            for k, v in sorted(normed.items(), key=lambda x: x[0]):
+                log.info(f'   {k}: upper: {v["upper"]}, lower: {v["lower"]}')
+            for v in sorted(by_pname_gate_pos.values(), key=lambda x: x.particle.name):
+                log.info(f'{v}')
+            log.info('')
             log.info('final results:')
             for point in final_points:
                 pcvals = list(point.pcvals.values())
                 positions = [p.pcoord.position.origin for p in pcvals]
                 particles = [p.particle for p in pcvals]
-                logstr = '  |  '.join([f'{f"{particle}@{pos}":<{pad_len[i]}}' for i, (particle, pos) in enumerate(zip(particles, positions))])
+                logstr = '  |  '.join([f'{f"{particle.ps(short=True)}@{pos}":<{pad_len[i]}}' for i, (particle, pos) in enumerate(zip(particles, positions))])
                 log.info(f'   {logstr}')
             all_points = set(result_space.index.values())
             layers = defaultdict(list)
@@ -785,8 +826,8 @@ def main():
             result_space.stepped = False
             pos = nx.multipartite_layout(exe_graph, layers)
             nx.draw(exe_graph, pos=pos, node_color=colors)
+            plt.savefig(dpath.with_stem(dpath.stem+'_graph').with_suffix('.pdf'), orientation='landscape')
             plt.show()
-            plt.savefig()
 
     if 'no_diagram' not in args:
         if args.diagram_when in ('after', 'both'):

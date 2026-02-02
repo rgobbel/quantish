@@ -1,5 +1,5 @@
 title: Figure 4.5
-symbolic: false
+symbolic: true
 #merge:
 #   before_measure: true
 #   before_forwarding: false

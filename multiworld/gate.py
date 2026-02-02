@@ -265,6 +265,9 @@ class DelayGate(FredkinGate):
     @property
     def theta(self):
         return qify(0)
+    @theta.setter
+    def theta(self, value):
+        pass
 
     def init_inputs(self):
         self.inputs = default_wires()

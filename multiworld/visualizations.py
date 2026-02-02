@@ -175,12 +175,12 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
     #     dgnode = pm.Node(id=delay_name)
     #     dgnode.content = dgcontent
     #     mermaid_nodes[delay_name] = dgnode
-    for stage_name, stage in sim.diagram_groups.items():
-        stage_id = f'{stage_name}_stage'
+    for group_name, gate_group in sim.diagram_groups.items():
+        stage_id = f'{group_name}_stage'
         pg = diag.add_subgraph(stage_id)
-        pg.header = f'subgraph {stage_id}["{stage_name}"]'
+        pg.header = f'subgraph {stage_id}["{group_name}"]'
         phase_graphs[stage_id] = pg
-        for gname in stage:
+        for gname in gate_group:
             gate = sim.gates[gname]
             if gate.report_type() == 'DelayGate':
                 gate_inout = f'{gate.name}{SEP}control'

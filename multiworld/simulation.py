@@ -288,7 +288,7 @@ class Simulation:
         world = ConfigSpace(self.initial_point)
         runner = ConfigSpaceRunner(self)
         # runner.run_gates(self.initial_point)
-        result_space, steps = runner.run(self.initial_point)
+        result_space = runner.run(self.initial_point)
         # final_points = [v for k, v in result_space.index.items() if int(k.split('/')[0]) == steps]
         # log.info(f'finished after {steps} steps, {len(result_space.index)} total points in final config space, {len(final_points)} points from last step')
         # log.info('')
@@ -378,7 +378,7 @@ class Simulation:
 
         log.info('DONE!')
 
-        return result_space, steps #, self.sinks, self.particles
+        return result_space #, self.sinks, self.particles
 
     def pos_value_str(self, pos, val_type='results'):
         parts = pos.split('.')

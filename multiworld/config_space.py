@@ -227,11 +227,11 @@ class ConfigSpacePoint:
                 # if cur_pcv.pcoord.position.endpoint == NOWHERE:
                 #     log.info(f'not adding {other_pcv} to {cur_pcv} because endpoint == NOWHERE')
                 #     continue
-                if cur_pcv.pcoord.position.origin is None:
-                    log.info(f'not adding {other_pcv} to {cur_pcv} because cur_pcv origin is None')
-                    continue
+                # if cur_pcv.pcoord.position.origin is None:
+                #     log.info(f'not adding {other_pcv} to {cur_pcv} because cur_pcv origin is None')
+                #     continue
                 if active_particles and cur_pcv.particle.name not in active_particles:
-                    log.info(
+                    log.debug(
                         f'not adding {other_pcv} to {cur_pcv} because '
                         f'particle {cur_pcv.particle.name} not in active_particles'
                         f' ({", ".join(list(active_particles))})')
@@ -240,12 +240,12 @@ class ConfigSpacePoint:
                 other_part = other_pcv.particle
                 cur_step = cur_part.next_step
                 other_step = other_part.next_step
-                if other_pcv.pcoord.step != self.step:
-                    log.info(f'{self.step=}, {cur_step=}, {other_step=}, not adding')
+                # if other_pcv.pcoord.step != self.step:
+                #     log.info(f'{self.step=}, {cur_step=}, {other_step=}, not adding')
                 #     log.info(f'{self=}, {cur_pcv=}, {other_pcv=}')
                 #     continue
-                if cur_step < self.step:
-                    log.info(f'{self.step=}, {cur_step=}, {other_step=}, not adding')
+                # if cur_step < self.step:
+                #     log.info(f'{self.step=}, {cur_step=}, {other_step=}, not adding')
                 #     log.info(f'{self=}, {cur_pcv=}, {other_pcv=}')
                 #     continue
                 # assert cur_pcv.particle.probability + other_pcv.particle.probability <= 1
@@ -254,9 +254,10 @@ class ConfigSpacePoint:
                                                    next_step=cur_part.next_step)
 
 class ConfigSpace:
-    __slots__ = ('index', '_stepped', 'unstepped_index')
+    __slots__ = ('index', '_stepped', 'unstepped_index', 'max_step')
     def __init__(self, initial_point:ConfigSpacePoint):
         self._stepped = True
+        self.max_step = 0
         self.index = Addict({initial_point.key: initial_point})
         self.unstepped_index = Addict({initial_point.unstepped_key: initial_point})
 
@@ -266,6 +267,7 @@ class ConfigSpace:
                 self.index[other_key].add(other_value)
 
     def add_point(self, point:ConfigSpacePoint, active_particles:Set[Particle]):
+        self.max_step = max(point.step, self.max_step)
         if point.key in self.index.keys():
             self.index[point.key].add(point, active_particles)
         else:
@@ -409,7 +411,7 @@ class ConfigSpaceRunner:
 
                     # ensure all inputs have real values (not "undefined"), calculate weights
                     for gate in dest_gates.values():
-                        log.info(f'setting weights for {gate} with input {gate.inputs}')
+                        log.debug(f'setting weights for {gate} with input {gate.inputs}')
                         gate.set_weights()
 
                     outputs = self.forward_results(step=step, gates=dest_gates, links=sim.links)
@@ -446,7 +448,7 @@ class ConfigSpaceRunner:
                         stpoint = ConfigSpacePoint(next_step, st, predecessors={cs_point})
                         cs_point.successors.add(stpoint)
                         if not np.all([enough(p.particle.probability, ZERO_THRESHOLD) for p in st]):
-                            log.info(f'   discarding {st} because it includes a zero weight')
+                            log.debug(f'   discarding {st} because it includes a zero weight')
                         else:
                             point_outputs.append(stpoint)
                     if len(point_outputs) > 0:
@@ -531,4 +533,4 @@ class ConfigSpaceRunner:
 
         log.info('')
         log.info('returning because nothing more to do')
-        return space, step
+        return space

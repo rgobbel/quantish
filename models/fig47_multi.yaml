@@ -1,6 +1,6 @@
 title: Figure 4.7
 
-symbolic: false
+symbolic: true
 
 variables:
    zero: &zero "0j"
