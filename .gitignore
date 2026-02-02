@@ -15,7 +15,6 @@
 /models/AIM_Figure12.yaml
 /aisoftmax.py
 /aisoftmax2.py
-/debug.log
 /depth_first.py
 /qcconcat_example.py
 /qiskit-aer-sim.py
@@ -31,5 +30,5 @@
 /.ipynb_checkpoints/
 /models/HIDEME/
 .env
-/*.log
-/*.mmd
+*.log
+*.mmd
