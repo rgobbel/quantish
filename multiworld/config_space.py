@@ -1,21 +1,17 @@
 import logging
 import random
 import re
-from collections import defaultdict, namedtuple, deque
+from collections import defaultdict, deque
 from dataclasses import dataclass
 import itertools
-from enum import Enum, auto
 from typing import Self, Optional, Dict, List, Tuple, Final, Set
 from copy import deepcopy
 from addict import Addict
-import networkx as nx
 import numpy as np
 
 from multiworld.particle import Particle, PKey
-from multiworld.util import SEP, enough, sstr, Sign, SWITCH_WIRES, WIRES, default_wires, ZERO_THRESHOLD, flat_list, wstr
-from multiworld.qnumber import Complex
+from multiworld.util import SEP, enough, SWITCH_WIRES, flat_list, wstr
 import multiworld.qnumber as qn
-from multiworld.sink import Sink
 
 log = logging.getLogger('multiworld')
 
@@ -43,9 +39,6 @@ class Position:
     # origin and endpoint are positions, either a gate,wire pair or None
     origin: Optional[Wire] = None
     endpoint: Optional[Wire] = None
-    # def __post_init__(self):
-    #     if self.origin is None and self.endpoint is None:
-    #         raise ValueError(f"Can't have both origin and endpoint None")
     def __repr__(self):
         if self.origin is None and self.endpoint is None:
             return 'LOST'
@@ -119,8 +112,8 @@ class PCoordValue:
             raise ValueError(f'pcoord is a {type(self.pcoord)}, not a PCoordinate: {self.pcoord}')
         if not isinstance(self.particle, Particle):
             raise ValueError(f'particle is a {type(self.particle)}, not a Particle: {self.particle}')
-        if str(self.particle.pkey) != str(self.pcoord.pkey):
-            raise ValueError(f'PCoordValue, mismatched pkeys: {self.pcoord=}, {self.particle.pkey=}')
+        # if str(self.particle.pkey) != str(self.pcoord.pkey):
+        #     raise ValueError(f'PCoordValue, mismatched pkeys: {self.pcoord=}, {self.particle.pkey=}')
     def __repr__(self):
         return f'{self.pcoord}:{wstr(self.particle.weight, precision=2)}({self.particle.probability:.2f})'
     def __hash__(self):
@@ -224,12 +217,6 @@ class ConfigSpacePoint:
             for k in self.pcvals.keys():
                 cur_pcv = self.pcvals[k]
                 other_pcv = other.pcvals[k]
-                # if cur_pcv.pcoord.position.endpoint == NOWHERE:
-                #     log.info(f'not adding {other_pcv} to {cur_pcv} because endpoint == NOWHERE')
-                #     continue
-                # if cur_pcv.pcoord.position.origin is None:
-                #     log.info(f'not adding {other_pcv} to {cur_pcv} because cur_pcv origin is None')
-                #     continue
                 if active_particles and cur_pcv.particle.name not in active_particles:
                     log.debug(
                         f'not adding {other_pcv} to {cur_pcv} because '
@@ -238,17 +225,7 @@ class ConfigSpacePoint:
                     continue
                 cur_part = cur_pcv.particle
                 other_part = other_pcv.particle
-                cur_step = cur_part.next_step
-                other_step = other_part.next_step
-                # if other_pcv.pcoord.step != self.step:
-                #     log.info(f'{self.step=}, {cur_step=}, {other_step=}, not adding')
-                #     log.info(f'{self=}, {cur_pcv=}, {other_pcv=}')
-                #     continue
-                # if cur_step < self.step:
-                #     log.info(f'{self.step=}, {cur_step=}, {other_step=}, not adding')
-                #     log.info(f'{self=}, {cur_pcv=}, {other_pcv=}')
-                #     continue
-                # assert cur_pcv.particle.probability + other_pcv.particle.probability <= 1
+                assert cur_pcv.particle.probability + other_pcv.particle.probability <= 1
                 self.pcvals[k].particle = Particle(name=cur_part.name, sign=cur_part.sign,
                                                    weight=cur_part.weight+other_part.weight,
                                                    next_step=cur_part.next_step)
@@ -319,9 +296,11 @@ class ConfigSpaceRunner:
             if controls:
                 dest_pos = Position(Wire(gate.name, 'control'), Wire(dest_gate, dest_port))
                 for p in controls:
-                    p.next_step = self.sim.gate_step[dest_gate]
-                    pcoord = PCoordinate(step=next_step, pkey=p.pkey, position=dest_pos)
-                    result_value = PCoordValue(pcoord, p).copy()
+                    next_particle = Particle(name=p.name, weight=p.weight, sign=p.sign,
+                                             next_step=self.sim.gate_step.get(dest_gate, 0),
+                                             precision=p.precision)
+                    pcoord = PCoordinate(step=next_step, pkey=next_particle.pkey, position=dest_pos)
+                    result_value = PCoordValue(pcoord, next_particle)
                     assign_outs.append(result_value)
             if gate.report_type() == 'DelayGate': continue
             for port in SWITCH_WIRES:
@@ -333,11 +312,13 @@ class ConfigSpaceRunner:
                     dest_gate, dest_port = None, None
                 if gates[gate.name].weights[port]:
                         for p in gates[gate.name].weights[port]:
-                            p.next_step = self.sim.gate_step.get(dest_gate, 0)
+                            next_particle = Particle(name=p.name, weight=p.weight, sign=p.sign,
+                                                     next_step=self.sim.gate_step.get(dest_gate, 0),
+                                                     precision=p.precision)
                             dest_pos = Position(origin=Wire(gate.name, port),
                                                 endpoint=Wire(dest_gate, dest_port))
-                            pcoord = PCoordinate(step=next_step, pkey=p.pkey, position=dest_pos)
-                            result_value = PCoordValue(pcoord, p).copy()
+                            pcoord = PCoordinate(step=next_step, pkey=next_particle.pkey, position=dest_pos)
+                            result_value = PCoordValue(pcoord, next_particle)
                             assign_outs.append(result_value)
         return assign_outs
 
@@ -352,9 +333,9 @@ class ConfigSpaceRunner:
         while len(worlds) > 0:
             this_cycle_points = worlds.popleft()
             next_cycle_points = []
-            active_particles = set()
             next_step = step + 1
             log.info(f'begin step {step}')
+            active_particles = set()
             for cs_point in this_cycle_points:
                 if cs_point.key in processed_points:
                     raise RuntimeError(f'point {cs_point} has alredy run')
@@ -386,6 +367,7 @@ class ConfigSpaceRunner:
                             by_position[destination].append(deepcopy(pcv))
                             by_dest_coords[(destination, pcv.particle.sign)] += [deepcopy(pcv)]
                             dest_gate_names.add(dest_gate_name)
+                            active_particles.add(pcv.particle.name)
 
                 if len(dest_gate_names) > 0:
                     # log.info(f'      next point {cs_point.key}: {", ".join([str(p) for p in cs_point.particles])}')
@@ -428,16 +410,9 @@ class ConfigSpaceRunner:
                         for pcv in deferred:
                             log.info(f'      {pcv}')
 
-                # for pcv in outputs:
-                #     if pcv.pcoord.position.endpoint == NOWHERE:
-                #         log.info(f'   {pcv} going nowhere, next_step set to 0')
-                #         pcv.particle.next_step = 0
-
                 point_outputs = []
                 if outputs:
                     for pcv in outputs:
-                        if pcv.pcoord.position.origin is not None and pcv.pcoord.position.origin.gate in dest_gates:
-                            active_particles.add(pcv.particle.name)
                         by_particle[pcv.particle.name] += [pcv.copy()]
                         if pcv.pcoord in by_coord.keys():
                             by_coord[pcv.pcoord] += [pcv]
@@ -447,7 +422,7 @@ class ConfigSpaceRunner:
                     for st in successor_tuples:
                         stpoint = ConfigSpacePoint(next_step, st, predecessors={cs_point})
                         cs_point.successors.add(stpoint)
-                        if not np.all([enough(p.particle.probability, ZERO_THRESHOLD) for p in st]):
+                        if not np.all([enough(p.particle.probability, qn.ZERO_THRESHOLD) for p in st]):
                             log.debug(f'   discarding {st} because it includes a zero weight')
                         else:
                             point_outputs.append(stpoint)
@@ -463,15 +438,12 @@ class ConfigSpaceRunner:
                     log.info(f'      nothing for next cycle')
                 log.info('')
                 next_cycle_points += point_outputs
-                # for point in point_outputs:
-                #     point.predecessors.add(cs_point)
-                # cs_point.successors |= {*point_outputs}
             # done generating successors for this cycle, now filter and merge
 
             # report raw outputs
             if len(next_cycle_points) > 0:
                 log.info(f'   cycle outputs:')
-                log.info(f'      before merging:')
+                log.info(f'      before merging ({len(next_cycle_points)}):')
                 for point in next_cycle_points:
                     log.info(f'         {point}')
                 log.info('')
@@ -491,27 +463,29 @@ class ConfigSpaceRunner:
             # all nonzero values are added to config space, even if no further output
             nonzero_values = []
             if len(merged_points) > 0:
-                log.info(f'      merged:')
+                log.info(f'      merged ({len(merged_points)}):')
                 for point in merged_points:
-                    if enough(abs(point.weight), ZERO_THRESHOLD):
+                    if enough(abs(point.weight), qn.ZERO_THRESHOLD):
                         log.info(f'         {point}')
                         nonzero_values.append(point)
                     else:
-                        log.info(f'      discarding {point}, not passing {ZERO_THRESHOLD}')
+                        log.info(f'      discarding {point}, not passing {qn.ZERO_THRESHOLD}')
                 log.info('')
             if len(nonzero_values) > 0:
-                log.info(f'      nonzero values:')
+                log.info(f'      nonzero values ({len(nonzero_values)}):')
                 for point in nonzero_values:
                     log.info(f'         {point}')
                     space.add_point(point, active_particles)
                 log.info('')
 
-            active_particles = set()
             # nonzero_values -> filtered_values
             filtered_values = []
             for point in nonzero_values:
                 if np.all([pcv.pcoord.position.endpoint == NOWHERE for pcv in point.pcvals.values()]):
                     log.info(f'      ignoring {point} because all particles go nowhere')
+                    for pcv in point.pcvals.values():
+                        if pcv.particle.name in active_particles:
+                            pcv.particle.next_step = next_step
                     continue
                 if np.all([pcv.pcoord.position.origin is None for pcv in point.pcvals.values()]):
                     log.info(f'      ignoring {point} because all components are at origin')
@@ -520,7 +494,7 @@ class ConfigSpaceRunner:
 
             # filtered_values -> worlds
             if len(filtered_values) > 0:
-                log.info(f'   final cycle outputs:')
+                log.info(f'   final cycle outputs ({len(filtered_values)}):')
                 for point in filtered_values:
                     log.info(f'      {point}')
                 log.info('')
@@ -533,4 +507,5 @@ class ConfigSpaceRunner:
 
         log.info('')
         log.info('returning because nothing more to do')
+        space.update_unstepped_index()
         return space

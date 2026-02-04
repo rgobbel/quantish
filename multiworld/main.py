@@ -11,12 +11,16 @@ from pathlib import Path
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
+from matplotlib.collections import PatchCollection
+from matplotlib.offsetbox import DrawingArea, AnnotationBbox
+from matplotlib import colormaps
 import sympy as sym
 import yaml
 from tqdm import tqdm
 from addict import Addict
 
-from multiworld.config_space import PCoordValue
+from multiworld.config_space import PCoordValue, ConfigSpacePoint
 from multiworld.gate import FredkinGate, DelayGate
 from multiworld.particle import Particle
 import multiworld.qnumber as qn
@@ -24,15 +28,13 @@ from multiworld.qnumber import CalcMode, qify
 from multiworld.simulation import Simulation
 from multiworld.util import QLogger, max_width, flat_list, SEP, WIRES
 import multiworld.util as util
-from multiworld.visualizations import diagram
-
-float_zero_threshold = 1-18
+from multiworld.visualizations import diagram, network_graph
 
 def main():
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
     parser.add_argument('-c', '--config', required=True, help="REQUIRED Path to YAML configuration file")
     parser.add_argument('--configs-dir', default='models', help='Directory for model files')
-    parser.add_argument('--use-common', action=BooleanOptionalAction, default=True, help='Load default values from defaults.yaml before individual model files')
+    parser.add_argument('--use-defaults', action=BooleanOptionalAction, default=True, help='Load default values from defaults.yaml before individual model files')
     parser.add_argument('-s', '--simulate', action=BooleanOptionalAction, default=True, help='Run simulation')
     parser.add_argument('-l', '--log', default=None, type=str, help='Log file')
     parser.add_argument('--loglevel', choices=['debug', 'info', 'warning', 'error'], help='Default is info')
@@ -44,10 +46,10 @@ def main():
     parser.add_argument('--diagram-dir', type=str, default='mermaid', help='Directory for Mermaid diagrams')
     parser.add_argument('--svg-diagram', action=BooleanOptionalAction, default=True, help='Create an SVG version of the diagram. Requires mmdc command-line Mermaid renderer')
     parser.add_argument('--pdf-diagram', action=BooleanOptionalAction, default=False, help='Create a PDF version of the diagram. Requires mmdc command-line Mermaid renderer')
-    parser.add_argument('--diagram-when', choices=['before', 'after', 'both'], default='after', help='When to create a diagram, before or after simulation')
-    # parser.add_argument('--control-threshold', type=float, default=SUPPRESS, help='Probability threshold for considering a control input "present"')
-    # parser.add_argument('--forward-threshold', type=float, default=SUPPRESS, help='Probability threshold for forwarding output')
-    # parser.add_argument('--presence-threshold', type=float, default=SUPPRESS, help='Probability threshold for considering a particle "present"')
+    parser.add_argument('--network-graph', action=BooleanOptionalAction, default=True, help='Plot paths through configuration space')
+    parser.add_argument('--show-graph', action=BooleanOptionalAction, default=True, help='Display config space plot on screen')
+    parser.add_argument('--pdf-graph', action=BooleanOptionalAction, default=True, help='Create a PDF version of the config space plot')
+    parser.add_argument('--diagram-when', choices=['before', 'after', 'both'], default='before', help='When to create a diagram, before or after simulation')
     parser.add_argument('--normalize-input', action='store_true', help='Normalize weights before measuring')
     parser.add_argument('--normalize-output', action='store_true', help='Normalize weights before forwarding')
     parser.add_argument('--symbolic', action='store_true', default=SUPPRESS, help='Force symbolic math')
@@ -67,7 +69,7 @@ def main():
     args = parser.parse_args()
     config_path = Path(args.configs_dir, args.config).with_suffix('.yaml')
     config_dir = args.configs_dir
-    if args.use_common:
+    if args.use_defaults:
         with open(Path(config_dir, 'defaults.yaml'), 'r') as f:
             config_dict = yaml.safe_load(f)
     else:
@@ -77,10 +79,7 @@ def main():
     config = Addict(config_dict)
     symbolic = config.symbolic or False
     CalcMode.default('Symbolic' if symbolic else 'Float')
-    if CalcMode.default() == 'Symbolic':
-        util.ZERO_THRESHOLD = qify(0)
-    else:
-        util.ZERO_THRESHOLD = float_zero_threshold
+    qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
     qn.I = qn.I_fn()
     qn.PI = qn.PI_fn()
     config.config_path = args.config
@@ -110,9 +109,6 @@ def main():
         config.sample = True
         config.n_samples = args.n_samples
     log.info(f'QUANTISH PHYSICS SIMULATION STARTING: {config["title"]} at {time.asctime()}')
-    # if 'forward_threshold' in args: config.probability_threshold.fowarding = args.forward_threshold
-    # if 'control_threshold' in args: config.probability_threshold.control = args.control_threshold
-    # if 'presence_threshold' in args: config.probability_threshold.presence = args.presence_threshold
     if args.normalize_input: config.normalize_weights.input = True
     if args.normalize_output in args: config.normalize_weights.output = True
     if args.merge_before_measure: config.merge.before_measure = True
@@ -765,17 +761,21 @@ def main():
         if len(final_points) > 0:
             pad_len = [0] * len(final_points[0].pcvals.values())
             by_pname_gate_pos = defaultdict(list)
+            by_pkey_gate_count = defaultdict(int)
             for point in final_points:
                 pcvals = list(point.pcvals.values())
                 for p in pcvals:
                     key = f'{p.particle.name}@{p.pcoord.position.origin}'
+                    pkey = f'{p.particle.pkey}@{p.pcoord.position.origin}'
                     if key in by_pname_gate_pos.keys():
+                        by_pkey_gate_count[pkey] += 1
                         by_pname_gate_pos[key] = PCoordValue(
                             pcoord = p.pcoord, particle=Particle(
                                 name=p.particle.name,
-                                sign=p.particle.sign,
+                                sign=by_pname_gate_pos[key].particle.sign,
                                 weight=by_pname_gate_pos[key].particle.weight + p.particle.weight))
                     else:
+                        by_pkey_gate_count[pkey] = 1
                         by_pname_gate_pos[key] = p
                 positions = [p.pcoord.position.origin for p in pcvals]
                 particles = [p.particle for p in pcvals]
@@ -784,23 +784,31 @@ def main():
                     pad_len[i] = max(pad_len[i], len(s))
             by_particle = defaultdict(lambda: defaultdict(dict))
             for k, v in by_pname_gate_pos.items():
+                pkey = f'{v.particle.pkey}@{v.pcoord.position.origin}'
+                v.particle.weight /= by_pkey_gate_count[pkey]
                 pname = v.particle.name
                 gname = v.pcoord.position.origin.gate
                 port = v.pcoord.position.origin.port
                 by_particle[pname][gname][port] = v
-            normed = {}
+            summary = {}
             for pname, vals in by_particle.items():
                 gname = list(vals.keys())[0]
-                upper = vals[gname]['upper']
-                lower = vals[gname]['lower']
-                normed_upper, normed_lower = util.normalize_list([upper.particle.weight, lower.particle.weight])
-                normed_sum = normed_upper + normed_lower
-                normed[f'{pname}@{gname}'] = {'upper': Particle(pname, sign=1, weight=normed_upper), 'lower': Particle(pname, sign=1, weight=normed_lower)}
+                upper = vals[gname].get('upper')
+                if upper is None:
+                    upper = qn.Complex(0)
+                else:
+                    upper = upper.particle.weight
+                lower = vals[gname].get('lower')
+                if lower is None:
+                    lower = qn.Complex(0)
+                else:
+                    lower = lower.particle.weight
+                summary[f'{pname}@{gname}'] = {'upper': Particle(pname, sign=1, weight=upper), 'lower': Particle(pname, sign=1, weight=lower)}
             log.info('result summary:')
-            for k, v in sorted(normed.items(), key=lambda x: x[0]):
-                log.info(f'   {k}: upper: {v["upper"]}, lower: {v["lower"]}')
-            for v in sorted(by_pname_gate_pos.values(), key=lambda x: x.particle.name):
-                log.info(f'{v}')
+            for k, v in sorted(summary.items(), key=lambda x: x[0]):
+                log.info(f'   {k}: upper: {v["upper"].ps(short=True)}, lower: {v["lower"].ps(short=True)}')
+            # for v in sorted(by_pname_gate_pos.values(), key=lambda x: x.particle.name):
+            #     log.info(f'{v}')
             log.info('')
             log.info('final results:')
             for point in final_points:
@@ -809,25 +817,8 @@ def main():
                 particles = [p.particle for p in pcvals]
                 logstr = '  |  '.join([f'{f"{particle.ps(short=True)}@{pos}":<{pad_len[i]}}' for i, (particle, pos) in enumerate(zip(particles, positions))])
                 log.info(f'   {logstr}')
-            all_points = set(result_space.index.values())
-            layers = defaultdict(list)
-            for p in all_points:
-                layers[p.key[0]] += [p]
-            exe_graph = nx.MultiDiGraph()
-            exe_graph.add_nodes_from(all_points)
-            colors = [float(sum([x.probability for x in p.particles])/3) for p in list(all_points)]
-            exe_nodes = list(exe_graph.nodes)
-            for node in exe_nodes:
-                for succ in node.successors:
-                    if succ not in all_points: continue
-                    if node.key != succ.key and not exe_graph.has_edge(node, succ):
-                        # log.info(f'add successor edge from {node.key}->{succ.key}')
-                        exe_graph.add_edge(node, succ)
-            result_space.stepped = False
-            pos = nx.multipartite_layout(exe_graph, layers)
-            nx.draw(exe_graph, pos=pos, node_color=colors)
-            plt.savefig(dpath.with_stem(dpath.stem+'_graph').with_suffix('.pdf'), orientation='landscape')
-            plt.show()
+            if 'no_diagram' not in args:
+                network_graph(result_space, dpath, sim)
 
     if 'no_diagram' not in args:
         if args.diagram_when in ('after', 'both'):

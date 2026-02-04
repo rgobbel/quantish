@@ -5,6 +5,7 @@ from itertools import accumulate
 import networkx as nx
 from addict import Addict
 from multiworld.qnumber import Complex, isq, issym, Real
+import multiworld.qnumber as qn
 from graphlib import TopologicalSorter
 from collections import defaultdict, deque
 import sympy as sym
@@ -87,9 +88,7 @@ def enough(x, threshold):
     # return (not np.isclose(flx, 0)) and flx >= threshold
     return flx >= tx
 
-ZERO_THRESHOLD = 1e-17
-
-def filter_weights(particles, threshold=ZERO_THRESHOLD):
+def filter_weights(particles, threshold=qn.ZERO_THRESHOLD):
     # return particles
     return [p for p in particles if enough(p.probability, threshold)]
 

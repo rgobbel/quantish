@@ -1,25 +1,13 @@
-import itertools
 import logging
-import random
-from enum import StrEnum, auto
-from collections import defaultdict
 import cmath as cm
 
 import multiworld.qnumber as qn
 from multiworld.angle import Angle
 from multiworld.particle import Particle
 from multiworld.qnumber import qify, Complex, Real
-from multiworld.util import (Gensym, enough, select, flat_list, SEP, filter_weights, ZERO_THRESHOLD, sstr,
-                           Sign, OTHER, WIRES, SWITCH_WIRES, INITIAL_WIRES, default_switches, default_wires)
+from multiworld.util import Gensym, enough, SEP, Sign, OTHER, SWITCH_WIRES, default_wires
 
 log = logging.getLogger('multiworld')
-
-class SourceType(StrEnum):
-    weights = auto()
-    outputs = auto()
-    results = auto()
-
-INITIAL_WIRES = lambda: {k: 'undefined' for k in ['control', 'upper', 'lower']}
 
 class FredkinGate:
     def __init__(self, name:str, theta:Real=0, start_step=0, sim=None, norm_output=None):
@@ -49,8 +37,7 @@ class FredkinGate:
         else:
             self.atheta = Angle(self.theta, unit='radians')
             self.theta = self.atheta.radians
-        self.deg90 = qn.PI / 2
-        self.twist = self.theta - self.deg90
+        self.twist = self.theta - qn.PI/2
 
         self.cos_theta = self.theta.cos
         self.sin_theta = self.theta.sin
@@ -70,11 +57,6 @@ class FredkinGate:
         self.wplusf_twist = self.cos_twist * (qn.I * self.twist).exp
         self.wminusf_twist = self.sin_twist * (qn.I * self.twist).exp
 
-        self.c2_factor = (qn.I * self.theta).exp * self.theta.cos
-        self.c3_factor = (qn.I * self.twist).exp * self.theta.sin
-        self.c2t_factor = (qn.I * self.twist).exp * self.twist.cos
-        self.c3t_factor = (qn.I * self.twist).exp * self.twist.sin
-
     def report_type(self): ## HACK TO AVOID A DEPENDENCY LOOP
         return 'FredkinGate'
 
@@ -86,7 +68,10 @@ class FredkinGate:
         return f'{self.name}({self.atheta.degrees:.2f}º)'
 
     def cpair(self, w:Complex, twist=False):
-        """This is from AIM-1026a"""
+        """
+        From AIM-1026a
+        Values are precomputed for speed
+        """
         if not twist:
             c2a = w * self.cos2_theta
             c2b = w * self.cos_sin_theta
@@ -106,65 +91,16 @@ class FredkinGate:
         self.outputs = default_wires()
         self.output_wire = None
 
-    def cpairx(self, w, twist=False):
-        if twist:
-            c2 = w * self.c2t_factor
-            c3 = w * self.c3t_factor
-        else:
-            c2 = w * self.c2_factor
-            c3 = w * self.c3_factor
-        c2a = c2.real
-        c2b = c2.imag
-        c3a = c3.real
-        c3b = c3.imag
-        return c2a, c2b, c3a, c3b
-
     def rot_theta(self, w:Complex, theta:Real):
         """
-            basic weight rotation with trig scaling
-            This version computes the actual rotation in the complex plane
+            basic weight rotation with scaling
+            This version computes rotation in the complex plane
+            in the most straightforward but not fastest way
         """
-        twist = theta - self.deg90
-        wplus = w * theta.cos * cm.exp(1j * theta)
-        wminus = w * theta.sin * cm.exp(1j * twist)
-        return Complex(wplus.real), 1j*wplus.imag, Complex(wminus.real), 1j*wminus.imag
-
-    # def cpair0(self, w, theta):
-    #     """from AIM-1026a"""
-    #     c2a = w * theta.cos**2
-    #     c2b = w * qn.I * theta.cos * theta.sin
-    #     c3a = w * theta.sin**2
-    #     c3b = w * -qn.I * theta.sin * theta.cos
-    #     return c2a, c2b, c3a, c3b
-    #
-    # def cpair1(self, w, twist=False):
-    #     """This follows the series of rotations described in AIM-1026a as well as Good and Real"""
-    #     """basic weight rotation with trig scaling"""
-    #     theta = self.twist if twist else self.theta
-    #     twisted = theta - self.deg90
-    #     wplus = w * theta.cos * (qn.I * theta).exp
-    #     wminus = w * theta.sin * (qn.I * twisted).exp
-    #     return Complex(wplus.real), qn.I * wplus.imag, Complex(wminus.real), qn.I * wminus.imag
-    #
-    # def cpair2(self, w, twist=False):
-    #     theta = self.twist if twist else self.theta
-    #     """This is from AIM-1026a, and is much much faster than doing the whole rotation"""
-    #     c2a = w * theta.cos ** 2
-    #     c2b = w * qn.I * theta.cos * theta.sin
-    #     c3a = w * theta.sin ** 2
-    #     c3b = w * -qn.I * theta.cos * theta.sin
-    #     return c2a, c2b, c3a, c3b
-    #
-    # def cpair3(self, w, twist=False):
-    #     """This follows the series of rotations described in AIM-1026a as well as Good and Real"""
-    #     """basic weight rotation with trig scaling"""
-    #     if not twist:
-    #         wplus = w * self.wplusf
-    #         wminus = w * self.wminusf
-    #     else:
-    #         wplus = w * self.wplusf_twist
-    #         wminus = w * self.wminusf_twist
-    #     return Complex(wplus.real), qn.I * wplus.imag, Complex(wminus.real), qn.I * wminus.imag
+        twist = theta - qn.PI/2
+        wplus = w * theta.cos * (qn.I * theta).exp
+        wminus = w * theta.sin * (qn.I * twist).exp
+        return Complex(wplus.real), qn.I*wplus.imag, Complex(wminus.real), qn.I*wminus.imag
 
     def relative_angle(self, p:Particle):
         return self.theta - p.v_0.phase
@@ -176,16 +112,10 @@ class FredkinGate:
         theta -- rotation angle
         sign -- plus or minus one
         """
-        # cache_key = p #(self.swapping, p.__hash__())
-        # if self.measurement_cache.get(cache_key) is not None:
-        #     return self.measurement_cache[cache_key]
+        cache_key = p #(self.swapping, p.__hash__())
+        if self.measurement_cache.get(cache_key) is not None:
+            return self.measurement_cache[cache_key]
         c1 = p.weight
-        # if self.cpair_m.__name__ in ('cpair0', 'cpair_alt'):
-        #     if p.sign > 0:  # straightforward rotation by theta
-        #         par_a, par_b, perp_a, perp_b = self.cpair_m(c1, self.theta)
-        #     else:
-        #         par_a, par_b, perp_a, perp_b = self.cpair_m(c1, self.twist)
-        # else:
         par_a, par_b, perp_a, perp_b = self.cpair(c1, twist=p.sign != Sign.plus)
         if self.norm_output and p.probability > 0:
             par_a, par_b, perp_a, perp_b = [x / p.weight for x in (par_a, par_b, perp_a, perp_b)]
@@ -205,7 +135,7 @@ class FredkinGate:
         if self.swapping is None:
             self.weights['control'] = self.inputs['control']
             self.swapping = bool(self.weights['control'] and enough(
-                Particle.merge(self.weights['control']).probability, ZERO_THRESHOLD))
+                Particle.merge(self.weights['control']).probability, qn.ZERO_THRESHOLD))
         unswapped_weights = {'upper': [], 'lower': []}
         for switch in SWITCH_WIRES:
             split_outs = [switch, switch, OTHER[switch], OTHER[switch]]
@@ -272,15 +202,8 @@ class DelayGate(FredkinGate):
     def init_inputs(self):
         self.inputs = default_wires()
 
-
     def set_weights(self):
         self.weights = self.inputs
-
-    def port_weights(self, _):
-        return self.weights
-
-    def port_outputs(self, _):
-        return self.outputs
 
     def measure(self, p: Particle, **kwargs):
         return p

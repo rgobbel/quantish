@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
-load_fields = ['gates', 'particles', 'links', 'run_stages', 'title']
+load_fields = ['gates', 'particles', 'links', 'diagram_groups', 'title']
 
 def extract_config(cf):
     newconfig = {}

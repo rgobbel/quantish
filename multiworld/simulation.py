@@ -7,11 +7,10 @@ from multiworld.gate import DelayGate, FredkinGate
 from multiworld.config_space import (PCoordValue, Position, Wire, PCoordinate,
                                      ConfigSpacePoint, ConfigSpaceRunner, ConfigSpace,
                                      LIMBO)
-import matplotlib.pyplot as plt
 import multiworld.qnumber as qn
 from multiworld.qnumber import Real, qify, softmax, Complex
 from multiworld.util import (SEP, sstr, WIRES, SWITCH_WIRES, OTHER, flat_list,
-                             path_lengths, normalize_list, topo_sort, expand_graph, simplify_graph)
+                             expand_graph, simplify_graph)
 
 log = logging.getLogger('multiworld')
 
@@ -47,22 +46,15 @@ class Simulation:
         self.expanded_links = expand_graph(self.links)
         self.simplified_links = simplify_graph(self.links)
         self.gate_step = Addict()
-        self.run_order_topo = list(nx.topological_generations(self.simplified_links))
-        # self.run_order = self.run_order_topo
-        self.run_order = self.run_order_topo[:1] + [[x] for x in flat_list(self.run_order_topo[1:])]
-        # self.run_order = [['p1', 'p2', 'p3'], ['g1', 'g2'], ['g3'], ['g4'], ['g5', 'g6']]
+        self.run_groups = list(nx.topological_generations(self.simplified_links))[1:]
+        self.run_order = flat_list(self.run_groups)
         self.particles = Addict()
         self.sinks = Addict()
         self.run_results = Addict()
-        self.run_stages = config.run_stages
         self.fredkin_gates = Addict()
         self.delay_gates = Addict()
         self.gates = Addict()
         self.pcvals = Addict()
-        self.gate_depths = Addict()
-        self.particle_depths = Addict()
-        self.depths = Addict()
-        self.ppositions = Addict()
         self.normalize_output = default_bool('normalize_weights', 'output')
         self.normalize_input = default_bool('normalize_weights','input')
         log.info(f'merge before: measure={self.merge_before_measure}, forward={self.merge_before_forward}')
@@ -74,33 +66,11 @@ class Simulation:
         log.info('')
         self.load_elements(config)
         step = 1
-        # for pname, pval in config.particles.items():
-        #     pweight = Complex(pval.weight)
-        #     new_particle = (
-        #         Particle(pname, pweight, qify(pval.sign),
-        #                  precision=self.precision))
-        #     self.particles[pname] = new_particle
-        #     dest_gate, dest_wire = self.links[pname].split(SEP)
-        #     coord = PCoordinate(step, new_particle.pkey, Position(endpoint=Wire(dest_gate, dest_wire)))
-        #     self.pcvals[pname] = PCoordValue(pcoord=coord, particle=new_particle)
-        #     log.info(f'PARTICLE: {self.particles[pname]}')
         log.info('')
-        # coords = []
-        # for particle_name, particle in self.particles.items():
-        #     particle_initial = self.links[particle_name]
-        #     gate, port = particle_initial.split(SEP)
-        #     pos = Position(endpoint=Wire(gate, port))
-        #     pkey = particle.pkey
-        #     coord = PCoordinate(step, pkey, pos)
-        #     coord_val = PCoordValue(coord, particle)
-        #     coords.append(coord_val)
         self.initial_point = ConfigSpacePoint(step, tuple(self.pcvals.values()))
-        # for gname, gval in config.gates.items():
-        #     self.fredkin_gates[gname] = FredkinGate(
-        #         gname, gval.angle, sim=self)
-        # for dgname in config.get('delay_gates', []):
-        #     self.delay_gates[dgname] = DelayGate(dgname, sim=self)
-        self.diagram_groups = config.get('diagram_groups', self.run_stages)
+        self.diagram_groups = config.get('diagram_groups')
+        if self.diagram_groups is None:
+            self.diagram_groups = {f'{"_".join([gname for gname in group])}': group for group in self.run_groups}
         self.gates = self.fredkin_gates | self.delay_gates
         self.initial_world = [self.initial_point]
         self.world_state = self.initial_world
@@ -112,9 +82,8 @@ class Simulation:
         log.info(f'{self.normalize_input=}, {self.normalize_output=}')
         log.info('')
         log.info('run order:')
-        for i, gate_group in enumerate(self.run_order[1:]):
-            ggstr = ', '.join([str(self.gates[gname]) for gname in gate_group])
-            log.info(f'   {i+1}: {ggstr}')
+        for i, gate_name in enumerate(self.run_order):
+            log.info(f'   {i+1}: {self.gates[gate_name]}')
         log.info('')
         log.info('downstream links:')
         linkages = [f'{n} -> {", ".join(list(self.simplified_links.successors(n))) or "NULL"}'
@@ -122,34 +91,6 @@ class Simulation:
         for link in linkages:
             log.info(f'   {link}')
         log.info('')
-
-    def enumerate_paths(self, links, start, path=None):
-        # Add the current node to the path
-        if path is None:
-            path = []
-        path = path + [start]
-
-        # If the current node is the end node, we've found a complete path
-        if not links.get(start):
-            return [path]
-
-        # If the start node is not in the graph or has no neighbors, return an empty list
-        if start not in links:
-            return []
-
-        paths = []
-        # Recurse for all neighbors of the current node
-        neighbors = links.get(start)
-        if neighbors is not None:
-            if not isinstance(neighbors, list): neighbors = [neighbors]
-            for node in neighbors:
-                # Ensure that nodes are not revisited within a single path (automatic in DAGs if logic is sound)
-                if node not in path:
-                    newpaths = self.enumerate_paths(links, node, path)
-                    for newpath in newpaths:
-                        paths.append(newpath)
-
-        return paths
 
     def particle_gates(self, links, particle):
         queue = deque()
@@ -169,25 +110,15 @@ class Simulation:
                         queue.append(next_other)
         return pgates
 
-    def bfs(self):
-        links = Addict()
-        links.root = list(self.config.particles)
-        visited = set('root')
-        queue = deque(['root'])
-        while len(queue) > 0:
-            node = queue.popleft()
-
     def load_elements(self, config):
         links = config.links
         log.debug(f'{config.links=}')
         particles = config.particles
         gates = config.gates
         delay_gates = config.delay_gates
-        for i, gate_names in enumerate(self.run_order):
-            for gate_name in gate_names:
-                if gate_name in gates.keys() or gate_name in delay_gates:
-                    self.gate_step[gate_name] = i
-        list_links = Addict()
+        for i, gate_name in enumerate(self.run_order):
+            if gate_name in gates.keys() or gate_name in delay_gates:
+                self.gate_step[gate_name] = i+1
         for gname, gval in gates.items():
             new_gate = FredkinGate(gname, gval.angle, start_step=self.gate_step[gname], sim=self)
             self.fredkin_gates[gname] = new_gate
@@ -213,51 +144,6 @@ class Simulation:
                 self.pcvals[source] = PCoordValue(pcoord=pcoord, particle=particle)
                 log.info(f'PARTICLE {particle}, INITIAL POSITION: {self.pcvals[source].pcoord}, START STEP: {particle.next_step}')
         log.debug(f'{particles=}, {gates=}')
-        for origin in links.keys():
-            depth = 0
-            while links.get(origin):
-                next_destination = links[origin]
-                gate, port = next_destination.split(SEP)
-                if port in SWITCH_WIRES:
-                    list_links[origin] = [next_destination, f'{gate}{SEP}{OTHER[port]}']
-                else:
-                    list_links[origin] = [next_destination]
-                log.debug(f'list_links[{origin}]={list_links[origin]}')
-                depth += 1
-                origin = next_destination
-        log.debug(f'{list_links=}')
-
-        for particle in particles:
-            queue = deque([particle])
-            depth = 0
-            while queue:
-                log.debug(f'{queue=}')
-                for _ in range(len(queue)):
-                    node = queue.popleft()
-                    self.ppositions[particle] += [node]
-                    node_parts = node.split(SEP)
-                    if len(node_parts) == 2:
-                        gate, port = node.split(SEP)
-                        if gate not in self.gate_depths.keys():
-                            self.gate_depths[gate] = {particle: depth}
-                        elif particle not in self.gate_depths[gate].keys():
-                            self.gate_depths[gate][particle] = depth
-                        else:
-                            self.gate_depths[gate][particle] = max(self.gate_depths[gate][particle], depth)
-                        if particle not in self.particle_depths.keys():
-                            self.particle_depths[particle] = {gate: depth}
-                        elif gate not in self.particle_depths[particle].keys():
-                            self.particle_depths[particle][gate] = depth
-                        else:
-                            self.particle_depths[particle][gate] = max(self.particle_depths[particle][gate], depth)
-                    children = list_links.get(node)
-                    if children: queue += children
-                depth += 1
-            self.depths[particle] = depth
-        log.debug(f'{self.depths=}')
-        log.debug(f'{self.gate_depths=}')
-        log.debug(f'{self.particle_depths=}')
-        log.debug(f'{self.ppositions=}')
 
     def run(self):
         astr = lambda x: ', '.join([str(s) for s in x]) if x else 'None'
@@ -285,95 +171,7 @@ class Simulation:
                 group = [] if not group else [group]
             return group
 
-        world = ConfigSpace(self.initial_point)
-        runner = ConfigSpaceRunner(self)
-        # runner.run_gates(self.initial_point)
-        result_space = runner.run(self.initial_point)
-        # final_points = [v for k, v in result_space.index.items() if int(k.split('/')[0]) == steps]
-        # log.info(f'finished after {steps} steps, {len(result_space.index)} total points in final config space, {len(final_points)} points from last step')
-        # log.info('')
-        # by_result_position = Addict()
-        # # if len(final_points) > 0:
-        # #     for cs_point_list in final_points:
-        # #         if len(cs_point_list) > 1:
-        # #             log.warn(f'more than one! {cs_point_list}')
-        # #         cs_point = cs_point_list[0]
-        # #         for k, pcv in cs_point.pcvals.items():
-        # #             pos = pcv.pcoord.position.origin
-        # #             if pos.gate not in by_result_position.keys():
-        # #                 by_result_position[pos.gate] = {pos.port: pcv.particle}
-        # #             else:
-        # #                 if pos.port not in by_result_position[pos.gate].keys():
-        # #                     by_result_position[pos.gate][pos.port] = pcv.particle
-        # #                 else:
-        # #                     by_result_position[pos.gate][pos.port].weight += pcv.particle.weight
-        # if len(final_points) > 0:
-        #     pad_len = [0] * len(final_points[0].pcvals.values())
-        #     for point in final_points:
-        #         pcvals = list(point.pcvals.values())
-        #         positions = [p.pcoord.position.origin for p in pcvals]
-        #         particles = [p.particle for p in pcvals]
-        #         logstr = [f'{particle}@{pos}' for particle, pos in zip(particles, positions)]
-        #         for i, s in enumerate(logstr):
-        #             pad_len[i] = max(pad_len[i], len(s))
-        #     log.info('final results:')
-        #     for point in final_points:
-        #         pcvals = list(point.pcvals.values())
-        #         positions = [p.pcoord.position.origin for p in pcvals]
-        #         particles = [p.particle for p in pcvals]
-        #         logstr = '  |  '.join([f'{f"{particle}@{pos}":<{pad_len[i]}}' for i, (particle, pos) in enumerate(zip(particles, positions))])
-        #         log.info(f'   {logstr}')
-        #     all_points = set(result_space.index.values())
-        #     # found_new = True
-        #     # while found_new:
-        #     #     found_new = False
-        #     #     new_points = set()
-        #     #     for point in all_points:
-        #     #         for succ in point.successors:
-        #     #             if succ not in all_points:
-        #     #                 found_new = True
-        #     #                 succ.stepped = True
-        #     #                 new_points.add(succ)
-        #     #         for pred in point.predecessors:
-        #     #             if pred not in all_points:
-        #     #                 found_new = True
-        #     #                 pred.stepped = True
-        #     #                 new_points.add(pred)
-        #     #     all_points |= new_points
-        #     layers = defaultdict(list)
-        #     for p in all_points:
-        #         layers[p.key[0]] += [p]
-        #     exe_graph = nx.MultiDiGraph()
-        #     exe_graph.add_nodes_from(all_points)
-        #     colors = [float(sum([x.probability for x in p.particles])/3) for p in list(all_points)]
-        #     exe_nodes = list(exe_graph.nodes)
-        #     for node in exe_nodes:
-        #         for succ in node.successors:
-        #             if succ not in all_points: continue
-        #             if node.key != succ.key and not exe_graph.has_edge(node, succ):
-        #                 # log.info(f'add successor edge from {node.key}->{succ.key}')
-        #                 exe_graph.add_edge(node, succ)
-        #         # for pred in node.predecessors:
-        #         #     if pred.key != node.key and not exe_graph.has_edge(pred, node):
-        #         #         log.info(f'add predeccessor edge from {pred.key}->{node.key}')
-        #         #         exe_graph.add_edge(pred, node)
-        #     result_space.stepped = False
-        #     pos = nx.multipartite_layout(exe_graph, layers)
-        #     # sizes = [len(layer) for layer in list(layers.values())]
-        #     nx.draw(exe_graph, pos=pos, node_color=colors)
-        #     plt.show()
-        #     plt.savefig()
-                # log.info(point)
-            # for k, v in by_result_position.items():
-            #     if 'upper' in by_result_position[k].keys() and 'lower' in by_result_position[k].keys():
-            #         ps = [by_result_position[k].upper, by_result_position[k].lower]
-            #         merged = Particle.merge(ps)
-            #         sumstr = f' (sum: {merged})'
-            #     else:
-            #         sumstr = ''
-            #     log.info(f'   {k}: {v}{sumstr}')
-        # else:
-        #     log.info('NO RESULTS')
+        result_space = ConfigSpaceRunner(self).run(self.initial_point)
         log.info('')
 
         log.info('DONE!')

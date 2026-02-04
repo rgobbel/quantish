@@ -1,3 +1,4 @@
+import itertools
 import random
 from collections import namedtuple
 from enum import Enum
@@ -69,16 +70,12 @@ class Particle:
         return f'{sstr(self.sign)}{nstr}({wstr(self.weight, precision=self.precision)}|{self.probability:.{self.precision}f})'
 
     @classmethod
-    def merge(cls, particles, next_step=0):
+    def merge(cls, particles, next_step=0, combine_signs=False):
+        if not particles:
+            return Particle(name='', weight=0, sign=1, next_step=next_step)
         if not isinstance(particles, list):
             return particles
-        result = None
-        for particle in particles:
-            if result is None: result = particle
-            else: result += particle
-        if not result:
-            result = Particle('', 0, 1, next_step=next_step)
-        return result
+        return sum(particles[1:], start=particles[0])
 
     def equiv(self, other):
         if self.weight == other.weight and self.sign == other.sign:
@@ -92,9 +89,9 @@ class Particle:
         if self.probability >= other.probability: new_sign = self.sign
         else: new_sign = other.sign
         new_weight = self.weight + other.weight
-        return self.__class__(self.name, new_weight, new_sign,
-                              # f'->{self.trace}+{other.trace}',
-                              precision=self.precision)
+        return self.__class__(
+            self.name, new_weight, new_sign,
+            precision=self.precision, next_step=self.next_step)
 
 def random_particle(name, weight=None, phase=None, sign=None):
     if sign is None:

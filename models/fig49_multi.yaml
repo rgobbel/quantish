@@ -1,26 +1,5 @@
 title: Figure 4.9
-symbolic: false
-
-#merge:
-#   before_measure: false
-#   before_forwarding: true
-#   combine_signs: true
-#normalize_weights:
-#   output: false
-#   input: false
-#probability_threshold:
-#   swap: 0
-#   forwarding: 0
-#   presence: 0
-#string_precision: 2
-#alternative_measure: cpair3
-
-always_forward:
-   control_weights: false
-   switch_weights: false
-
-sample: false
-n_samples: 10000
+symbolic: true
 
 variables:
    zero: &zero  "0j"
@@ -35,8 +14,8 @@ variables:
    q345: &q345 "acos(4/5)"
    qp4: &qp4 "pi/4"
    qp8: &qp8 "pi/8"
-run_stages:
-#   stage1: [d1, g1, d2]
+
+diagram_groups:
    stage1: [g1]
    stage2: [g2, g3]
 
@@ -58,17 +37,11 @@ gates:
    g1: {angle: *q30}
    g2: {angle: 0}
    g3: {angle: 0}
-#   d1: {angle: 0}
-#   d2: {angle: 0}
 
 links:
 #   c: g1.control
    p1: g1.upper
-#   p2: d1.control
-#   d1.control: g2.upper
    p2: g2.upper
-#   p3: d2.control
-#   d2.control: g3.upper
    p3: g3.upper
    g1.upper: g2.control
    g1.lower: g3.control

@@ -574,6 +574,17 @@ def I_fn(mode=None):
     else:
         return Complex(sym.I, mode)
 
+float_zero_threshold = 1e-15
+
+def zero_threshold_fn(mode=None):
+    global ZERO_THRESHOLD
+    if mode is None:
+        mode = CALC_MODE
+    if mode == 'Float':
+        return float_zero_threshold
+    else:
+        return qify(0)
+
 PI = PI_fn()
 I = I_fn()
-
+ZERO_THRESHOLD = zero_threshold_fn()

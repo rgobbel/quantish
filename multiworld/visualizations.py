@@ -1,10 +1,17 @@
+from matplotlib.offsetbox import DrawingArea, AnnotationBbox
+
 from multiworld.simulation import Simulation
 from multiworld.util import SEP, parse_position
+from multiworld.config_space import ConfigSpacePoint
+from matplotlib import colormaps, pyplot as plt
+from matplotlib.patches import Rectangle
 import multiworld.qnumber as qn
 import python_mermaid.diagram as pmd
 import python_mermaid.node as pm
-from collections import namedtuple
+from collections import namedtuple, defaultdict
+import networkx as nx
 import re
+import math as m
 # import altair as alt
 # import pandas as pd
 import time
@@ -42,6 +49,62 @@ gate_fields = {'upper': DiagramFields(field='upper', label='UPPER'),
 #     final_chart = (points + labels).properties(
 #         title='Quantish Weights')
 #     return final_chart
+
+def cs_patch(point:ConfigSpacePoint, layer_max, sim):
+    nvals = len(point.pcvals)
+    side_base = 75 / m.sqrt(layer_max)
+    cmaps = [colormaps['Reds'], colormaps['Greens'], colormaps['Blues']]
+    da = DrawingArea(side_base, side_base, side_base/2, side_base/2)
+    # the outline box is mainly uuseful for debugging
+    # outline_box = [-side_base/4, nvals * -side_base/8, side_base/2, (side_base/4)*nvals]
+    # da.add_artist(Rectangle(outline_box[:2], outline_box[2], outline_box[3], edgecolor='black', facecolor='white'))
+    boxes = []
+    for i in range(nvals):
+        boxes.append([
+            -side_base/4,
+            (nvals * -side_base/8) + (nvals - 1 - i)*side_base/4,
+            side_base/2,
+            side_base/4
+        ])
+    for i, pcv in enumerate(point.pcvals.values()):
+        if point.step != pcv.particle.next_step:
+            color = 'black'
+        else:
+            color = cmaps[i]((0.7 * (1.0 - float(pcv.particle.probability)))+0.2)
+        da.add_artist(
+            Rectangle(boxes[i][:2],
+                      boxes[i][2], boxes[i][3], facecolor=color))
+    return da
+
+def network_graph(result_space, diagram_path, sim):
+    all_points = sorted(list(set(result_space.index.values())), key=lambda x: x.key)
+    layers = defaultdict(list)
+    for p in all_points:
+        layers[p.key[0]] += [p]
+    for k, v in layers.items():
+        layers[k] = sorted(v, key=lambda x: x.unstepped_key)
+    layer_max = max([len(x) for x in layers.values()])
+    exe_graph = nx.MultiDiGraph()
+    exe_graph.add_nodes_from(all_points)
+    exe_nodes = list(exe_graph.nodes)
+    for node in exe_nodes:
+        for succ in node.successors:
+            if succ not in all_points: continue
+            if node.key != succ.key and not exe_graph.has_edge(node, succ):
+                exe_graph.add_edge(node, succ)
+    pos = nx.multipartite_layout(exe_graph, layers)
+    fig, ax = plt.subplots()
+    fig.set_size_inches(11, 8.5)
+    ax.axis('off')
+    nx.draw_networkx_edges(exe_graph, pos=pos, ax=ax, arrows=True)
+    for cs_point, coord in pos.items():
+        da = cs_patch(cs_point, layer_max, sim)
+        ab = AnnotationBbox(da, coord, frameon=False)
+        ax.add_artist(ab)
+    plt.title(sim.title)
+    plt.savefig(diagram_path.with_stem(diagram_path.stem + '_graph').with_suffix('.pdf'),
+                orientation='landscape', bbox_inches='tight')
+    plt.show()
 
 def make_gate_node(sim, gname, inout, wire, mermaid_nodes, show_outputs=True):
     sink_nodes = []
@@ -128,15 +191,6 @@ def gnodes(sim, gname, mermaid_nodes, show_outputs=True):
 
 def diagram(sim:Simulation, output_file=None, has_run=False):
     mermaid_nodes = {}
-    # norm_in = f'{"not " if not sim.normalize_input else ""}normalizing input'
-    # norm_out = f'{"not " if not sim.normalize_output else ""}normalizing output'
-    # merge = f'{"not " if not sim.merge_before_measure else ""}merging before measuring'
-    # combine = f'{"not " if not sim.combine_signs else ""}combining signs'
-    # always_forward_controls = f'{"always forward control weights, " if sim.always_forward_control_weights else ""}'
-    # always_forward_switches = f'{"always forward switch weights, " if sim.always_forward_switch_weights else ""}'
-    # parms = f'{always_forward_controls}{always_forward_switches}{norm_in}, {norm_out}, {merge}, {combine}'
-    # mode = f'{"SYMBOLIC" if sim.symbolic else "FLOATING POINT"}'
-    # title = f"{sim.title} {'after' if has_run else 'before'} run at {time.asctime()} {parms}, {mode}"
     if has_run:
         title = f'{sim.title} after run at {time.asctime()}'
     else:
@@ -148,19 +202,6 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
         legend = pmd.Node(id='Legend')
         legend.content = f"""**Parameters**
     **numerics**: {qn.CalcMode.default()}
-    **combine**:
-    &nbsp;&nbsp;&nbsp;&nbsp;**signs**: {f"{sim.combine_signs}".lower()}
-    &nbsp;&nbsp;&nbsp;&nbsp;**names**: {f"{sim.combine_names}".lower()}
-    **normalize**
-    &nbsp;&nbsp;&nbsp;&nbsp;**input**: {f"{sim.normalize_input}".lower()}
-    &nbsp;&nbsp;&nbsp;&nbsp;**output**: {f"{sim.normalize_output}".lower()}
-    **merge before**
-    &nbsp;&nbsp;&nbsp;&nbsp;**measure**: {f"{sim.merge_before_measure}".lower()}
-    &nbsp;&nbsp;&nbsp;&nbsp;**forward**: {f"{sim.merge_before_forward}".lower()}
-    **always forward**
-    &nbsp;&nbsp;&nbsp;&nbsp;**control weights**: {f"{sim.always_forward_control_weights}".lower()}
-    &nbsp;&nbsp;&nbsp;&nbsp;**switch weights**: {f"{sim.always_forward_switch_weights}".lower()}
-    **add with signs**: {f"{sim.add_with_signs}".lower()}
     """
         diag.add_nodes([legend])
     for particle_name, particle in sim.particles.items():
@@ -194,7 +235,7 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
                 pg.add_nodes([gn])
             else:
                 gg = pg.add_subgraph(gname)
-                gg.header = f'subgraph {gname}["{gname}: {float(gate.theta.degrees):.0f}º"]'
+                gg.header = f'subgraph {gname}["{gname}: {float(gate.theta.degrees):.1f}º"]'
                 ggi = gg.add_subgraph(f'{gname}.input')
                 ggi.header = f'subgraph {gname}.input[input]'
                 ggo = gg.add_subgraph(f'{gname}.output')
@@ -291,7 +332,7 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
    elk:
       forceNodeModelOrder: true
       nodePlacementStrategy: LINEAR_SEGMENTS
-      considerModelOrder: PREFER_NODES
+      considerModelOrder: NODES_AND_EDGES
 title:
 """
         styled_diag = re.sub("title:", graph_config, str(diag))

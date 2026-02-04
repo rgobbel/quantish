@@ -1,27 +1,6 @@
 title: Figure 4.5
+
 symbolic: true
-#merge:
-#   before_measure: true
-#   before_forwarding: false
-#   combine_signs: true
-#   add_with_signs: false
-#normalize_weights:
-#   output: false
-#   input: false
-#probability_threshold:
-#   swap: 0
-#   forwarding: 0
-#   presence: 0
-#alternative_measure: false
-#string_precision: 2
-
-#always_forward:
-#   switch_weights: false
-#   control_weights: false
-#swap_if_selected: false
-
-sample: false
-n_samples: 1000
 
 variables:
    zero: &zero "0+0j"
