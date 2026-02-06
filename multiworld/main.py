@@ -27,6 +27,7 @@ import multiworld.qnumber as qn
 from multiworld.qnumber import CalcMode, qify
 from multiworld.simulation import Simulation
 from multiworld.util import QLogger, max_width, flat_list, SEP, WIRES
+from multiworld.spacewalk import run_paths
 import multiworld.util as util
 from multiworld.visualizations import diagram, network_graph
 
@@ -34,22 +35,29 @@ def main():
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
     parser.add_argument('-c', '--config', required=True, help="REQUIRED Path to YAML configuration file")
     parser.add_argument('--configs-dir', default='models', help='Directory for model files')
-    parser.add_argument('--use-defaults', action=BooleanOptionalAction, default=True, help='Load default values from defaults.yaml before individual model files')
+    parser.add_argument('--use-defaults', action=BooleanOptionalAction, default=True,
+                        help='Load default values from defaults.yaml before individual model files')
     parser.add_argument('-s', '--simulate', action=BooleanOptionalAction, default=True, help='Run simulation')
     parser.add_argument('-l', '--log', default=None, type=str, help='Log file')
     parser.add_argument('--loglevel', choices=['debug', 'info', 'warning', 'error'], help='Default is info')
     parser.add_argument('--preserve-log', action='store_true', help='Preserve existing log file')
     parser.add_argument('--dup-log-to-console', action=BooleanOptionalAction,
                         default=True, help='Log to console as well as file')
-    parser.add_argument('-d', '--diagram', type=str, help="Create a Mermaid diagram of the gate network on the named file with default extension '.mmd'")
+    parser.add_argument('-d', '--diagram', type=str,
+                        help="Create a Mermaid diagram of the gate network on the named file with default extension '.mmd'")
     parser.add_argument('--no-diagram', action='store_true', default=SUPPRESS, help='Do not create a diagram')
     parser.add_argument('--diagram-dir', type=str, default='mermaid', help='Directory for Mermaid diagrams')
-    parser.add_argument('--svg-diagram', action=BooleanOptionalAction, default=True, help='Create an SVG version of the diagram. Requires mmdc command-line Mermaid renderer')
-    parser.add_argument('--pdf-diagram', action=BooleanOptionalAction, default=False, help='Create a PDF version of the diagram. Requires mmdc command-line Mermaid renderer')
-    parser.add_argument('--network-graph', action=BooleanOptionalAction, default=True, help='Plot paths through configuration space')
+    parser.add_argument('--svg-diagram', action=BooleanOptionalAction, default=True,
+                        help='Create an SVG version of the diagram. Requires mmdc command-line Mermaid renderer')
+    parser.add_argument('--pdf-diagram', action=BooleanOptionalAction, default=False,
+                        help='Create a PDF version of the diagram. Requires mmdc command-line Mermaid renderer')
+    parser.add_argument('--network-graph', action=BooleanOptionalAction, default=True,
+                        help='Plot paths through configuration space')
     parser.add_argument('--show-graph', action=BooleanOptionalAction, default=True, help='Display config space plot on screen')
-    parser.add_argument('--pdf-graph', action=BooleanOptionalAction, default=True, help='Create a PDF version of the config space plot')
-    parser.add_argument('--diagram-when', choices=['before', 'after', 'both'], default='before', help='When to create a diagram, before or after simulation')
+    parser.add_argument('--pdf-graph', action=BooleanOptionalAction, default=True,
+                        help='Create a PDF version of the config space plot')
+    parser.add_argument('--diagram-when', choices=['before', 'after', 'both'], default='before',
+                        help='When to create a diagram, before or after simulation')
     parser.add_argument('--normalize-input', action='store_true', help='Normalize weights before measuring')
     parser.add_argument('--normalize-output', action='store_true', help='Normalize weights before forwarding')
     parser.add_argument('--symbolic', action='store_true', default=SUPPRESS, help='Force symbolic math')
@@ -64,7 +72,8 @@ def main():
     parser.add_argument('--sample', action='store_true', help='Run multiple trials and collect a histogram of results')
     parser.add_argument('--n-samples', type=int, default=1, help='Run this many sampling trials')
     parser.add_argument('--epr-stats', action='store_true', help='Run statistics on EPR experiment model (book figure 4.16)')
-    parser.add_argument('--measure-discrepancy', action='store_true', help='Measure discrepancy for EPR experiment. Assumes a network consistent with book figure 4.16')
+    parser.add_argument('--measure-discrepancy', action='store_true',
+                        help='Measure discrepancy for EPR experiment. Assumes a network consistent with book figure 4.16')
     parser.add_argument('--full-stats', action='store_true', help='Include particle names and probabilities in results')
     args = parser.parse_args()
     config_path = Path(args.configs_dir, args.config).with_suffix('.yaml')
@@ -115,8 +124,6 @@ def main():
     if args.merge_before_forward: config.merge.before_forwarding = True
     if args.measure_discrepancy: config.measure_discrepancy = True
     elif 'measure_discrepancy' not in config.keys(): config.measure_discrepancy  = False
-    if args.always_forward_switch_weights: config.always_forward.switch_weights = True
-    if args.always_forward_control_weights: config.always_forward.control_weights = True
     log.info(f"{'SYMBOLIC' if symbolic else 'FLOATING POINT'} MODE")
     q1 = None
     q2 = None
@@ -755,7 +762,7 @@ def main():
         #         log.info('FOR FIGURE 4.11:')
         #         log.info(f'{histogram["411-g2.upper"]/histogram["g1.upper"]=}')
         #         log.info(f'{((g2.theta - g1.theta).cos ** 2)=}')
-        final_points = [v for k, v in result_space.index.items() if int(k.split('/')[0]) == steps]
+        final_points = [v for v in result_space.index.values() if v.step == steps]
         log.info(f'finished after {steps} steps, {len(result_space.index)} total points in final config space, {len(final_points)} points from last step')
         log.info('')
         if len(final_points) > 0:
@@ -790,6 +797,12 @@ def main():
                 gname = v.pcoord.position.origin.gate
                 port = v.pcoord.position.origin.port
                 by_particle[pname][gname][port] = v
+
+            # if sim.n_samples > 0:
+            #     histogram = run_paths(sim.initial_point, final_points, sim.n_samples)
+            #     log.info('results:')
+            #     for k, v in histogram.items():
+            #         log.info(f'   {k}: {v}')
             summary = {}
             for pname, vals in by_particle.items():
                 gname = list(vals.keys())[0]
