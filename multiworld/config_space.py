@@ -41,7 +41,7 @@ class Position:
     endpoint: Optional[Wire] = None
     def __repr__(self):
         if self.origin is None and self.endpoint is None:
-            return 'LOST'
+            return 'ABSENT'
         elif self.origin is NOWHERE and self.endpoint is NOWHERE:
             return 'LIMBO'
         elif self.origin is None:
@@ -53,6 +53,7 @@ class Position:
         else:
             return f'{self.origin}>{self.endpoint}'
 
+ABSENT: Final[Position] = Position(None, None)
 LOST: Final[Position] = Position()
 LIMBO: Final[Position] = Position(NOWHERE, NOWHERE)
 
