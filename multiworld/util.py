@@ -88,9 +88,9 @@ def enough(x, threshold):
     # return (not np.isclose(flx, 0)) and flx >= threshold
     return flx >= tx
 
-def filter_weights(particles, threshold=qn.ZERO_THRESHOLD):
+def filter_particles(particles, threshold=qn.ZERO_THRESHOLD):
     # return particles
-    return [p for p in particles if enough(p.probability, threshold)]
+    return [p for p in particles if enough(abs(p.weight), threshold)]
 
 def rotate(w, theta):
     return w * cm.exp(1j * theta)
