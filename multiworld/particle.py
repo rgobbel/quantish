@@ -75,7 +75,16 @@ class Particle:
             return Particle(name='', weight=0, sign=1, next_step=next_step)
         if not isinstance(particles, list):
             return particles
-        return sum(particles[1:], start=particles[0])
+        if combine_signs:
+            return sum(particles[1:], start=particles[0])
+        else:
+            pluses = [p for p in particles if p.sign == Sign.plus]
+            minuses = [p for p in particles if p.sign == Sign.minus]
+            if len(pluses) > 1:
+                pluses = [sum(pluses[1:], start=pluses[0])]
+            if len(minuses) > 1:
+                minuses = [sum(minuses[1:], start=minuses[0])]
+            return pluses + minuses
 
     def equiv(self, other):
         if self.weight == other.weight and self.sign == other.sign:
