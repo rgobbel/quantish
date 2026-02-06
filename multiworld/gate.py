@@ -148,6 +148,8 @@ class FredkinGate:
                                 for measurement, sign in zip(splits, signs)]
                 for p, sw in zip(measurements, split_outs):
                     unswapped_weights[sw].append(p)
+        unswapped_weights['upper'] = list(Particle.merge(unswapped_weights['upper']))
+        unswapped_weights['lower'] = list(Particle.merge(unswapped_weights['lower']))
         if self.swapping:
             self.weights['upper'] = unswapped_weights['lower']
             self.weights['lower'] = unswapped_weights['upper']
