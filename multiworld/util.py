@@ -1,6 +1,7 @@
 import logging
-from enum import IntEnum
+from enum import IntEnum, Enum
 from itertools import accumulate
+from typing import Iterable
 
 import networkx as nx
 from addict import Addict
@@ -33,17 +34,30 @@ def default_wires():
 def default_switches():
     return {wire: [] for wire in SWITCH_WIRES}
 
+def switch_splits(switch):
+    return [switch, switch, OTHER[switch], OTHER[switch]]
+
 INITIAL_WIRES = lambda: {k: 'undefined' for k in ['control', 'upper', 'lower']}
 
 class Sign(IntEnum):
     minus = -1
+    NOSIGN = 0
     plus = 1
+
+    def negate(self):
+        return self.__class__(0 - self)
+
+    @property
+    def negative(self):
+        return self.negate()
 
     def __repr__(self):
         if self.value == 1:
             return '+'
         elif self.value == -1:
             return '-'
+        elif self.value == 0:
+            return '*'
         else:
             raise ValueError(f'Unexpected value for sign: {self.value}')
 
@@ -52,10 +66,16 @@ class Sign(IntEnum):
             return '+'
         elif self.value == -1:
             return '-'
+        elif self.value == 0:
+            return '*'
         else:
             raise ValueError(f'Unexpected value for sign: {self.value}')
 
-astr = lambda x: ', '.join([str(s) for s in x]) if x else 'None'
+SIGNS = {str(s): s.name for s in Sign}
+
+NOSIGN = Sign.NOSIGN
+
+astr = lambda x: ', '.join(str(s) for s in x) if x else 'None'
 
 GENSYM_NAMES = defaultdict(int)
 
@@ -80,6 +100,24 @@ def to_float(x):
         else:
             raise
     return result
+
+def show_points(points, indent='', loglevel=logging.INFO):
+    pad_len = [0] * len(points[0].pcvals.values())
+    for point in points:
+        pcvals = list(point.pcvals.values())
+        positions = [p.pcoord.position for p in pcvals]
+        particles = [p.particle for p in pcvals]
+        logstr = [f'{particle.ps(short=True)}@{pos}' for particle, pos in zip(particles, positions)]
+        for i, s in enumerate(logstr):
+            pad_len[i] = max(pad_len[i], len(s))
+    for point in points:
+        pcvals = list(point.pcvals.values())
+        positions = [p.pcoord.position for p in pcvals]
+        particles = [p.particle for p in pcvals]
+        logstr = '  |  '.join([f'{f"{particle.ps(short=True)}@{pos}":<{pad_len[i]}}' for i, (particle, pos) in
+                               enumerate(zip(particles, positions))])
+        log.log(loglevel, f'{indent}{logstr}')
+
 
 def enough(x, threshold):
     if not x: return False
@@ -116,9 +154,9 @@ def angstr(theta, precision=0):
         if type(n_theta) not in (int, float, sym.Float):
             n_theta = cm.phase(n_theta)
         if n_theta == 0: n_theta = 0
-        return f'∆{m.degrees(n_theta):.{precision}f}º'
+        return f'θ{m.degrees(n_theta): 03.{precision}f}º'
     except ZeroDivisionError:
-        return '∆0º'
+        return 'θ0º'
 
 def wstr(xc, precision=1):
     if isq(xc):
@@ -171,33 +209,37 @@ def topo_sort(links):
 
 def make_gate_subgraph(graph, gate_name):
     if gate_name not in graph:
-        graph.add_node(gate_name, qtype='gate')
+        graph.add_node(gate_name, qtype='gate', gate=gate_name)
         graph.add_node(f'{gate_name}.control_in', qtype='port', gate=gate_name, wire='control', direction='input')
         graph.add_node(f'{gate_name}.control_out', qtype='port', gate=gate_name, wire='control', direction='output')
-        graph.add_edge(f'{gate_name}.control_in', gate_name, edge_type='hack')
-        graph.add_edge(gate_name, f'{gate_name}.control_out', edge_type='hack')
+        graph.add_edge(f'{gate_name}.control_in', f'{gate_name}.control_out', gate=gate_name, edge_type='internal', wire='control')
+        # graph.add_edge(f'{gate_name}.control_in', gate_name, edge_type='gate')
+        # graph.add_edge(gate_name, f'{gate_name}.control_out', edge_type='gate')
         for wire in SWITCH_WIRES:
             graph.add_node(f'{gate_name}.{wire}_in', qtype='port', gate=gate_name, wire=wire, direction='input')
             graph.add_node(f'{gate_name}.{wire}_out', qtype='port', gate=gate_name, wire=wire, direction='output')
-            # graph.add_edge(f'{gate_name}.{wire}_in', f'{gate_name}.{wire}_out', edge_type='internal')
-            # graph.add_edge(f'{gate_name}.{wire}_in', f'{gate_name}.{OTHER[wire]}_out', edge_type='internal')
-            graph.add_edge(f'{gate_name}.{wire}_in', gate_name, edge_type='hack')
-            graph.add_edge(gate_name, f'{gate_name}.{wire}_out', edge_type='hack')
+            graph.add_edge(f'{gate_name}.{wire}_in', f'{gate_name}.{wire}_out', edge_type='internal')
+            graph.add_edge(f'{gate_name}.{wire}_in', f'{gate_name}.{OTHER[wire]}_out', edge_type='internal')
+            # graph.add_edge(f'{gate_name}.{wire}_in', gate_name, edge_type='gate')
+            # graph.add_edge(gate_name, f'{gate_name}.{wire}_out', edge_type='gate')
 
 def expand_graph(links):
     expanded_links = nx.MultiDiGraph()
     for source, dest in links.items():
         source_parts = source.split(SEP)
+        dest_gate, dest_port = dest.split(SEP)
+        make_gate_subgraph(expanded_links, dest_gate)
         if len(source_parts) == 1:
             if source not in expanded_links:
                 expanded_links.add_node(source, qtype='particle')
                 expanded_links.add_edge(source, f'{dest}_in', edge_type='external')
+                expanded_links.add_edge(source, dest_gate, edge_type='gate')
         else:
             source_gate, source_wire = source_parts
-            dest_gate, _ = dest.split('.')
             make_gate_subgraph(expanded_links, dest_gate)
             make_gate_subgraph(expanded_links, source_gate)
             expanded_links.add_edge(f'{source}_out', f'{dest}_in', edge_type='external')
+            expanded_links.add_edge(source_gate, dest_gate, edge_type='gate')
     return expanded_links
 
 def simplify_graph(links):
@@ -313,3 +355,42 @@ def flat_list(l: list, *, max_depth: int=100) -> list:
     out = []
     flat_list_recursive(l,max_depth)
     return out
+
+def log_seq(name:str, items:Iterable, loglevel=logging.INFO, enum_items=False):
+    log.log(loglevel, f'{name}:')
+    if isinstance(items, dict):
+        items = items.items()
+    for i, item in enumerate(items):
+        if isinstance(item, tuple) and len(item) == 2:
+            k, v = item
+            if type(v) in (list, tuple):
+                v = ', '.join(v)
+            item = ': '.join([str(x) for x in [k, v]])
+            # log.log(loglevel, f'   {f"({i}) " if enum_items else ""}{item}')
+        else:
+            if type(item) in (list, tuple):
+                item = ', '.join(item)
+        log.log(loglevel, f'   {f"{i}. " if enum_items else ""}{item}')
+    # if enum_items:
+    #     for i, item in enumerate(items):
+    #         if isinstance(item, Iterable):
+    #             k, v = item
+    #             if isinstance(v, Iterable):
+    #                 v = ', '.join(v)
+    #             log.log(loglevel, f'   {f"({i}) " if enum_items else ""}{k}: {v}')
+    #         else:
+    #             if isinstance(item, Iterable):
+    #                 item = ', '.join(item)
+    #             log.log(loglevel, f'   {f"({i}) " if enum_items else ""}{item}')
+    # else:
+    #     for item in items:
+    #         if isinstance(item, Iterable):
+    #             k, v = item
+    #             if isinstance(v, Iterable):
+    #                 v = ', '.join(v)
+    #             log.log(loglevel, f'   {k}: {v}')
+    #         else:
+    #             if isinstance(item, Iterable):
+    #                 item = ', '.join(item)
+    #             log.log(loglevel, f'   {item}')
+    log.log(loglevel, ' ')

@@ -13,19 +13,30 @@ variables:
 
 run_stages: &rs
    split1: [g1]
+   observe: [g3]
+   unobserve: [g4]
    split2: [g2]
 
 diagram_groups: *rs
 
 particles:
    p1: {weight: *one, sign: 1}
+   p2: {weight: *one, sign: 1}
 
 gates:
    g1: {angle: *q30}
    g2: {angle: *q30}
+   g3: {angle: 0}
+   g4: {angle: 0}
+
 
 links:
    p1: g1.upper
+   p2: g3.upper
    g1.control: g2.control
    g1.upper: g2.upper
-   g1.lower: g2.lower
+   g1.lower: g3.control
+   g3.control: g4.control
+   g3.upper: g4.upper
+   g3.lower: g4.lower
+   g4.control: g2.lower

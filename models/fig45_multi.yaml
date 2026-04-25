@@ -1,10 +1,11 @@
 title: Figure 4.5
 
-symbolic: true
+symbolic: false
 
 variables:
    zero: &zero "0+0j"
    one: &one "1+0j"
+   eye: &eye "1j"
    r60: &r60 "0.5+0.87j"
    q345: &q345 "acos(4/5)"
    q30: &q30 "rad(30)"
@@ -17,15 +18,13 @@ run_stages: &rs
 diagram_groups: *rs
 
 particles:
-#   c: {weight: *zero, sign: 1}
    p1: {weight: *one, sign: 1}
 
 gates:
-   g1: {angle: *q30}
-   g2: {angle: *q30}
+   g1: {angle: 'pi/6'}
+   g2: {angle: 'pi/6'}
 
 links:
-#   c: g1.control
    p1: g1.upper
    g1.control: g2.control
    g1.upper: g2.upper

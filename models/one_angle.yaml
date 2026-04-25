@@ -1,0 +1,14 @@
+title: Single Gate
+symbolic: false
+
+run_groups:
+   gate_only: [g0]
+
+particles:
+   p1: {weight: 1, sign: 1}
+
+gates:
+   g0: {angle: 'rad(30)'}
+
+links:
+   p1: g0.upper

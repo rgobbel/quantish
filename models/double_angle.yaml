@@ -1,0 +1,29 @@
+title: Double Angle
+
+symbolic: false
+
+run_groups:
+   split1: [g0]
+   split2: [g1]
+   flat: [g2]
+
+particles:
+   p1: {weight: 1, sign: 1}
+
+gates:
+   g0: {angle: 'rad(15)'}
+   g1: {angle: 'rad(0)'}
+   g2: {angle: 'rad(15)'}
+   g3: {angle: 'rad(0)'}
+
+links:
+   p1: g0.upper
+   g0.control: g1.control
+   g0.upper: g1.upper
+   g0.lower: g1.lower
+   g1.control: g2.control
+   g1.upper: g2.upper
+   g1.lower: g2.lower
+   g2.control: g3.control
+   g2.upper: g3.upper
+   g2.lower: g3.lower

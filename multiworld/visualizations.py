@@ -1,16 +1,16 @@
-from matplotlib.offsetbox import DrawingArea, AnnotationBbox
+import logging
+
 
 from multiworld.simulation import Simulation
-from multiworld.util import SEP, parse_position
-from multiworld.config_space import ConfigSpacePoint
-from matplotlib import colormaps, pyplot as plt
-from matplotlib.patches import Rectangle
+from multiworld.util import SEP, parse_position, enough
+from multiworld.config_space import ConfigSpacePoint, NOWHERE
 import multiworld.qnumber as qn
 import python_mermaid.diagram as pmd
 import python_mermaid.node as pm
 from collections import namedtuple, defaultdict
 import networkx as nx
 import re
+import numpy as np
 import math as m
 # import altair as alt
 # import pandas as pd
@@ -50,7 +50,11 @@ gate_fields = {'upper': DiagramFields(field='upper', label='UPPER'),
 #         title='Quantish Weights')
 #     return final_chart
 
-def cs_patch(point:ConfigSpacePoint, layer_max, sim):
+def cs_patch(point:ConfigSpacePoint, layer_max, max_step, sim):
+    logging.getLogger('multiworld').setLevel(logging.WARN)
+    from matplotlib.offsetbox import DrawingArea
+    from matplotlib import colormaps
+    from matplotlib.patches import Rectangle
     nvals = len(point.pcvals)
     side_base = 75 / m.sqrt(layer_max)
     cmaps = [colormaps['Reds'], colormaps['Greens'], colormaps['Blues']]
@@ -67,8 +71,12 @@ def cs_patch(point:ConfigSpacePoint, layer_max, sim):
             side_base/4
         ])
     for i, pcv in enumerate(point.pcvals.values()):
-        if point.step != pcv.particle.next_step:
-            color = 'black'
+        if point.step == max_step:
+            active_gate = sim.step_gate[point.step - 1]
+        else:
+            active_gate = sim.step_gate[point.step]
+        if pcv.pcoord.position.endpoint is not None and active_gate not in pcv.particle.active_gates:
+                color = 'black'
         else:
             color = cmaps[i]((0.7 * (1.0 - float(pcv.particle.probability)))+0.2)
         da.add_artist(
@@ -77,28 +85,40 @@ def cs_patch(point:ConfigSpacePoint, layer_max, sim):
     return da
 
 def network_graph(result_space, diagram_path, sim):
-    all_points = sorted(list(set(result_space.index.values())), key=lambda x: x.key)
+    logging.getLogger('multiworld').setLevel(logging.WARN)
+    from matplotlib.offsetbox import AnnotationBbox
+    from matplotlib import pyplot as plt
+    plt.set_loglevel("info")
+    all_points = [point for point in result_space.index.values()]
+    sorted_points = sorted(list(set(all_points)), key=lambda x: f'{x.step}{x.key}')
+    nonzeros = [point for point in sorted_points
+                if np.all([enough(abs(pcv.particle.weight), qn.ZERO_THRESHOLD) for pcv in point.pcvals.values()])]
+    graph_points = sorted_points
     layers = defaultdict(list)
-    for p in all_points:
-        layers[p.key[0]] += [p]
+    max_step = max([point.step for point in all_points])
+    for p in graph_points:
+        layers[p.step] += [p]
     for k, v in layers.items():
-        layers[k] = sorted(v, key=lambda x: x.unstepped_key)
+        layers[k] = sorted(v, key=lambda x: x.key)
     layer_max = max([len(x) for x in layers.values()])
     exe_graph = nx.MultiDiGraph()
-    exe_graph.add_nodes_from(all_points)
+    exe_graph.add_nodes_from(graph_points)
     exe_nodes = list(exe_graph.nodes)
+    rejected = []
     for node in exe_nodes:
         for succ in node.successors:
-            if succ not in all_points: continue
+            if succ not in graph_points:
+                rejected.append(succ)
+                continue
             if node.key != succ.key and not exe_graph.has_edge(node, succ):
                 exe_graph.add_edge(node, succ)
     pos = nx.multipartite_layout(exe_graph, layers)
     fig, ax = plt.subplots()
     fig.set_size_inches(11, 8.5)
     ax.axis('off')
-    nx.draw_networkx_edges(exe_graph, pos=pos, ax=ax, arrows=True)
+    nx.draw_networkx_edges(exe_graph, pos=pos, ax=ax, arrows=True, arrowstyle='->', arrowsize=5)
     for cs_point, coord in pos.items():
-        da = cs_patch(cs_point, layer_max, sim)
+        da = cs_patch(cs_point, layer_max, max_step, sim)
         ab = AnnotationBbox(da, coord, frameon=False)
         ax.add_artist(ab)
     plt.title(sim.title)
@@ -152,7 +172,7 @@ def make_gate_node(sim, gname, inout, wire, mermaid_nodes, show_outputs=True):
         else:
             cs = f'{out_value_str}'
         if show_outputs and out_pos not in sim.links.keys():
-            sink_node_id = f'{position}_sink'
+            sink_node_id = f'{position}_SINK'
             if len(cs) > 0:
                 sink_nodes += [make1(sink_node_id, f'{gcontent}:\n{cs}', shape='stadium-shape')]
             else:
@@ -170,7 +190,7 @@ def make_gate_node(sim, gname, inout, wire, mermaid_nodes, show_outputs=True):
         else:
             cs = f'{out_value_str}'
         if show_outputs and position not in sim.links.keys():
-            sink_node_id = f'{position}_sink'
+            sink_node_id = f'{position}_SINK'
             if len(cs) > 0:
                 sink_nodes += [make1(sink_node_id, f'{gcontent}:\n{cs}', shape='stadium-shape')]
             else:
@@ -226,7 +246,7 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
             if gate.report_type() == 'DelayGate':
                 gate_inout = f'{gate.name}{SEP}control'
                 if has_run and gate_inout not in sim.links.keys():
-                    sink_node_id = f'{gate_inout}_sink'
+                    sink_node_id = f'{gate_inout}_SINK'
                     sink_node = pmd.Node(sink_node_id, gate.name, shape='stadium-shape')
                     mermaid_nodes[sink_node_id] = sink_node
                     diag.add_nodes([sink_node])
@@ -286,7 +306,7 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
                     dest_node = mermaid_nodes[f'{dest}_in']
         else:
             if has_run:
-                dest_node = mermaid_nodes[f'{control_pos}_sink']
+                dest_node = mermaid_nodes[f'{control_pos}_SINK']
         if dest_node is not None:
             mermaid_links.append(pmd.Link(ctrl_gate_node, dest_node))
         if gate.report_type() == 'DelayGate': continue
@@ -316,7 +336,7 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
                             else:
                                 dest_node = mermaid_nodes[f'{dest}_in']
                     elif has_run:
-                        dest_node = mermaid_nodes[f'{switch_pos}_sink']
+                        dest_node = mermaid_nodes[f'{switch_pos}_SINK']
                     if dest_node is not None:
                         mermaid_links.append(pmd.Link(switch_node, dest_node))
 
@@ -328,11 +348,11 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
     diag.pretty_print = True
     if output_file is not None:
         graph_config = """config:
-   layout: elk
-   elk:
-      forceNodeModelOrder: true
-      nodePlacementStrategy: LINEAR_SEGMENTS
-      considerModelOrder: NODES_AND_EDGES
+layout: elk
+elk:
+   forceNodeModelOrder: true
+   nodePlacementStrategy: LINEAR_SEGMENTS
+   considerModelOrder: NODES_AND_EDGES
 title:
 """
         styled_diag = re.sub("title:", graph_config, str(diag))

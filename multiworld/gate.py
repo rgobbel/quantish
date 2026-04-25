@@ -1,36 +1,38 @@
 import logging
 import cmath as cm
+from collections import defaultdict
 
 import multiworld.qnumber as qn
 from multiworld.angle import Angle
 from multiworld.particle import Particle
 from multiworld.qnumber import qify, Complex, Real
-from multiworld.util import Gensym, enough, SEP, Sign, OTHER, SWITCH_WIRES, default_wires
+from multiworld.util import Gensym, enough, SEP, Sign, OTHER, SWITCH_WIRES, default_wires, default_switches, \
+    switch_splits
 
 log = logging.getLogger('multiworld')
 
 class FredkinGate:
-    def __init__(self, name:str, theta:Real=0, start_step=0, sim=None, norm_output=None):
+    def __init__(self, name:str, theta:Real=0):
         self.name = name
         self.theta = qify(theta)
-        self.start_step = start_step
         self.inputs = default_wires()
         self.weights = default_wires()
-        self.outputs = default_wires()
         self.swapping = None
         self.output_wire = None
         self.id = Gensym(name)
-        self.sim = sim
+        # self.sim = sim
+        self.discards = defaultdict(list)
+        self.input_particles = set()
         if type(self) is DelayGate:
             return
         self.measurement_cache = {}
-        if norm_output is None:
-            if sim is not None:
-                self.norm_output = sim.normalize_output
-            else:
-                self.norm_output = False
-        else:
-            self.norm_output = norm_output
+        # if norm_output is None:
+        #     if sim is not None:
+        #         self.norm_output = sim.normalize_output
+        #     else:
+        #         self.norm_output = False
+        # else:
+        #     self.norm_output = norm_output
         if type(self.theta) is Angle:
             self.atheta = self.theta
             self.theta = self.theta.radians
@@ -41,19 +43,19 @@ class FredkinGate:
 
         self.cos_theta = self.theta.cos
         self.sin_theta = self.theta.sin
-        self.cos2_theta = self.cos_theta**2
+        self.cos2_theta = Complex(self.cos_theta**2)
         self.cos_sin_theta = self.cos_theta * self.sin_theta * qn.I
         self.mcos_sin_theta = self.cos_theta * self.sin_theta * -qn.I
-        self.sin2_theta = self.sin_theta**2
+        self.sin2_theta = Complex(self.sin_theta**2)
         self.wplusf = self.cos_theta * (qn.I * self.theta).exp
         self.wminusf = self.sin_theta * (qn.I * self.twist).exp
 
         self.cos_twist = self.twist.cos
         self.sin_twist = self.twist.sin
-        self.cos2_twist = self.cos_twist**2
+        self.cos2_twist = Complex(self.cos_twist**2)
         self.cos_sin_twist = qn.I * self.cos_twist * self.sin_twist
         self.mcos_sin_twist = -qn.I * self.cos_twist * self.sin_twist
-        self.sin2_twist = self.sin_twist**2
+        self.sin2_twist = Complex(self.sin_twist**2)
         self.wplusf_twist = self.cos_twist * (qn.I * self.twist).exp
         self.wminusf_twist = self.sin_twist * (qn.I * self.twist).exp
 
@@ -116,9 +118,9 @@ class FredkinGate:
         if self.measurement_cache.get(cache_key) is not None:
             return self.measurement_cache[cache_key]
         c1 = p.weight
-        par_a, par_b, perp_a, perp_b = self.cpair(c1, twist=p.sign != Sign.plus)
-        if self.norm_output and p.probability > 0:
-            par_a, par_b, perp_a, perp_b = [x / p.weight for x in (par_a, par_b, perp_a, perp_b)]
+        par_a, par_b, perp_a, perp_b = self.cpair(c1, twist=p.sign == Sign.minus)
+        # if self.norm_output and p.probability > 0:
+        #     par_a, par_b, perp_a, perp_b = [x / p.weight for x in (par_a, par_b, perp_a, perp_b)]
         # self.measurement_cache[cache_key] = (par_a, par_b, perp_a, perp_b)
         if merge_wires:
             return par_a+par_b, perp_a+perp_b
@@ -133,37 +135,52 @@ class FredkinGate:
 
     def set_weights(self):
         if self.swapping is None:
+            self.swapping = False
             self.weights['control'] = self.inputs['control']
-            self.swapping = bool(self.weights['control'] and enough(
-                Particle.merge(self.weights['control']).probability, qn.ZERO_THRESHOLD))
-        unswapped_weights = {'upper': [], 'lower': []}
+            if bool(self.weights['control']):
+                merged = Particle.merge(self.weights['control'], combine_signs=True)[0]
+                if enough(abs(merged.weight), qn.ZERO_THRESHOLD):
+                    self.swapping = True
+            # self.swapping = bool(self.weights['control'] and enough(
+            #     Particle.merge(self.weights['control']).probability, qn.ZERO_THRESHOLD))
+        unswapped_weights = default_switches()
         for switch in SWITCH_WIRES:
-            split_outs = [switch, switch, OTHER[switch], OTHER[switch]]
+            split_outs = switch_splits(switch)
             for particle in self.inputs[switch]:
                 if particle is None: continue
                 splits = self.measure(particle)
                 signs = [particle.sign.value, -particle.sign.value, particle.sign.value, -particle.sign.value]
+                labels = ['c2a', 'c2b', 'c3a', 'c3b']
                 measurements = [Particle(name=particle.name, weight=measurement, sign=sign,
-                                         next_step=particle.next_step)
-                                for measurement, sign in zip(splits, signs)]
+                                         next_step=particle.next_step, active_gates=particle.active_gates,
+                                         trace=particle.trace+[f'{label}:{self.name}{SEP}{switch}',],
+                                         splits=particle.splits+[f'{self.name}{SEP}{switch}:{label}',])
+                                for measurement, sign, label in zip(splits, signs, labels)]
                 for p, sw in zip(measurements, split_outs):
-                    unswapped_weights[sw].append(p)
-        unswapped_weights['upper'] = list(Particle.merge(unswapped_weights['upper']))
-        unswapped_weights['lower'] = list(Particle.merge(unswapped_weights['lower']))
+                    if enough(abs(p.weight), qn.ZERO_THRESHOLD):
+                        unswapped_weights[sw].append(p)
+                        # particle.family_tree.add_edge(particle, p)
+                    else:
+                        self.discards[p.pkey] += [p]
+        # for wire in SWITCH_WIRES:
+        #     for weight in unswapped_weights[wire]:
+        #         if (not unswapped_weights[wire]) or (not enough(sum([abs(p.weight) for p in unswapped_weights[wire]]), qn.ZERO_THRESHOLD)):
+        #         unswapped_weights[wire] = []
         if self.swapping:
-            self.weights['upper'] = unswapped_weights['lower']
-            self.weights['lower'] = unswapped_weights['upper']
+            self.weights['upper'], self.weights['lower'] = unswapped_weights['lower'], unswapped_weights['upper']
         else:
-            self.weights['upper'] = unswapped_weights['upper']
-            self.weights['lower'] = unswapped_weights['lower']
-        log.debug(f'{self.swapping=}, {self.weights=}')
+            for wire in SWITCH_WIRES:
+                self.weights[wire] = unswapped_weights[wire]
+        # log.debug(f'      {self}.weights: {self.swapping=}, {self.weights=}')
 
 class DelayGate(FredkinGate):
-    def __init__(self, name, start_step, sim=None):
+    def __init__(self, name, source:str='', sink:str=''):#, start_step):#, sim=None):
         super().__init__(name)
         self.dgid = Gensym(f'dg_{name}')
-        self.start_step = start_step
-        self.sim = sim
+        # self.start_step = start_step
+        # self.sim = sim
+        self.source = source
+        self.self.sink = ''
         self.state = None
 
     def report_type(self): ## TOTAL HACK
@@ -184,8 +201,8 @@ class DelayGate(FredkinGate):
                 else:
                     res_str = f'{other_end}'
             return res_str
-        source = self.sim.sources.get(f'{self.name}{SEP}control')
-        sink = self.sim.links.get(f'{self.name}{SEP}control')
+        source = self.source
+        sink = self.sink
         s_source = port_str(source)
         s_sink = port_str(sink)
         return f'{self.name}({s_source}>{s_sink})'

@@ -74,9 +74,9 @@ def angstr(theta, precision=0):
         if type(nx) not in (int, float, sym.Float):
             nx = cm.phase(nx)
         if nx == 0: nx = 0
-        return f'∆{m.degrees(nx):.{precision}f}º'
+        return f'θ{m.degrees(nx):.{precision}f}º'
     except ZeroDivisionError:
-        return '∆0º'
+        return 'θ0º'
 
 def wstr(xc, precision=1):
     if isq(xc):
