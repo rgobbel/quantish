@@ -1,0 +1,34 @@
+title: No-op 2-particle with zero-angle gate interposed
+
+# Same as noop_2p_baseline but with gate0(0) interposed between gate1 and gate2
+# for part1 only. part2's path is unchanged.
+# If the interposed zero-angle gate does NOT break the no-op, output should match
+# noop_2p_baseline (single point: part1 at gate2.upper, part2 at gateB.upper, both w=1).
+
+symbolic: false
+
+run_stages:
+   step1: [gate1, gateA]
+   pass:  [gate0]
+   step2: [gate2, gateB]
+
+particles:
+   part1: {weight: 1, sign: 1}
+   part2: {weight: 1, sign: 1}
+
+gates:
+   gate1: {angle: 'pi/6'}
+   gate0: {angle: 0}
+   gate2: {angle: 'pi/6'}
+   gateA: {angle: 'pi/6'}
+   gateB: {angle: 'pi/6'}
+
+links:
+   part1: gate1.upper
+   part2: gateA.upper
+   gate1.upper: gate0.upper
+   gate1.lower: gate0.lower
+   gate0.upper: gate2.upper
+   gate0.lower: gate2.lower
+   gateA.upper: gateB.upper
+   gateA.lower: gateB.lower

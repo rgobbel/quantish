@@ -1,0 +1,5 @@
+step,part1.sign,part1.weight,part1.prob,part1.position
+2,+,(0.9999999999999999+0j),0.9999999999999998,gate2.upper_in>gate2.upper_out
+2,-,5.551115123125783e-17j,3.0814879110195774e-33,gate2.upper_in>gate2.upper_out
+2,+,0j,0,gate2.lower_in>gate2.lower_out
+2,-,0j,0,gate2.lower_in>gate2.lower_out

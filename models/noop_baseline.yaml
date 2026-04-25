@@ -1,0 +1,22 @@
+title: No-op baseline (1 particle, gate1(theta) -> gate2(theta))
+
+# Reference: 1 particle through two same-angle gates in sequence.
+# Expected: particle emerges at gate2.upper with weight 1 (no-op).
+
+symbolic: false
+
+run_stages:
+   split1: [gate1]
+   split2: [gate2]
+
+particles:
+   part1: {weight: 1, sign: 1}
+
+gates:
+   gate1: {angle: 'pi/6'}
+   gate2: {angle: 'pi/6'}
+
+links:
+   part1: gate1.upper
+   gate1.upper: gate2.upper
+   gate1.lower: gate2.lower

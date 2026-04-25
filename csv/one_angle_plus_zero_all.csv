@@ -1,0 +1,10 @@
+step,p1.sign,p1.weight,p1.prob,p1.position
+0,+,(1+0j),1,ORIGIN>g0.upper_in
+1,+,(0.7499999999999999+0j),0.5624999999999998,g0.upper_out>g1.upper_in
+1,-,0.4330127018922193j,0.18749999999999997,g0.upper_out>g1.upper_in
+1,+,(0.25+0j),0.0625,g0.lower_out>g1.lower_in
+1,-,-0.4330127018922193j,0.18749999999999997,g0.lower_out>g1.lower_in
+2,+,(0.7499999999999999+0j),0.5624999999999998,g1.upper_in>g1.upper_out
+2,-,-0.4330127018922193j,0.18749999999999997,g1.upper_in>g1.upper_out
+2,+,(0.25+0j),0.0625,g1.lower_in>g1.lower_out
+2,-,0.4330127018922193j,0.18749999999999997,g1.lower_in>g1.lower_out

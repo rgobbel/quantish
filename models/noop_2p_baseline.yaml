@@ -1,0 +1,33 @@
+title: No-op 2-particle baseline
+
+# Two particles, independent paths.
+# part1: gate1(theta) -> gate2(theta), expecting no-op (-> gate2.upper, w=1).
+# part2: gateA(theta) -> gateB(theta), independent, also expecting no-op.
+# Independence means part2's wire dest never matches a control input of any
+# active gate, so it should not influence part1's evolution.
+
+symbolic: false
+
+skip_zeros: false
+
+run_stages:
+   step1: [gate1, gateA]
+   step2: [gate2, gateB]
+
+particles:
+   part1: {weight: 1, sign: 1}
+   part2: {weight: 1, sign: 1}
+
+gates:
+   gate1: {angle: 'pi/6'}
+   gate2: {angle: 'pi/6'}
+   gateA: {angle: 'pi/6'}
+   gateB: {angle: 'pi/6'}
+
+links:
+   part1: gate1.upper
+   part2: gateA.upper
+   gate1.upper: gate2.upper
+   gate1.lower: gate2.lower
+   gateA.upper: gateB.upper
+   gateA.lower: gateB.lower

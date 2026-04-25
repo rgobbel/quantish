@@ -1,0 +1,10 @@
+step,part1.sign,part1.weight,part1.prob,part1.position
+0,+,(1+0j),1,ORIGIN>gate1.upper_in
+1,+,(0.7499999999999999+0j),0.5624999999999998,gate1.upper_out>gate2.upper_in
+1,-,0.4330127018922193j,0.18749999999999997,gate1.upper_out>gate2.upper_in
+1,+,(0.25+0j),0.0625,gate1.lower_out>gate2.lower_in
+1,-,-0.4330127018922193j,0.18749999999999997,gate1.lower_out>gate2.lower_in
+2,+,(0.9999999999999999+0j),0.9999999999999998,gate2.upper_in>gate2.upper_out
+2,-,5.551115123125783e-17j,3.0814879110195774e-33,gate2.upper_in>gate2.upper_out
+2,+,0j,0,gate2.lower_in>gate2.lower_out
+2,-,0j,0,gate2.lower_in>gate2.lower_out
