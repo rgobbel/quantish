@@ -16,17 +16,30 @@ import yaml
 from tqdm import tqdm
 from addict import Addict
 
-from multiworld.config_space import PCoordValue, ConfigSpacePoint
-from multiworld.gate import FredkinGate, DelayGate
+from multiworld.config_space import ConfigSpacePoint, ConfigSpace #, PCoordValue,
+from multiworld.gate import FredkinGate #, DelayGate
 from multiworld.particle import Particle
 import multiworld.qnumber as qn
 from multiworld.qnumber import CalcMode, qify
 from multiworld.simulation import Simulation
-from multiworld.util import QLogger, max_width, flat_list, SEP, WIRES, enough, Sign, default_wires
+from multiworld.util import QLogger, max_width, flat_list, SEP, WIRES, enough, Sign, default_wires, zerop, show_points
 from multiworld.spacewalk import run_paths
 from multiworld.visualizations import diagram, network_graph
 
 log = None
+
+def write_points_to_csv(name, particle_names, points:list):
+    with open(f'{name}.csv', 'w') as out_csv:
+        fieldnames = ['step']
+        for p in particle_names:
+            fieldnames += [f'{p}.sign', f'{p}.position']
+        fieldnames += ['weight', 'probability']
+        writer = csv.writer(out_csv, delimiter=',')
+        writer.writerow(fieldnames)
+        for v in points:
+            writer.writerow(
+                [v.step] + flat_list([[coord.sign, coord.position] for coord in v.coords] + [v.weight, v.probability]))
+
 
 def main():
     global log
@@ -163,80 +176,76 @@ def main():
             with open(f'{args.csv_output}_results.csv', 'w') as result_csv:
                 fieldnames = ['step']
                 for p in sim.particles.values():
-                    fieldnames += [f'{p.name}.sign', f'{p.name}.weight', f'{p.name}.prob', f'{p.name}.position']
+                    fieldnames += [f'{p.name}.sign', f'{p.name}.position']
+                fieldnames += ['weight', 'probability']
                 writer = csv.writer(result_csv, delimiter=',')
                 writer.writerow(fieldnames)
                 for v in result_space.index.values():
-                    writer.writerow([v.step] + flat_list([[pcv.particle.sign, f'{pcv.particle.weight}', f'{pcv.particle.probability}', pcv.pcoord.position] for pcv in v.pcvals.values()]))
+                    writer.writerow([v.step] + flat_list([[pcoord.pkey.sign, pcoord.position] for pcoord in v.coords.values()] + [v.weight, v.probability]))
             with open(f'{args.csv_output}_all.csv', 'w') as all_csv:
                 fieldnames = ['step']
                 for p in sim.particles.values():
-                    fieldnames += [f'{p.name}.sign', f'{p.name}.weight', f'{p.name}.prob', f'{p.name}.position']
+                    fieldnames += [f'{p.name}.sign', f'{p.name}.position']
+                fieldnames += ['weight', 'probability']
                 writer = csv.writer(all_csv, delimiter=',')
                 writer.writerow(fieldnames)
                 for v in all_points.index.values():
-                    writer.writerow([v.step] + flat_list([[pcv.particle.sign, f'{pcv.particle.weight}', f'{pcv.particle.probability}', pcv.pcoord.position] for pcv in v.pcvals.values()]))
+                    writer.writerow([v.step] + flat_list([[pcoord.pkey.sign, pcoord.position] for pcoord in v.coords.values()] + [v.weight, v.probability]))
 
         steps = result_space.max_step
         has_run = True
         final_points = [v for v in result_space.index.values()
                         if v.step == steps
-                        and np.all([enough(abs(pcv.particle.weight), qn.ZERO_THRESHOLD)
-                                    for pcv in v.pcvals.values()])]
+                        and not zerop(v.weight)]
         log.info(f'finished after {steps} steps, {len(result_space.index)} total points in final config space, {len(final_points)} points from last step')
         log.info(' ')
         if len(final_points) > 0:
-            Particle.SUPPRESS_WEIGHT_WARNINGS = True
-            pad_len = [0] * len(final_points[0].pcvals.values())
+            log.info('final results:')
+            show_points(final_points, indent='   ')
+            pad_len = [0] * len(final_points[0].coords.values())
             by_pname_gate_pos = defaultdict(list)
             by_pkey_gate_count = defaultdict(int)
-            for point in final_points:
-                pcvals = list(point.pcvals.values())
-                for p in pcvals:
-                    key = f'{p.particle.name}@{p.pcoord.position.origin}'
-                    pkey = f'{p.particle.pkey}@{p.pcoord.position.origin}'
-                    if key in by_pname_gate_pos.keys():
-                        by_pkey_gate_count[pkey] += 1
-                        by_pname_gate_pos[key] = PCoordValue(
-                            pcoord = p.pcoord, particle=Particle.merge([by_pname_gate_pos[key].particle, p.particle])[0])
-                    else:
-                        by_pkey_gate_count[pkey] = 1
-                        by_pname_gate_pos[key] = p
-                positions = [p.pcoord.position.origin for p in pcvals]
-                particles = [p.particle for p in pcvals]
-                logstr = [f'{particle.ps(short=True)}@{pos}' for particle, pos in zip(particles, positions)]
-                for i, s in enumerate(logstr):
-                    pad_len[i] = max(pad_len[i], len(s))
-            by_particle = defaultdict(lambda: defaultdict(dict))
-            for k, v in by_pname_gate_pos.items():
-                pkey = f'{v.particle.pkey}@{v.pcoord.position.origin}'
-                v.particle.weight /= by_pkey_gate_count[pkey]
-                pname = v.particle.name
-                gname = v.pcoord.position.origin.gate
-                port = v.pcoord.position.origin.port
-                by_particle[pname][gname][port] = v
+            # for point in final_points:
+            #     coords = list(point.coords.values())
+            #     for c in coords:
+            #         key = f'{c.name}@{c.position.origin}'
+            #         pkey = f'{c.pkey}'
+            #         if key in by_pname_gate_pos.keys():
+            #             by_pkey_gate_count[pkey] += 1
+            #             by_pname_gate_pos[key] = point
+            #         else:
+            #             by_pkey_gate_count[pkey] = 1
+            #             by_pname_gate_pos[key] = point
+            #     # positions = [c.position.origin for c in coords]
+            #     logstr = [f'{coord.position}' for coord in point.coords.values()]
+            #     for i, s in enumerate(logstr):
+            #         pad_len[i] = max(pad_len[i], len(s))
+            # by_particle = defaultdict(lambda: defaultdict(dict))
+            # for k, v in by_pname_gate_pos.items():
+            #     pkey = f'{v}'
+            #     v.weight /= by_pkey_gate_count[pkey]
+            #     pname = v.name
+            #     gname = v.position.origin.gate
+            #     port = v.position.origin.port
+            #     by_particle[pname][gname][port] = v
 
             log.info(' ')
-            log.info('final results:')
-            for point in final_points:
-                pcvals = list(point.pcvals.values())
-                positions = [p.pcoord.position.origin for p in pcvals]
-                particles = [p.particle for p in pcvals]
-                logstr = '  |  '.join([f'{f"{particle.ps(short=True)}@{pos}":<{pad_len[i]}}' for i, (particle, pos) in enumerate(zip(particles, positions))])
-                log.info(f'   {logstr}')
-            log.info(' ')
+            # for point in final_points:
+            #     coords = list(point.coords.values())
+            #     logstr = '  |  '.join([f'{coord:<{pad_len[i]}}' for i, coord in enumerate(coords)])
+            #     log.info(f'   {logstr}')
+            # log.info(' ')
             log.info('all nonzero:')
-            nonzeros = [point for point in final_points if
-                        np.all([enough(abs(pcv.particle.weight), qn.ZERO_THRESHOLD)
-                                for pcv in point.pcvals.values()])]
-            for point in nonzeros:
-                pcvals = list(point.pcvals.values())
-                positions = [p.pcoord.position.origin for p in pcvals]
-                particles = [p.particle for p in pcvals]
-                logstr = '  |  '.join(
-                    [f'{f"{particle.ps(short=True)}@{pos}":<{pad_len[i]}}' for i, (particle, pos) in
-                     enumerate(zip(particles, positions))])
-                log.info(f'   {logstr}')
+            nonzeros = [point for point in final_points if not zerop(point.weight)]
+            show_points(nonzeros)
+            # for point in nonzeros:
+            #     pcvals = list(point.pcvals.values())
+            #     positions = [p.pcoord.position.origin for p in pcvals]
+            #     particles = [p.particle for p in pcvals]
+            #     logstr = '  |  '.join(
+            #         [f'{f"{particle.ps(short=True)}@{pos}":<{pad_len[i]}}' for i, (particle, pos) in
+            #          enumerate(zip(particles, positions))])
+            #     log.info(f'   {logstr}')
             pkey_summary = {}
             pname_summary = {}
             gate_summary = {}

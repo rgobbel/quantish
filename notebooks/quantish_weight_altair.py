@@ -1,9 +1,9 @@
 import marimo
 
-__generated_with = "0.17.8"
+__generated_with = "0.23.11"
 app = marimo.App(width="full")
 
-with app.setup(hide_code=True):
+with app.setup:
     # Initialization code that runs before all other cells
     import marimo as mo
     from marimo import md
@@ -24,6 +24,8 @@ with app.setup(hide_code=True):
     from graphlib import TopologicalSorter
     from collections import defaultdict
     from typing import List, Dict, Tuple
+    from abc import ABC
+    from importlib import import_module
     # try:
     #     from yaml_util import load_yaml
     # except ImportError:
@@ -31,10 +33,26 @@ with app.setup(hide_code=True):
     from pathlib import Path
 
 
+@app.cell
+def _():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('qn', '/Users/gobbel/src/quantish/multiworld/qnumber.py')
+    qn = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(qn)
+    return (qn,)
+
+
+@app.cell
+def _(qn):
+    qn.CalcMode.mode = 'Symbolic'
+    return
+
+
 @app.cell(hide_code=True)
 def sim_mode_constant():
     # SimMode = Enum('SimMode', ['float', 'symbolic'])
     SEP = '.'
+    eval_mode = 'Symbolic'
     md('#### Enums and constants')
     return (SEP,)
 
@@ -96,7 +114,7 @@ def _(sccb):
     return (cf,)
 
 
-@app.cell(hide_code=True)
+@app.cell(disabled=True, hide_code=True)
 def _(SymSimulation, cf):
     cf['symbolic'] = False
     sym_sim = SymSimulation(cf)
@@ -104,7 +122,7 @@ def _(SymSimulation, cf):
     return (sym_sim,)
 
 
-@app.cell(hide_code=True)
+@app.cell(disabled=True, hide_code=True)
 def _(Simulation, cf):
     cf['symbolic'] = False
     num_sim = Simulation(cf)
@@ -179,7 +197,7 @@ def cpair_algorithm_select(cpair_alg):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(sym_cquad, ttsr):
     cps = sym_cquad(sympify(1), ttsr, sympify(1))
     return (cps,)
@@ -231,7 +249,7 @@ def _():
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(
     SEP,
     SymGate,
@@ -356,7 +374,7 @@ def _(
     return (SymSimulation,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def simulation_class(
     Gate,
     Particle,
@@ -482,8 +500,8 @@ def _():
 
 
 @app.cell(hide_code=True)
-def _():
-    class SymSink:
+def _(Sink):
+    class SymSink(Sink):
         """For storing final output values. Obsolete?"""
         def __init__(self, name):
             self.name = name
@@ -534,17 +552,24 @@ def symangle(Angle):
     return (SymAngle,)
 
 
-@app.cell(hide_code=True)
-def angle_class():
+@app.cell
+def _(qn):
+    qn.qify(30).radians
+    return
+
+
+@app.cell
+def angle_class(qn):
     @dataclass
     class Angle:
-        theta: float
+        theta: qn.Real
         def __init__(self, theta, units='degrees'):
+            theta = qn.qify(theta)
             if units == 'degrees':
-                self.theta = m.radians(theta)
+                self.theta = theta.radians
             else:
                 self.theta = theta
-            self.theta %= 2 * m.pi
+            self.theta %= 2 * qn.PI
         def __hash__(self):
             return hash(self.theta)
         def __call__(self):
@@ -565,7 +590,7 @@ def angle_class():
             return self.__class__(self.radians * value, units='radians')
         @property
         def degrees(self):
-            return m.degrees(self.theta)
+            return self.theta.degrees
         @property
         def radians(self):
             return self.theta
@@ -581,7 +606,7 @@ def _():
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def symparticle(sym_prob):
     class SymParticle:
         def __init__(self, name, weight, sign, trace=''):
@@ -619,6 +644,11 @@ def symparticle(sym_prob):
 
 
 @app.cell
+def _():
+    return
+
+
+@app.cell
 def particle_class():
     class Particle:
         def __init__(self, name, weight, sign, trace=''):
@@ -633,11 +663,30 @@ def particle_class():
             ss = f"{'+' if self.sign > 0 else '-'}"
             ws = f'{self.weight.real:.2f}{self.weight.imag:+.2f}'
             return f'{self.__class__.__name__}{ss}({ws}:{angstr(self.weight)}'
+        def __add__(self, other):
+            if self.prob >= other.prob:
+                new_sign = self.sign
+            else:
+                new_sign = other.sign
+            new_weight = self.weight + other.weight
+            return self.__class__(self.name, new_weight, new_sign, f'->{self.trace}+{other.trace}')
         @property
         def prob(self):
             return abs(self.weight)**2
     md('#### Particle class')
     return (Particle,)
+
+
+@app.cell
+def _(Particle, qn):
+    p = Particle('p', weight=qn.Complex(1), sign=1)
+    return (p,)
+
+
+@app.cell
+def _(p):
+    p.weight
+    return
 
 
 @app.cell(hide_code=True)
@@ -648,7 +697,7 @@ def _():
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def symgate(SymAngle, sym_cquad):
     class SymGate:
         def __init__(self, name, theta):
@@ -661,14 +710,14 @@ def symgate(SymAngle, sym_cquad):
             print(f'{self.name}:{"NOT" if not swap else ""} SWAPPING')
             if upper is not None:
                 m_up_dict = sym_cquad(upper.weight, self.theta.radians, upper.sign)
-                m_up_dict['c2b'] = -m_up_dict['c2b']
-                m_up_dict['c3b'] = -m_up_dict['c3b']
+                # m_up_dict['c2b'] = -m_up_dict['c2b']
+                # m_up_dict['c3b'] = -m_up_dict['c3b']
                 m_up = [m_up_dict[c] for c in ['c2a', 'c2b', 'c3a', 'c3b']]
             else: m_up = None
             if lower is not None:
                 m_lo_dict = sym_cquad(lower.weight, self.theta.radians, lower.sign)
-                m_lo_dict['c2b'] = -m_lo_dict['c2b']
-                m_lo_dict['c3b'] = -m_lo_dict['c3b']
+                # m_lo_dict['c2b'] = -m_lo_dict['c2b']
+                # m_lo_dict['c3b'] = -m_lo_dict['c3b']
                 m_lo = [m_lo_dict[c] for c in ['c2a', 'c2b', 'c3a', 'c3b']]
             else: m_lo = None
             return m_up, m_lo
@@ -677,31 +726,189 @@ def symgate(SymAngle, sym_cquad):
 
 
 @app.cell
-def gate_class(Angle, cquad):
+def gate_class(Angle, cquad, qn):
     class Gate:
-        def __init__(self, name, theta):
+        def __init__(self, name, theta:qn.Real):
             self.name = name
             self.theta = Angle(theta)
         def __repr__(self):
             return f'{self.__class__.__name__}({self.theta})'
         def measure(self, control, upper=None, lower=None):
+            out_keys = ['c2a', 'c2b', 'c3a', 'c3b']
             swap = control is not None and control.prob > 0
             print(f'{self.name}: {"NOT" if not swap else ""} SWAPPING')
             if upper is not None:
-                m_up_dict = cquad(upper.weight, self.theta.radians, upper.sign)
-                m_up_dict['c2b'] *= -1
-                m_up_dict['c3b'] *= -1
-                m_up = [m_up_dict[c] for c in ['c2a', 'c2b', 'c3a', 'c3b']]
-            else: m_up = None
+                up_res = cquad(upper.weight, self.theta.radians, upper.sign)
+                # m_up_dict['c2b'] *= -1
+                # m_up_dict['c3b'] *= -1
+                # m_ = [m_in_up_dict[c] for c in ['c2a', 'c2b', 'c3a', 'c3b']]
+            else: up_res = {k: 0 for k in out_keys}
             if lower is not None:
-                m_lo_dict = measure(lower.weight, self.theta.radians, lower.sign)
-                m_lo_dict['c2b'] *= -1
-                m_lo_dict['c3b'] *= -1
-                m_up = [m_lo_dict[c] for c in ['c2a', 'c2b', 'c3a', 'c3b']]
-            else: m_lo = None
-            return m_up, m_lo
+                lo_res = cquad(lower.weight, self.theta.radians, lower.sign)
+                # m_lo_dict['c2b'] *= -1
+                # m_lo_dict['c3b'] *= -1
+                # m_in_lo = [m_in_lo_dict[c] for c in ['c2a', 'c2b', 'c3a', 'c3b']]
+            else: lo_res = {k: 0 for k in out_keys}
+            m_up = [up_res['c2a'] + lo_res['c3a'], up_res['c2b'] + lo_res['c3b']]
+            m_lo = [up_res['c3a'] + lo_res['c2a'], up_res['c3b'] + lo_res['c2b']]
+            if swap:
+                m_up, m_lo = m_lo, m_up
+            return m_up + m_lo
     md('#### Gate class')
     return (Gate,)
+
+
+@app.cell
+def _(Particle, qn):
+    p1x = Particle('p1x', weight=qn.Complex(1), sign=1)
+    return (p1x,)
+
+
+@app.cell
+def _(Particle, qn):
+    p2x = Particle('p2x', weight=qn.Complex(1), sign=1)
+    return (p2x,)
+
+
+@app.cell
+def _(p1x, p2x):
+    p1x, p2x
+    return
+
+
+@app.cell
+def _(Angle, Gate, qn):
+    g1x = Gate('g1x', Angle(qn.qify(30)).degrees)
+    return (g1x,)
+
+
+@app.cell
+def _(Angle, Gate, qn):
+    g2x = Gate('g2x', Angle(qn.qify(30)).degrees)
+    return (g2x,)
+
+
+@app.cell
+def _(g1x, g2x):
+    g1x, g2x
+    return
+
+
+@app.cell
+def _(g1x, p1x):
+    g1res = g1x.measure(control=None, upper=p1x)
+    return (g1res,)
+
+
+@app.cell
+def _(g1res):
+    g1res
+    return
+
+
+@app.cell
+def _(Particle, g1res):
+    p1x2a = Particle('p1x2a', weight=g1res[0], sign=1)
+    return (p1x2a,)
+
+
+@app.cell
+def _(Particle, g1res):
+    p1x2b = Particle('p1x2b', weight=g1res[1], sign=-1)
+    return (p1x2b,)
+
+
+@app.cell
+def _(Particle, g1res):
+    p1x3a = Particle('p1x3a', weight=g1res[2], sign=1)
+    return (p1x3a,)
+
+
+@app.cell
+def _(Particle, g1res):
+    p1x3b = Particle('p1x3b', weight=g1res[3], sign=-1)
+    return (p1x3b,)
+
+
+@app.cell
+def _(p1x2a, p1x2b):
+    p1xup = p1x2a + p1x2b
+    return (p1xup,)
+
+
+@app.cell
+def _(p1x3a, p1x3b):
+    p1xlo = p1x3a + p1x3b
+    return (p1xlo,)
+
+
+@app.cell
+def _(p1x2a, p1x2b, p1x3a, p1x3b, p1xlo, p1xup):
+    p1x2a, p1x2b, p1x3a, p1x3b, p1xup, p1xlo
+    return
+
+
+@app.cell
+def _(p1x2a, p1x2b, p1x3a, p1x3b, p1xlo, p1xup):
+    p1x2a.prob, p1x2b.prob, p1x3a.prob, p1x3b.prob, p1xup.prob, p1xlo.prob
+    return
+
+
+@app.cell
+def _():
+    return
+
+
+@app.cell
+def _(p1x2a, p1x2b, p1x3a, p1x3b, p1xlo, p1xup):
+    p1x2a.prob + p1x2b.prob, p1x3a.prob + p1x3b.prob, p1xup.prob + p1xlo.prob
+    return
+
+
+@app.cell
+def _(g1res):
+    g1res
+    return
+
+
+@app.cell
+def _(g2x, p1xlo, p1xup):
+    g2res = g2x.measure(control=None, upper=p1xup, lower=p1xlo)
+    return (g2res,)
+
+
+@app.cell
+def _(g2res):
+    g2res
+    return
+
+
+@app.cell
+def _(g2res):
+    g2sum0 = g2res[0] + g2res[1]
+    g2sum1 = g2res[2] + g2res[3]
+    complex(g2sum0), complex(g2sum1)
+    return
+
+
+@app.cell
+def _(g2res):
+    g2up = g2res[0][0] + g2res[0][1] + g2res[1][2] + g2res[1][3]
+    g2lo = g2res[0][2] + g2res[0][3] + g2res[1][0] + g2res[1][1]
+    complex(g2up.v), complex(g2lo.v)
+    return
+
+
+@app.cell
+def _(g2res):
+    g2sum = sum(g2res[0])
+    return (g2sum,)
+
+
+@app.cell
+def _(g2sum):
+    g2sum, abs(g2sum)**2
+    return
 
 
 @app.cell(hide_code=True)
@@ -722,7 +929,79 @@ def _():
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
+def _():
+    mo.left(md(rf"""
+
+    $$
+    \begin{{align*}}
+    (p_{{1_{{c2a}}}}+p_{{1_{{c2b}}}} + p_{{1_{{c3a}}}}+p_{{1_{{c3b}}}})(p_{{2_{{c2a}}}}+p_{{2_{{c2b}}}} + p_{{2_{{c3a}}}}+p_{{2_{{c3b}}}}) ... (p_{{n_{{c2a}}}}+p_{{n_{{c2b}}}} + p_{{n_{{c3a}}}}+p_{{n_{{c3b}}}})
+    \end{{align*}}
+    $$
+    """))
+    return
+
+
+@app.cell
+def _():
+    vx1 = [1,2,3,4]
+    vx2 = [1,2,3,4]
+    return vx1, vx2
+
+
+@app.cell
+def _(g1res):
+    outer1 = np.outer(g1res, g1res)
+    outer1
+    return (outer1,)
+
+
+@app.cell
+def _(outer1):
+    sum(outer1)
+    return
+
+
+@app.cell
+def _(vx1, vx2):
+    outer2 = np.outer(vx2, vx1)
+    outer2
+    return (outer2,)
+
+
+@app.cell
+def _(outer1, outer2):
+    outdiff1 = outer1 - outer2
+    outdiff1
+    return
+
+
+@app.cell
+def _(outer1, outer2):
+    outdiff2 = outer2 - outer1
+    outdiff2
+    return
+
+
+@app.cell
+def _():
+    np.array([[1,2,3]]).T
+    return
+
+
+@app.cell
+def _():
+    mo.left(md(rf"""
+    $$
+    \begin{{align*}}
+    (p_1^{{c2a}} + p_1^{{c2b}}+p_1^{{c3a}}+p_1^{{c3b}}) (p_2^{{c3a}}+p_2^{{c2b}}+p_2^{{c3a}}+p_2^{{c3b}})...(p_n^{{c3a}}+p_n^{{c3b}}+p_n^{{c3a}}+p_n^{{c3b}})
+    \end{{align*}}
+    $$
+    """))
+    return
+
+
+@app.cell
 def _():
     ttsr = sym.acos(sympify(4)/sympify(5))
     tts = sym.deg(ttsr)
@@ -765,7 +1044,7 @@ def _(cpair_sym, tts):
 
 
 @app.cell(hide_code=True)
-def g_30_measure_p1(g_30, p1):
+def g_30_measure_p1(g_30):
     m_sym_30 = g_30.measure(None)
     md('### m_sym_30 = g_30.measure(None, upper=p1)')
     return (m_sym_30,)
@@ -810,13 +1089,13 @@ def p1_up(SymParticle, m_sym_30):
 @app.cell
 def p1_up_a(SymParticle, m_sym_30):
     p1_up_a = SymParticle('p1_up_a', m_sym_30[0][2], 1)
-    return (p1_up_a,)
+    return
 
 
 @app.cell
 def p1_up_b(SymParticle, m_sym_30):
     p1_up_b = SymParticle('p1_up_b', m_sym_30[0][3], -1)
-    return (p1_up_b,)
+    return
 
 
 @app.cell
@@ -826,19 +1105,19 @@ def p1_up_val(p1_up):
 
 
 @app.cell
-def m_p1_up(g_30, p1_up):
+def m_p1_up(g_30):
     m_p1_up = g_30.measure(None)
     return (m_p1_up,)
 
 
 @app.cell
-def m_p1_up_a(g_30, p1_up_a):
+def m_p1_up_a(g_30):
     m_p1_up_a = g_30.measure(None)
     return (m_p1_up_a,)
 
 
 @app.cell
-def m_p1_up_b(g_30, p1_up_b):
+def m_p1_up_b(g_30):
     m_p1_up_b = g_30.measure(None)
     return (m_p1_up_b,)
 
@@ -865,13 +1144,18 @@ def fancy_latex_psum(p1_c2a, p1_c2b):
 
 
 @app.cell
-def m_p1_c2a(g_30, p1_c2a):
+def _():
+    return
+
+
+@app.cell
+def m_p1_c2a(g_30):
     m_p1_c2a = g_30.measure(None)
     return (m_p1_c2a,)
 
 
 @app.cell
-def m_p1_c2b(g_30, p1_c2b):
+def m_p1_c2b(g_30):
     m_p1_c2b = g_30.measure(None)
     return (m_p1_c2b,)
 
@@ -889,7 +1173,7 @@ def p1outs_minus_p2outs(p1outs, p2outs):
 
 
 @app.cell
-def measure_for_latex_1(g_30, p1_c2b):
+def measure_for_latex_1(g_30):
     g_30.measure(None)
     return
 
@@ -897,7 +1181,7 @@ def measure_for_latex_1(g_30, p1_c2b):
 @app.cell
 def p1_particle_def(SymParticle):
     p1 = SymParticle('p1', (sym.sympify(1)+(sym.I * sym.sympify(0))), 1)
-    return (p1,)
+    return
 
 
 @app.cell
@@ -955,8 +1239,8 @@ def _(m300):
 
 
 @app.cell
-def measure(cpair, w):
-    def cquad(weight, theta, sign):
+def measure(cpair, qn, w):
+    def cquad(weight:qn.Complex, theta:qn.Real, sign):
         """measure a particle through a gate
 
         weight -- complex-valued weight
@@ -966,7 +1250,7 @@ def measure(cpair, w):
         def spw(x):
             return f'{x.real:.2f}{x.imag:+.2f}j'
         # following figure 4.4 in Good and Real
-        twist = theta - m.pi/2
+        twist = theta - qn.PI_fn()/2
         c1 = weight
         if sign > 0: # straightforward rotation by theta
             c2, c3 = cpair(c1, theta)
@@ -974,8 +1258,8 @@ def measure(cpair, w):
             c2, c3 = cpair(c1, twist)
         c2a, c2b = cpair(c2, -theta)
         c3a, c3b = cpair(c3, -theta)
-        straight = complex(c2.real, c2.imag)
-        cross = complex(c3.real, c3.imag)
+        straight = qn.Complex(c2.real+c2.imag*qn.I_fn())
+        cross = qn.Complex(c3.real+c3.imag*qn.I_fn())
         print(f'MEASURE {weight=}, theta={angstr(theta)}, {sign=}')
         print(f'RESULT  straight={spw(straight)}:{angstr(straight)} ({straight})')
         print(f'        cross={spw(cross)}:{angstr(cross)} ({cross})')
@@ -1036,11 +1320,11 @@ def sym_measure(cpair_sym):
         straight = sym.re(c2) + sym.im(c2) * sym.I
         cross = sym.re(c3) + sym.im(c3) * sym.I
         print(f'MEASURE {weight=}, theta={angstr_sym(theta)}, {sign=}')
-        print(f'RESULT  straight={spw(straight)}:{angstr_sym(straight)} ({straight})')
-        print(f'        cross={spw(cross)}:{angstr_sym(cross)} ({cross})')
-        print(f'        c2={spw(c2)}:{angstr_sym(c2)} ({c2}')
-        print(f'        c3={spw(c3)}:{angstr_sym(c3)} ({c3}')
-        print(f'        c2a={spw(c2a)}:{angstr_sym(c2a)} ({c2a})')
+        # print(f'RESULT  straight={spw(straight)}:{angstr_sym(straight)} ({straight})')
+        # print(f'        cross={spw(cross)}:{angstr_sym(cross)} ({cross})')
+        # print(f'        c2={spw(c2)}:{angstr_sym(c2)} ({c2}')
+        # print(f'        c3={spw(c3)}:{angstr_sym(c3)} ({c3}')
+        print(f'RESULT  c2a={spw(c2a)}:{angstr_sym(c2a)} ({c2a})')
         print(f'        c2b={spw(c2b)}:{angstr_sym(c2b)} ({c2b})')
         print(f'        c3a={spw(c3a)}:{angstr_sym(c3a)} ({c3a})')
         print(f'        c3b={spw(c3b)}:{angstr_sym(c3b)} ({c3b})')
@@ -1095,11 +1379,11 @@ def ui_widget_creation(tt):
         comp_list = ['straight', 'cross', 'c2', 'c3', 'c2a', 'c2b', 'c3a', 'c3b', 'w']
         # comp_i = {comp: i for i, comp in enumerate(comp_list)}
         # comp_s = {i: comp for i, comp in enumerate(comp_list)}
-        wr_slide = mo.ui.slider(0, 1, step=0.1, value=1, 
+        wr_slide = mo.ui.slider(-1, 1, step=0.05, value=1, 
                                 debounce=True, label=r'$w_{real}$')
-        wi_slide = mo.ui.slider(0, 1, step=0.1, value=0,
+        wi_slide = mo.ui.slider(-1, 1, step=0.05, value=0,
                                 debounce=True, label=r'$w_{imag}$')
-        theta_slide = mo.ui.number(start=0, stop=90, value=tt)
+        theta_slide = mo.ui.slider(start=0, stop=90, value=tt)
         # theta_slide = mo.ui.slider(0, 360, step=0.01, value=30, debounce=False, label=rf'${{\theta}}$')
         sign_check = mo.ui.checkbox(label='sign', value=True)
         comp_select = mo.ui.multiselect(comp_list, label='Components to plot:')
@@ -1110,10 +1394,17 @@ def ui_widget_creation(tt):
 
 
 @app.cell(hide_code=True)
-def values_from_ui(comp_select, sign_check, theta_slide, wi_slide, wr_slide):
+def values_from_ui(
+    comp_select,
+    qn,
+    sign_check,
+    theta_slide,
+    wi_slide,
+    wr_slide,
+):
     wr = wr_slide.value
     wi = wi_slide.value
-    w = complex(wr, wi)
+    w = qn.Complex(wr, wi)
     theta = m.radians(theta_slide.value)
     sign = 1 if sign_check.value else -1
     selected_compoments = comp_select.value
@@ -1181,6 +1472,12 @@ def _(measurement):
     return
 
 
+@app.cell
+def _(qn):
+    qn.Complex(qn.qify(1)/2).cos
+    return
+
+
 @app.cell(hide_code=True)
 def support_fns_md():
     mo.md(r"""
@@ -1189,28 +1486,42 @@ def support_fns_md():
     return
 
 
-@app.cell(hide_code=True)
-def cpair_float(cpair_alg):
-    def cpair(w, theta):
+@app.cell
+def cpair_float(cpair_alg, qn):
+    def cpair(w:qn.Complex, theta:qn.Real, sign=1):
         "basic weight rotation"
-        assert type(w) is complex, f'weight {w} is not complex'
-        twist = theta - m.pi/2
+        assert type(w) is qn.Complex, f'weight {w} is not complex'
+        twist = theta - qn.PI_fn()/2
         cpa = cpair_alg.value[0]
         if cpa == 'rotate & scale':
-            wplus = w * m.cos(theta) * cm.exp(1j * theta)
-            wminus = w * m.sin(theta) * cm.exp(1j * twist)
+            print(qn.I_fn() * theta)
+            wplus = w * theta.cos * (qn.I_fn() * theta).exp
+            wminus = w * theta.sin * (qn.I_fn() * twist).exp
         elif cpa == 'rotate only':
-            wplus = w * cm.exp(1j * theta)
-            wminus = w * cm.exp(1j * twist)
+            wplus = w * (qn.I_fn() * theta).exp
+            wminus = w * (qn.I_fn() * twist).exp
         elif cpa == 'scale only':
-            wrotp = w * cm.exp(1j * theta)
-            wrotm = w * cm.exp(1j * twist)
+            wrotp = w * (qn.I_fn() * theta).exp
+            wrotm = w * (qn.I_fn() * twist).exp
             wplus_r = wrotp.real
             wplus_i = wrotp.imag
-            wplus = complex(wplus_r, wplus_i)
+            wplus = qn.Complex(wplus_r, wplus_i)
             wminus_r = wrotm.real
             wminus_i = wrotm.imag
-            wminus = complex(wminus_r, wminus_i)
+            wminus = qn.Complex(wminus_r, wminus_i)
+        elif cpa == 'official':
+            if sign == 1: 
+                c2a = w * theta.cos**2
+                c2b = w * theta.cos * theta.sin * qn.I_fn()
+                c3a = w * theta.sin**2
+                c3b = w * theta.cos * theta.sin * -qn.I_fn()
+            else:
+                c2a = w * twist.cos**2
+                c2b = w * twist.cos * twist.sin * qn.I_fn()
+                c3a = w * twist.sin**2
+                c3b = w * twist.cos * twist.sin * -qn.I_fn()
+            wplus = c2a + c2b
+            wminus = c3a + c3b
         else:
             raise ValueError(f'{cpair_alg.value} is not a valid value for cpair_alg')
         return wplus, wminus
@@ -1219,8 +1530,20 @@ def cpair_float(cpair_alg):
 
 
 @app.cell
-def _(cpair, tt):
-    cpair(1+0j, tt)
+def _(qn):
+    qn.I_fn() * qn.qify(30).radians
+    return
+
+
+@app.cell
+def _(cpair, qn):
+    cpair(qn.Complex(1), qn.qify(30).radians)
+    return
+
+
+@app.cell
+def _(cpair, qn, tt):
+    cpair(qn.Complex(qn.qify(1)), tt)
     return
 
 
@@ -1229,7 +1552,7 @@ def _():
     cpair_alg = mo.ui.multiselect(
         label='cpair algorithm',
         max_selections=1,
-        options=['scale only', 'rotate only', 'rotate & scale'],
+        options=['scale only', 'rotate only', 'rotate & scale', 'official'],
         value=['rotate & scale']
     )
     return (cpair_alg,)
@@ -1237,7 +1560,7 @@ def _():
 
 @app.cell(hide_code=True)
 def cpair_sym(cpair_alg):
-    def cpair_sym(w, theta):
+    def cpair_sym(w, theta, sign=1):
         sym_w = sym.sympify(w)
         sym_theta = sym.sympify(theta)
         twist = sym_theta - (sym.pi / sympify(2))
@@ -1255,6 +1578,19 @@ def cpair_sym(cpair_alg):
             wminus_r = sym_w * sym.cos(twist)
             wminus_i = sym_w * sym.sin(twist)
             wminus = wminus_r + wminus_i * I
+        elif cpa == 'official':
+            if sign == 1: 
+                c2a = w * m.cos(theta)**2
+                c2b = w * m.cos(theta) * m.sin(theta) * 1j
+                c3a = w * m.sin(theta)**2
+                c3b = w * m.cos(theta) * m.sin(theta) * -1j
+            else:
+                c2a = w * m.cos(twist)**2
+                c2b = w * m.cos(twist) * m.sin(twist) * 1j
+                c3a = w * m.sin(twist)**2
+                c3b = w * m.cos(twist) * m.sin(twist) * -1j
+            wplus = c2a + c2b
+            wminus = c3a + c3b
         else:
             raise ValueError(f'{cpair_alg.value} is not a valid value for cpair_alg')
         return wplus, wminus

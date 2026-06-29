@@ -6,9 +6,7 @@ from addict import Dict
 from quantish.particle import Particle
 from quantish.gate import DelayGate, FredkinGate
 from quantish.config_space import WIRES, RunStage, OTHER
-from quantish.qnumber import Real, qify, softmax, Complex, PI
 from quantish.util import SEP, sstr
-# from quantish.dotdict import DotDict
 
 log = logging.getLogger('quantish')
 
@@ -111,11 +109,7 @@ class Simulation:
         log.info(f'swap if selected={self.swap_if_selected}')
         log.info('')
         for pname, pval in config['particles'].items():
-            pweight = Complex(pval['weight'])
-            self.particles[pname] = (
-                Particle(pname, pweight, qify(pval['sign']),
-                         precision=self.precision,
-                         add_with_signs=self.add_with_signs))
+            self.particles[pname] = Particle(pname, pval['sign'], precision=self.precision,add_with_signs=self.add_with_signs)
             log.info(f'PARTICLE: {self.particles[pname]}')
         log.info('')
         for gname, gval in config.gates.items():
@@ -127,10 +121,7 @@ class Simulation:
                 forwarding_threshold = gval.forwarding_threshold
             else:
                 forwarding_threshold = self.forwarding_threshold
-            self.gates[gname] = FredkinGate(
-                gname, gval.angle,
-                # sim=self, swap_threshold=swap_threshold, forwarding_threshold=forwarding_threshold)
-                sim = self, swap_threshold = lambda: 0, forwarding_threshold = lambda: fixed_random)
+            self.gates[gname] = FredkinGate(gname, gval.angle)
         if 'delay_gates' in config:
             for dgname in config.delay_gates:
                 self.gates[dgname] = DelayGate(dgname, sim=self)
@@ -148,31 +139,6 @@ class Simulation:
         log.info('')
 
     def run(self):
-        astr = lambda x: ', '.join([str(s) for s in x]) if x else 'None'
-        merge_before_measure = self.merge_before_measure
-        merge_before_forward = self.merge_before_forward
-        combine_signs = self.combine_signs
-        combine_names = self.combine_names
-        normalize_input = self.normalize_input
-        normalize_output = self.normalize_output
-        selector = lambda: random.random()
-
-        def norm_input_particles(particles):
-            pw = [p.weight for p in particles]
-            normed = softmax(pw)
-            for p, w in zip(particles, normed):
-                p.weight = w
-
-        def merge_input(group):
-            pluses = [Particle.merge([x for x in group if x.sign > 0])]
-            pluses = [] if not pluses else pluses
-            minuses = [Particle.merge([x for x in group if x.sign < 0])]
-            minuses = [] if not minuses else minuses
-            group = pluses + minuses
-            if group and combine_signs:
-                group = Particle.merge(group)
-                group = [] if not group else [group]
-            return group
 
         for stage in self.run_stages.values():
             stage.run()

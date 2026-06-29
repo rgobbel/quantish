@@ -161,15 +161,15 @@ def run_simulation(args, config):
             log.info(f'   {particle}')
         log.info('GATES:')
         for gate in sim.gates.values():
-            if callable(gate.swap_threshold):
-                swapstr = f'(call){gate.swap_threshold():.2f}'
-            else:
-                swapstr = f'{gate.swap_threshold:.2f}'
-            if callable(gate.forwarding_threshold):
-                fwdstr = f'(call){gate.forwarding_threshold():.2f}'
-            else:
-                fwdstr = f'{gate.forwarding_threshold:.2f}'
-            log.info(f'   {gate} (threshold: swap={swapstr}, fwd={fwdstr})')
+            # if callable(gate.swap_threshold):
+            #     swapstr = f'(call){gate.swap_threshold():.2f}'
+            # else:
+            #     swapstr = f'{gate.swap_threshold:.2f}'
+            # if callable(gate.forwarding_threshold):
+            #     fwdstr = f'(call){gate.forwarding_threshold():.2f}'
+            # else:
+            #     fwdstr = f'{gate.forwarding_threshold:.2f}'
+            log.info(f'   {gate}')
         histogram = defaultdict(int)
         stats = defaultdict(float)
         angle_counts = defaultdict(int)

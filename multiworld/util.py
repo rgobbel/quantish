@@ -47,8 +47,7 @@ class Sign(IntEnum):
     def negate(self):
         return self.__class__(0 - self)
 
-    @property
-    def negative(self):
+    def __neg__(self):
         return self.negate()
 
     def __repr__(self):
@@ -102,21 +101,15 @@ def to_float(x):
     return result
 
 def show_points(points, indent='', loglevel=logging.INFO):
-    pad_len = [0] * len(points[0].pcvals.values())
+    pad_len = [0] * len(points[0].coords.values())
     for point in points:
-        pcvals = list(point.pcvals.values())
-        positions = [p.pcoord.position for p in pcvals]
-        particles = [p.particle for p in pcvals]
-        logstr = [f'{particle.ps(short=True)}@{pos}' for particle, pos in zip(particles, positions)]
+        logstr = [f'{coord.key}' for coord in point.coords.values()]
         for i, s in enumerate(logstr):
             pad_len[i] = max(pad_len[i], len(s))
     for point in points:
-        pcvals = list(point.pcvals.values())
-        positions = [p.pcoord.position for p in pcvals]
-        particles = [p.particle for p in pcvals]
-        logstr = '  |  '.join([f'{f"{particle.ps(short=True)}@{pos}":<{pad_len[i]}}' for i, (particle, pos) in
-                               enumerate(zip(particles, positions))])
-        log.log(loglevel, f'{indent}{logstr}')
+        logstr = '|'.join([f'{f"{coord.key}":<{pad_len[i]}}' for i, coord in
+                               enumerate(point.coords.values())])
+        log.log(loglevel, f'{indent}{logstr}:{wstr(point.weight, precision=2)}')
 
 
 def enough(x, threshold):
@@ -125,6 +118,9 @@ def enough(x, threshold):
     tx = to_float(threshold)
     # return (not np.isclose(flx, 0)) and flx >= threshold
     return flx >= tx
+
+def zerop(x):
+    return not enough(abs(x), qn.ZERO_THRESHOLD)
 
 def filter_particles(particles, threshold=qn.ZERO_THRESHOLD):
     # return particles

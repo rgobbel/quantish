@@ -7,27 +7,44 @@ import cmath as cm
 import re as rex
 import scipy.special as sci
 
-from multiworld.qconstants import float_methods, complex_methods
-
 log = logging.getLogger('multiworld')
 
 CALC_MODE = 'Float'
 
-class CalcMode:
+def _set_calc_mode(new_mode: str) -> str:
+    global I, PI, CALC_MODE
+    CALC_MODE = new_mode
+    if CALC_MODE == 'Float':
+        I = 1j
+        PI = m.pi
+    else:
+        I = sym.I
+        PI = sym.pi
+    return CALC_MODE
+
+
+class _CalcModeMeta(type):
+    """Metaclass so `CalcMode.mode` is a real settable property at the class level.
+
+    Reading `CalcMode.mode` returns the current global mode; assigning to
+    `CalcMode.mode = 'Symbolic'` updates CALC_MODE and the I / PI globals,
+    keeping behavior consistent with `CalcMode.default('Symbolic')`.
+    """
+    @property
+    def mode(cls):
+        return CALC_MODE
+
+    @mode.setter
+    def mode(cls, new_mode):
+        _set_calc_mode(new_mode)
+
+
+class CalcMode(metaclass=_CalcModeMeta):
     @classmethod
-    def default(cls, new_mode:str=None):
-        global I, PI, CALC_MODE
+    def default(cls, new_mode: str = None):
         if new_mode is None or new_mode == '':
             return CALC_MODE
-        else:
-            CALC_MODE = new_mode
-            if CALC_MODE == 'Float':
-                I = 1j
-                PI = m.pi
-            else:
-                I = sym.I
-                PI = sym.pi
-            return CALC_MODE
+        return _set_calc_mode(new_mode)
 
 
 # realtype = lambda x: type(x) in (int, float)
@@ -36,14 +53,8 @@ def realtype(x):
         x = x.v
     if type(x) in (int, float):
         return True
-    # if type(x) is complex:
     return False
-    # try:
-    #     _ = float(x)
-    #     return True
-    # except TypeError:
-    #     return False
-    # return False
+
 def floatable(x):
     try:
         _ = float(x)
@@ -60,20 +71,10 @@ def isq(x):
 
 issym = lambda x: rex.match('sympy', type(x).__module__) is not None
 otherv = lambda x: x.v if isq(x) else x
-# def otherv(x):
-#     if isq(x):
-#         return x.v
-#     else:
-#         return x
 
 DEBUG = False
 
 Modes = ['Symbolic', 'Float']
-
-implemented_methods = {
-    float: float_methods,
-    complex: complex_methods
-}
 
 def to_float(x):
     try:
@@ -134,8 +135,6 @@ class partialproperty:
     """Combine the functionality of property() and partialmethod()"""
     def __init__(self, getter, *args, **kwargs):
         self.getter = getter
-        # self.setter = setter
-        # self.deleter = deleter
         self.args = args
         self.kwargs = kwargs
 
@@ -153,24 +152,24 @@ class Complex(n.Number):
         instance = super().__new__(cls)
         if mode is None:
             mode = CalcMode.default()
-        # cls.add_methods(value, mode)
         instance.__init__(value=value, mode=mode)
         return instance
 
     def __init__(self, value, mode:str=None):
+        # Extract the underlying value FIRST: in the Real.__new__ identity-return
+        # path, value may be self, and zeroing self._value before this would
+        # destroy the very value we are about to read.
+        if isq(value):
+            value = value.v
         self._value: ANumber = 0
         super().__init__()
         if mode is None:
             mode = CalcMode.default()
-        if isq(value):
-            value = value.v
         if mode == 'Symbolic':
             if not issym(value):
                 self._value = sym.sympify(value)
             else:
                 self._value = value
-        # elif isnative(value):
-        #     self._value = value
         else:
             complex_value = complex(value)
             if type(self) is Complex or complex_value.imag != 0:
@@ -183,8 +182,6 @@ class Complex(n.Number):
 
     # @classmethod
     def rotate(self, theta):
-        # qx = qify(x)
-        # qt = qify(theta)
         return self.newme(self._value * (I * qify(theta))).exp
 
     def newme(self, x):
@@ -217,87 +214,6 @@ class Complex(n.Number):
             return self._value.__format__(format_spec)
         except RecursionError:
             return str(self._value)
-
-    # @classmethod
-    # def add_methods(cls, value, mode:str=None):
-    #     def _prop(self, prop_name):
-    #         if hasattr(self, prop_name):
-    #             val = getattr(self, prop_name)
-    #         else:
-    #             val = getattr(self._value, prop_name)
-    #         return self.__class__(val, self.mm)
-    #     vclass = value.__class__
-    #     meth_list = dir(vclass)
-    #     # if mode == 'Float':
-    #     #     if impl_class is complex:
-    #     #         meth_list = complex_methods
-    #     #     elif impl_class is float:
-    #     #         meth_list = float_methods
-    #     #     else:
-    #     #         raise RuntimeError('Should be unreachable')
-    #     # else:
-    #     #     meth_list = sympy_dir
-    #     for meth in meth_list:
-    #         if meth in excluded_methods: continue
-    #         if meth == '__float__':
-    #             print('wtf')
-    #         if hasattr(vclass, meth):
-    #             impl_attr = getattr(vclass, meth)
-    #             if callable(impl_attr):
-    #                 setattr(cls, meth, partialmethod(cls._method, meth))
-    #             else:
-    #                 setattr(cls, meth, partialproperty(_prop, meth))
-
-    # def _get_val(self, meth, *args, **kwargs):
-    #     self_value_method = getattr(self._value, meth)
-    #     if len(args) > 0:
-    #         if args[0].__class__ in (self.__class__, self.__class__.__bases__[0]):
-    #             val = self_value_method(args[0].v, **kwargs)
-    #             if val == NotImplemented:
-    #                 rname = recip[meth]
-    #                 rvalue_method = getattr(args[0], rname)
-    #                 val = rvalue_method(self._value, **kwargs)
-    #         else:
-    #             val = self_value_method(*args, **kwargs)
-    #             if val == NotImplemented:
-    #                 rname = recip[meth]
-    #                 rvalue_method = getattr(args[0], rname)
-    #                 # print(f'calling {rvalue_method=}, {other=}')
-    #                 val = rvalue_method(self._value, **kwargs)
-    #     # if len(args) > 0 and self.same(args[0]):
-    #     #     we_float = realtype(self._value)
-    #     #     they_float = realtype(args[0].v)
-    #     #     # we_cx = cxtype(self._value)
-    #     #     # they_cx = cxtype(args[0].v)
-    #     #     if we_float and not they_float:
-    #     #         rname = recip[meth]
-    #     #         rvalue_method = getattr(args[0].v, rname)
-    #     #         if DEBUG: print(f'calling {rvalue_method=}, {args=}')
-    #     #         rv =  rvalue_method(self._value)
-    #     #         if DEBUG: print(f'{rv=}')
-    #     #         return rv
-    #     #     else:
-    #     #         val = self_value_method(args[0].v)
-    #     #         if DEBUG: print(f'{self=}, {args=}, {meth=}, {val=}')
-    #     #         return val
-    #     else:
-    #         val = self_value_method(*args, **kwargs)
-    #         # if val == NotImplemented:
-    #         #     rname = recip[meth]
-    #         #     rvalue_method = getattr(args[0], rname)
-    #         #     # print(f'calling {rvalue_method=}, {other=}')
-    #         #     val =  rvalue_method(self._value)
-    #     #     if DEBUG: print(f'{self=}, {args=}, {meth=}, {val=}')
-    #     return val
-
-    # def _method(self, meth, *args, **kwargs):
-    #     # print(f'{self=}, {meth.__repr__()=}, {args[0].__repr__()=}, {kwargs=}')
-    #     val = self._get_val(meth, *args, **kwargs)
-    #     vmod = val.__class__.__module__
-    #     if rex.match('sympy', vmod) or type(val) in (int, float, complex):
-    #         return self.newme(val, self.mm)
-    #     else:
-    #         return val
 
     def __complex__(self):
         return complex(self._value)
@@ -432,16 +348,6 @@ class Real(Complex):
             return Complex(value, mode)
         instance =  super().__new__(cls, value, mode)
         return instance
-
-    # def __init__(self, value, mode:str=None):
-    #     super().__init__(value, mode)
-    #     if isinstance(value, self.__class__):
-    #         self._value = value._value
-    #     else:
-    #         if mode == 'Symbolic':
-    #             self._value = sym.sympify(value)
-    #         else:
-    #             self._value = value
 
     def __repr__(self):
         return f'Real({self._value}, mode={self.mm})'
@@ -588,3 +494,12 @@ def zero_threshold_fn(mode=None):
 PI = PI_fn()
 I = I_fn()
 ZERO_THRESHOLD = zero_threshold_fn()
+
+def enough(x, threshold):
+    if not x: return False
+    flx = to_float(x)
+    tx = to_float(threshold)
+    return flx >= tx
+
+def zerop(x):
+    return not enough(abs(x), ZERO_THRESHOLD)

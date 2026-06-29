@@ -1,5 +1,5 @@
-step,p1.sign,p1.weight,p1.prob,p1.position
-2,+,(0.7499999999999999+0j),0.5624999999999998,g1.upper_in>g1.upper_out
-2,-,-0.4330127018922193j,0.18749999999999997,g1.upper_in>g1.upper_out
-2,+,(0.25+0j),0.0625,g1.lower_in>g1.lower_out
-2,-,0.4330127018922193j,0.18749999999999997,g1.lower_in>g1.lower_out
+step,p1.sign,p1.position,weight,probability
+2,+,g1.upper_in>g1.upper_out,3/4,9/16
+2,-,g1.lower_in>g1.lower_out,sqrt(3)*I/4,3/16
+2,+,g1.lower_in>g1.lower_out,1/4,1/16
+2,-,g1.upper_in>g1.upper_out,-sqrt(3)*I/4,3/16

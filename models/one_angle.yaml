@@ -8,7 +8,7 @@ particles:
    p1: {weight: 1, sign: 1}
 
 gates:
-   g0: {angle: 'rad(30)'}
+   g0: {angle: 0}
 
 links:
    p1: g0.upper

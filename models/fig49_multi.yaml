@@ -1,5 +1,5 @@
 title: Figure 4.9
-symbolic: true
+symbolic: false
 
 variables:
    zero: &zero  "0j"
@@ -15,9 +15,10 @@ variables:
    qp4: &qp4 "pi/4"
    qp8: &qp8 "pi/8"
 
-diagram_groups:
+run_groups:
    stage1: [g1]
-   stage2: [g2, g3]
+   stage2: [g2]
+   stage3: [g3]
 
 particles:
 #   c:

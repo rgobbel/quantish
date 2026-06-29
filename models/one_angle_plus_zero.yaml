@@ -1,5 +1,5 @@
 title: Single Gate
-symbolic: false
+symbolic: true
 
 run_groups:
    gate_angle: [g0]

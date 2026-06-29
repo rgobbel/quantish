@@ -31,15 +31,14 @@ variables:
    q30: &q30 "rad(30)"
    q45: &q45 "rad(45)"
 
-run_stages: &rs
+run_groups: &rs
    split1: [g1]
    split2: [g2]
 
 diagram_groups: *rs
 
 particles:
-#   c: {weight: *zero, sign: 1}
-   p1: {weight: *one, sign: 1}
+   p1: {weight: 1, sign: 1}
 
 gates:
    g1: {angle: *q30}

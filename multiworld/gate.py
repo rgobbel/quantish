@@ -1,13 +1,13 @@
 import logging
-import cmath as cm
 from collections import defaultdict
 
 import multiworld.qnumber as qn
 from multiworld.angle import Angle
+from multiworld.config_space import ConfigSpacePoint, PCoordinate, PCoordValue
 from multiworld.particle import Particle
 from multiworld.qnumber import qify, Complex, Real
 from multiworld.util import Gensym, enough, SEP, Sign, OTHER, SWITCH_WIRES, default_wires, default_switches, \
-    switch_splits
+    switch_splits, zerop
 
 log = logging.getLogger('multiworld')
 
@@ -23,16 +23,9 @@ class FredkinGate:
         # self.sim = sim
         self.discards = defaultdict(list)
         self.input_particles = set()
-        if type(self) is DelayGate:
-            return
+        # if type(self) is DelayGate:
+        #     return
         self.measurement_cache = {}
-        # if norm_output is None:
-        #     if sim is not None:
-        #         self.norm_output = sim.normalize_output
-        #     else:
-        #         self.norm_output = False
-        # else:
-        #     self.norm_output = norm_output
         if type(self.theta) is Angle:
             self.atheta = self.theta
             self.theta = self.theta.radians
@@ -104,20 +97,20 @@ class FredkinGate:
         wminus = w * theta.sin * (qn.I * twist).exp
         return Complex(wplus.real), qn.I*wplus.imag, Complex(wminus.real), qn.I*wminus.imag
 
-    def relative_angle(self, p:Particle):
-        return self.theta - p.v_0.phase
+    def relative_angle(self, p:ConfigSpacePoint):
+        return self.theta - p.weight.phase
 
-    def measure(self, p:Particle, merge_wires=False):
+    def measure(self, p:PCoordinate, w:Complex, merge_wires=False):
         """measure a particle through a gate
 
         weight -- complex-valued weight
         theta -- rotation angle
         sign -- plus or minus one
         """
-        cache_key = p #(self.swapping, p.__hash__())
-        if self.measurement_cache.get(cache_key) is not None:
-            return self.measurement_cache[cache_key]
-        c1 = p.weight
+        # cache_key = p #(self.swapping, p.__hash__())
+        # if self.measurement_cache.get(cache_key) is not None:
+        #     return self.measurement_cache[cache_key]
+        c1 = w
         par_a, par_b, perp_a, perp_b = self.cpair(c1, twist=p.sign == Sign.minus)
         # if self.norm_output and p.probability > 0:
         #     par_a, par_b, perp_a, perp_b = [x / p.weight for x in (par_a, par_b, perp_a, perp_b)]
@@ -126,42 +119,40 @@ class FredkinGate:
             return par_a+par_b, perp_a+perp_b
         return par_a, par_b, perp_a, perp_b
 
-    def inputs_from(self, pcvs):
-        for pcv in pcvs:
-            pcv_gate = pcv.pcoord.position.endpoint.gate
-            pcv_wire = pcv.pcoord.position.endpoint.port
-            if pcv_gate == self.name:
-                self.inputs[pcv_wire] += [pcv.particle]
+    # def inputs_from(self, points):
+    #     for coord in points:
+    #         pcv_gate = pcv.pcoord.position.endpoint.gate
+    #         pcv_wire = pcv.pcoord.position.endpoint.port
+    #         if pcv_gate == self.name:
+    #             self.inputs[pcv_wire] += [pcv.particle]
 
-    def set_weights(self):
+    def set_weights(self, in_weight):
         if self.swapping is None:
             self.swapping = False
             self.weights['control'] = self.inputs['control']
             if bool(self.weights['control']):
-                merged = Particle.merge(self.weights['control'], combine_signs=True)[0]
-                if enough(abs(merged.weight), qn.ZERO_THRESHOLD):
-                    self.swapping = True
+                self.swapping = True
+                # merged = Particle.merge(self.weights['control'], combine_signs=True)[0]
+                # if enough(abs(merged.weight), qn.ZERO_THRESHOLD):
+                #     self.swapping = True
             # self.swapping = bool(self.weights['control'] and enough(
             #     Particle.merge(self.weights['control']).probability, qn.ZERO_THRESHOLD))
         unswapped_weights = default_switches()
         for switch in SWITCH_WIRES:
             split_outs = switch_splits(switch)
-            for particle in self.inputs[switch]:
-                if particle is None: continue
-                splits = self.measure(particle)
-                signs = [particle.sign.value, -particle.sign.value, particle.sign.value, -particle.sign.value]
+            for ppos in self.inputs[switch]:
+                if ppos is None: continue
+                splits = self.measure(ppos, in_weight)
+                signs = [ppos.sign, -ppos.sign, ppos.sign, -ppos.sign]
                 labels = ['c2a', 'c2b', 'c3a', 'c3b']
-                measurements = [Particle(name=particle.name, weight=measurement, sign=sign,
-                                         next_step=particle.next_step, active_gates=particle.active_gates,
-                                         trace=particle.trace+[f'{label}:{self.name}{SEP}{switch}',],
-                                         splits=particle.splits+[f'{self.name}{SEP}{switch}:{label}',])
+                measurements = [PCoordValue(pcoord=PCoordinate(ppos.name, sign, ppos.position, label), weight=measurement)
                                 for measurement, sign, label in zip(splits, signs, labels)]
                 for p, sw in zip(measurements, split_outs):
-                    if enough(abs(p.weight), qn.ZERO_THRESHOLD):
+                    if not(zerop(p.weight)):
                         unswapped_weights[sw].append(p)
                         # particle.family_tree.add_edge(particle, p)
                     else:
-                        self.discards[p.pkey] += [p]
+                        self.discards[p.pcoord] += [p]
         # for wire in SWITCH_WIRES:
         #     for weight in unswapped_weights[wire]:
         #         if (not unswapped_weights[wire]) or (not enough(sum([abs(p.weight) for p in unswapped_weights[wire]]), qn.ZERO_THRESHOLD)):
@@ -178,9 +169,8 @@ class DelayGate(FredkinGate):
         super().__init__(name)
         self.dgid = Gensym(f'dg_{name}')
         # self.start_step = start_step
-        # self.sim = sim
         self.source = source
-        self.self.sink = ''
+        self.sink = ''
         self.state = None
 
     def report_type(self): ## TOTAL HACK
@@ -224,5 +214,5 @@ class DelayGate(FredkinGate):
     def set_weights(self):
         self.weights = self.inputs
 
-    def measure(self, p: Particle, **kwargs):
+    def measure(self, p: ConfigSpacePoint, **kwargs):
         return p
