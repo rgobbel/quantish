@@ -29,7 +29,6 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import networkx as nx
 from PIL import Image
 
 from multiworld.util import SEP, WIRES
@@ -111,9 +110,13 @@ def spec_from_simulation(sim, fig: str = None) -> DiagramSpec:
 
     # Particle links stay in `links` for routing; the renderer draws them
     # from the particle circle to the destination port.
-    engine_steps = list(nx.topological_generations(sim.simplified_links))[1:]
+    # Columns come from diagram_groups: each group is one column, its gates
+    # stacked vertically (and boxed with the group name when there are
+    # several). Models without diagram_groups fall back to one auto-named
+    # group per topological stage via Simulation's default.
     stage_names = list(sim.diagram_groups.keys())
     stage_gates = [list(group) for group in sim.diagram_groups.values()]
+    engine_steps = [list(group) for group in stage_gates]
 
     return DiagramSpec(
         fig=fig or sim.title,
@@ -887,6 +890,9 @@ TEX_PREAMBLE = r"""\documentclass[border=8pt,tikz]{standalone}
         font=\sffamily\itshape\footnotesize,
         text=black!50,
     },
+    groupbox/.style = {
+        draw=black!30, rounded corners=4pt, line width=0.5pt,
+    },
     wire/.style = {
         ->, line width=0.6pt, color=black!80,
         rounded corners=1pt,
@@ -963,10 +969,35 @@ def emit_tex(circuit: Circuit, L: Layout, routes: list[Route],
     parsed = circuit.topology['parsed']
     out = [TEX_PREAMBLE, TEX_GATE_DEF]
 
-    # Stage labels: each spans the columns its gates occupy.
-    for x_left, x_right, name in L.stage_label_x:
-        center = (x_left + x_right) / 2
-        out.append(rf"\node[stagelbl] at ({center:.2f},{L.stage_label_y:.2f}) {{{tex_escape(name)}}};")
+    # Group adornments: multi-gate groups get a fitted box with the group
+    # name at the top; single-gate groups get a plain label above the gate.
+    pad = 0.28
+    header = 0.5
+    for group, label in zip(parsed.stage_gates, parsed.stage_names):
+        boxes = []
+        for name in group:
+            if name in L.gate_xy:
+                x, y = L.gate_xy[name]
+                boxes.append((x, y, x + GATE_WIDTH, y - GATE_HEIGHT))
+            elif name in L.delay_xy:
+                cx, cy = L.delay_xy[name]
+                boxes.append((cx - CONTROL_HALF_W, cy + DELAY_HEIGHT / 2,
+                              cx + CONTROL_HALF_W, cy - DELAY_HEIGHT / 2))
+        if not boxes:
+            continue
+        x1 = min(b[0] for b in boxes)
+        y_top = max(b[1] for b in boxes)
+        x2 = max(b[2] for b in boxes)
+        y_bot = min(b[3] for b in boxes)
+        cx = (x1 + x2) / 2
+        if len(boxes) > 1:
+            out.append(rf"\draw[groupbox] ({x1 - pad:.2f},{y_bot - pad:.2f}) "
+                       rf"rectangle ({x2 + pad:.2f},{y_top + pad + header:.2f});")
+            out.append(rf"\node[stagelbl, anchor=north] at ({cx:.2f},{y_top + pad + header - 0.06:.2f}) "
+                       rf"{{{tex_escape(label)}}};")
+        else:
+            out.append(rf"\node[stagelbl, anchor=south] at ({cx:.2f},{y_top + 0.12:.2f}) "
+                       rf"{{{tex_escape(label)}}};")
 
     # Gates. Override the angle text with whatever the GUI is currently
     # using (the slider's value), falling back to the YAML's literal default.

@@ -25,8 +25,8 @@ class Simulation:
         self.sources = {v: k for k, v in self.links.items()}
         self.simplified_links = simplify_graph(self.links)
         self.graph_roots = [node for node, degree in self.simplified_links.in_degree() if degree == 0]
-        self.run_stages = list(nx.topological_generations(self.simplified_links))[1:]
-        self.run_order = flat_list(self.run_stages)
+        self.topo_stages = list(nx.topological_generations(self.simplified_links))[1:]
+        self.run_order = flat_list(self.topo_stages)
         self.run_stages = [[x] for x in self.run_order]
         # the step whose worlds show a gate's just-produced outputs
         self.gate_step = {g: i + 1 for i, stage in enumerate(self.run_stages) for g in stage}
@@ -44,7 +44,7 @@ class Simulation:
         log.info(' ')
         self.diagram_groups = config.get('diagram_groups')
         if self.diagram_groups is None:
-            self.diagram_groups = {f'{"_".join(group)}': group for group in self.run_stages}
+            self.diagram_groups = {f'{"_".join(group)}': group for group in self.topo_stages}
         self.gates = self.fredkin_gates | self.delay_gates
         log_seq('self.qvars', self.qvars)
         log_seq('self.gates', self.gates)
