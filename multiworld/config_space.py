@@ -237,7 +237,7 @@ class ConfigSpaceRunner:
         all_points.record(initial_point)
         for step, stage in enumerate(sim.run_stages):
             stage_gates = {gname: sim.gates[gname] for gname in stage}
-            log.info(f'BEGIN STEP {step}: {", ".join(str(g) for g in stage_gates.values())}')
+            log.debug(f'BEGIN STEP {step}: {", ".join(str(g) for g in stage_gates.values())}')
             Q_next = ConfigSpace()
             for world in Q.index.values():
                 per_particle = [self.particle_alternatives(world, pname, stage_gates)
@@ -254,20 +254,20 @@ class ConfigSpaceRunner:
                     merged = Q_next.add_point(successor)
                     world.successors.add(merged)
                     successor_count += 1
-                log.info(f'   {world} -> {successor_count} successor world(s)')
+                log.debug(f'   {world} -> {successor_count} successor world(s)')
             # interference may have cancelled a world's weight to zero
             for point in list(Q_next.index.values()):
                 point.weight = qn.simplify(point.weight)
                 if qn.zerop(point.weight):
-                    log.info(f'   dropping cancelled world {point.key}')
+                    log.debug(f'   dropping cancelled world {point.key}')
                     Q_next.remove(point)
             self.check_total_probability(Q_next, step)
             for point in Q_next.index.values():
                 all_points.record(point)
             Q = Q_next
-            log.info(f'END STEP {step}: {len(Q.index)} world(s)')
-            log.info(' ')
-        log.info('finished')
+            log.debug(f'END STEP {step}: {len(Q.index)} world(s)')
+            log.debug(' ')
+        log.debug('finished')
         return Q, all_points
 
     def check_total_probability(self, space: ConfigSpace, step: int):
@@ -276,6 +276,6 @@ class ConfigSpaceRunner:
             total = sum(float(p.probability) for p in space.index.values())
         except (TypeError, ValueError):
             return  # symbolic weights with free symbols: nothing to check numerically
-        log.info(f'   total probability after step {step}: {total:.6f}')
+        log.debug(f'   total probability after step {step}: {total:.6f}')
         if abs(total - 1) > 1e-6:
             log.warning(f'   TOTAL PROBABILITY AFTER STEP {step} IS {total}, EXPECTED 1')

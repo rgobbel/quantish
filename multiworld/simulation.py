@@ -38,24 +38,24 @@ class Simulation:
         self.initial_point = None
         self.result_space = None
         self.all_points = None
-        log.info(' ')
+        log.debug(' ')
         self.load_elements(config)
         assert self.graph_roots == list(self.particles.keys())
-        log.info(' ')
+        log.debug(' ')
         self.diagram_groups = config.get('diagram_groups')
         if self.diagram_groups is None:
             self.diagram_groups = {f'{"_".join(group)}': group for group in self.topo_stages}
         self.gates = self.fredkin_gates | self.delay_gates
-        log_seq('self.qvars', self.qvars)
-        log_seq('self.gates', self.gates)
-        log_seq('self.particles', self.particles)
+        log_seq('self.qvars', self.qvars, logging.DEBUG)
+        log_seq('self.gates', self.gates, logging.DEBUG)
+        log_seq('self.particles', self.particles, logging.DEBUG)
         log_seq('run stages',
                 [[str(self.gates[gate]) for gate in gates]
                  for gates in [stage for stage in self.run_stages]],
-                enum_items=True)
+                logging.DEBUG, enum_items=True)
         linkages = [f'{str(n)} -> {", ".join(list(self.simplified_links.successors(n))) or "NULL"}'
                     for n in nx.topological_sort(self.simplified_links)]
-        log_seq('downstream links', linkages)
+        log_seq('downstream links', linkages, logging.DEBUG)
 
     def load_elements(self, config):
         links = config.links
@@ -87,8 +87,8 @@ class Simulation:
                 particle = self.particles[source]
                 pcoord = PCoordinate(particle.name, particle.sign, dest_pos)
                 self.initial_coords[source] = pcoord
-                log.info(f'PARTICLE {particle}, INITIAL POSITION: {pcoord}')
-        log.info(' ')
+                log.debug(f'PARTICLE {particle}, INITIAL POSITION: {pcoord}')
+        log.debug(' ')
         # the initial world's weight is the product of the configured particle weights
         initial_weight = qn.prod([p.weight for p in self.particles.values()])
         self.initial_point = ConfigSpacePoint(0, list(self.initial_coords.values()), initial_weight)
@@ -99,8 +99,8 @@ class Simulation:
         result_space, all_points = ConfigSpaceRunner(self).run(self.initial_point)
         self.result_space = result_space
         self.all_points = all_points
-        log.info(' ')
-        log.info('DONE!')
+        log.debug(' ')
+        log.debug('DONE!')
         return result_space, all_points
 
     def pos_value_str(self, pos, val_type='results'):
