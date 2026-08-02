@@ -1,0 +1,78 @@
+title: Quantish EPR Experiment
+
+symbolic: false
+
+loglevel: debug
+
+run_groups:
+   prep: [g1, g2]
+   couple1: [g3]
+   couple2: [g4]
+   observe1: [g5, g6]
+   observe2: [g7, g8]
+
+diagram_groups:
+   prepare: [g1, g2]
+   couple: [g3, g4]
+   observe1: [g5, g6]
+   observe2: [g7, g8]
+
+sample: false
+n_samples: 100
+measure_discrepancy: true
+epr_stats: true
+
+disallow_excess_weights: false
+disappear_zeros: false
+delete_zeros: false
+skip_zeros: false
+
+variables:
+   q1: &q1 'rad(45)'
+   q2: &q2 'rad(45)'
+   qa: &qa '0'
+   qb: &qb 'pi/4'
+   qc: &qc 'pi/4'
+
+particles:
+   p1: {weight: 1, sign: 1}
+   p2: {weight: 1, sign: 1}
+   p3: {weight: 1, sign: 1}
+
+gates:
+   g1: {angle: 'pi/4'}
+   g2: {angle: 'pi/4+pi/2'}
+   g3: {angle: 0}
+   g4: {angle: 0}
+   g5: {angle: 'pi/8'}
+   g6: {angle: 'pi/8'}
+   g7: {angle: 'pi/8'}
+   g8: {angle: 'pi/8'}
+
+links:
+   # particles
+   p1: g1.upper
+   p2: g2.upper
+   p3: g3.upper
+
+   # phase 1 - split
+   g1.upper: g3.control
+   g1.lower: g5.lower
+
+   # phase 2a - couple from g1
+   g3.control: g5.upper
+   g3.upper: g4.upper
+   g3.lower: g4.lower
+
+   # phase 2b - couple from g2
+   g2.upper: g4.control
+   g4.control: g6.upper
+   g2.lower: g6.lower
+
+   #phase 3 - observe
+   g5.control: g7.control
+   g5.upper: g7.upper
+   g5.lower: g7.lower
+   g6.control: g8.control
+   g6.upper: g8.upper
+   g6.lower: g8.lower

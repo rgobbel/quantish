@@ -2,32 +2,44 @@ import logging
 import numbers as n
 import sympy as sym
 from sympy import re, im, Rational, deg, rad, Eq, Piecewise
+from functools import reduce
+from operator import mul
 import math as m
 import cmath as cm
 import re as rex
+from typing import Any, Callable, TypeIs, cast
 import scipy.special as sci
 
 log = logging.getLogger('multiworld')
 
 CALC_MODE = 'Float'
+PI = m.pi
+I = 1j
+E = m.e
+ZERO_THRESHOLD = 0.0
 
-def _set_calc_mode(new_mode: str) -> str:
-    global I, PI, CALC_MODE
-    CALC_MODE = new_mode
+def set_calc_mode(new_mode: str) -> str:
+    global I, PI, E, CALC_MODE, ZERO_THRESHOLD
+    if new_mode in ('Float', 'Symbolic'):
+        CALC_MODE = new_mode
     if CALC_MODE == 'Float':
         I = 1j
         PI = m.pi
+        E = m.e
+        ZERO_THRESHOLD = float_zero_threshold
     else:
         I = sym.I
         PI = sym.pi
+        E = sym.E
+        ZERO_THRESHOLD = 0
     return CALC_MODE
 
 
-class _CalcModeMeta(type):
+class CalcModeMeta(type):
     """Metaclass so `CalcMode.mode` is a real settable property at the class level.
 
     Reading `CalcMode.mode` returns the current global mode; assigning to
-    `CalcMode.mode = 'Symbolic'` updates CALC_MODE and the I / PI globals,
+    `CalcMode.mode = 'Symbolic'` updates CALC_MODE and the transcendental globals,
     keeping behavior consistent with `CalcMode.default('Symbolic')`.
     """
     @property
@@ -36,19 +48,19 @@ class _CalcModeMeta(type):
 
     @mode.setter
     def mode(cls, new_mode):
-        _set_calc_mode(new_mode)
+        set_calc_mode(new_mode)
 
 
-class CalcMode(metaclass=_CalcModeMeta):
+class CalcMode(metaclass=CalcModeMeta):
     @classmethod
-    def default(cls, new_mode: str = None):
+    def default(cls, new_mode: str | None = None):
         if new_mode is None or new_mode == '':
             return CALC_MODE
-        return _set_calc_mode(new_mode)
+        return set_calc_mode(new_mode)
 
 
 # realtype = lambda x: type(x) in (int, float)
-def realtype(x):
+def realtype(x) -> TypeIs[int | float]:
     if isq(x):
         x = x.v
     if type(x) in (int, float):
@@ -64,19 +76,25 @@ def floatable(x):
     except ValueError:
         return False
 
-iscplx = lambda x: type(x) is complex
-isnative = lambda x: type(x) in (int, float, complex)
-def isq(x):
+def iscplx(x) -> TypeIs[complex]:
+    return type(x) is complex
+
+def isnative(x) -> TypeIs[int | float | complex]:
+    return type(x) in (int, float, complex)
+
+def isq(x) -> TypeIs['Complex']:
     return isinstance(x, Complex)
 
-issym = lambda x: rex.match('sympy', type(x).__module__) is not None
+def issym(x) -> TypeIs[sym.Basic]:
+    return rex.match('sympy', type(x).__module__) is not None
+
 otherv = lambda x: x.v if isq(x) else x
 
 DEBUG = False
 
 Modes = ['Symbolic', 'Float']
 
-def to_float(x):
+def to_float(x) -> float:
     try:
         result = float(x)
     except TypeError:
@@ -93,15 +111,40 @@ def to_native(x):
         result = complex(x)
     return result
 
-def qify(x):
+# sympy's sympify overloads only declare the strict= keyword; rational= is
+# accepted at runtime but rejected by the type stubs, hence this typed alias.
+_sympify = cast(Callable[..., sym.Expr], sym.sympify)
+
+def qify(x) -> 'Complex':
     if isq(x): return x
     elif iscplx(x): return Complex(x)
-    xval = sym.sympify(x)
+    xval = _sympify(x, rational=True)
     try:
         _ = float(xval)
         return Real(xval)
     except TypeError:
         return Complex(xval)
+
+def exact(x) -> 'Real':
+    """Parse/wrap x into the exact representation, independent of the
+    global CalcMode. Canonical stored values (e.g. GUI angles) use this;
+    conversion into the active mode happens at the edges via to_mode()."""
+    if isq(x):
+        x = x.v
+    if isinstance(x, float):
+        # sympify's rational=True only applies to strings; route authored
+        # decimals through repr so 0.5 becomes Rational(1,2), not Float.
+        x = repr(x)
+    val = _sympify(x, rational=True)
+    if not isinstance(val, sym.Expr):
+        # sympify can "successfully" parse junk like 'not-a-number' into a
+        # boolean expression; only genuine numeric expressions get through.
+        raise ValueError(f'{x!r} is not a numeric expression')
+    if floatable(val):
+        return Real(val, 'Symbolic')
+    # Non-real input only arises from caller misuse (exact() values are
+    # angle-like); preserve the historical Complex fallback.
+    return cast(Real, Complex(val, 'Symbolic'))
 
 def softmax(vec):
     if CalcMode.default() == 'Float':
@@ -131,31 +174,17 @@ def softmax(vec):
     else: fn = Complex
     return [fn(x) for x in sm]
 
-class partialproperty:
-    """Combine the functionality of property() and partialmethod()"""
-    def __init__(self, getter, *args, **kwargs):
-        self.getter = getter
-        self.args = args
-        self.kwargs = kwargs
-
-    def __set_name__(self, owner, name):
-        self._name = name
-        self._owner = owner
-
-    def __get__(self, obj, objtype=None):
-        return self.getter(obj, *self.args, **self.kwargs)
-
 ANumber = int | float | complex | sym.Mul | sym.Integer | sym.Float | sym.Expr
 
 class Complex(n.Number):
-    def __new__(cls, value=0, mode:str=None):
+    def __new__(cls, value: 'ANumber | Complex | str' = 0, mode: str | None = None):
         instance = super().__new__(cls)
         if mode is None:
             mode = CalcMode.default()
         instance.__init__(value=value, mode=mode)
         return instance
 
-    def __init__(self, value, mode:str=None):
+    def __init__(self, value: 'ANumber | Complex | str' = 0, mode: str | None = None):
         # Extract the underlying value FIRST: in the Real.__new__ identity-return
         # path, value may be self, and zeroing self._value before this would
         # destroy the very value we are about to read.
@@ -202,6 +231,40 @@ class Complex(n.Number):
     def mm(self):
         if isnative(self._value): return 'Float'
         else: return 'Symbolic'
+
+    def to_mode(self, mode=None):
+        """Return an equivalent number in the given (default: current) mode."""
+        if mode is None:
+            mode = CalcMode.default()
+        if self.mm == mode:
+            return self
+        return self.__class__(self._value, mode)
+
+    @property
+    def is_exact(self):
+        """True when the representation is exact (no floating-point content) —
+        i.e. its str() form is faithful and worth displaying as-is."""
+        if isnative(self._value):
+            return isinstance(self._value, int)
+        return not self._value.has(sym.Float)
+
+    @property
+    def simplified(self):
+        """Best-effort simplification; identity for native-backend values."""
+        if isnative(self._value):
+            return self
+        return self.newme(sym.simplify(self._value))
+
+    @property
+    def is_bare_numeric(self):
+        """True for plain numbers ('45', '1/2', 'sqrt(2)') — input the GUI
+        may legitimately reinterpret through the deg/rad toggle. Values
+        containing pi, free symbols, or function calls (acos(4/5)) are
+        already radians by convention."""
+        if isnative(self._value):
+            return True
+        v = self._value
+        return not (v.has(sym.pi) or v.free_symbols or v.atoms(sym.Function))
 
     def __repr__(self):
         return f'Complex({self._value}, {self.mm})'
@@ -300,7 +363,9 @@ class Complex(n.Number):
         """(x+y*i).conjugate() returns (x-y*i)."""
         return self.newme(self._value.conjugate())
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> Any:
+        # Returns a sympy Eq (not a bool) for symbolic values, so the
+        # override is typed Any rather than bool.
         ov = otherv(other)
         if issym(self._value):
             return Eq(self._value, ov)
@@ -337,15 +402,15 @@ class Complex(n.Number):
     def sympify(self):
         return sym.sympify(self._value)
 
-# Complex.register(complex)
-
 # noinspection PyAbstractClass
 class Real(Complex):
-    def __new__(cls, value, mode:str=None):
+    def __new__(cls, value: 'ANumber | Complex | str', mode: str | None = None) -> 'Real':
         if isinstance(value, cls):
             return value
         if not floatable(value):
-            return Complex(value, mode)
+            # Historical fallback for non-real input; presented as Real so
+            # the common (real-valued) construction path types cleanly.
+            return cast(Real, Complex(value, mode))
         instance =  super().__new__(cls, value, mode)
         return instance
 
@@ -430,6 +495,8 @@ class Real(Complex):
     def __gt__(self, other):
         return self._value > otherv(other)
 
+    # >= and <= are sometimes problematic in SymPy, thus this
+    # complicated way of testing.
     def __ge__(self, other):
         if issym(self._value):
             ov = otherv(other)
@@ -454,6 +521,11 @@ def probability(w: Complex)-> Real:
     result = abs(w)**2
     return result
 
+def prod(it):
+    if not it:
+        return Real(0)
+    return reduce(mul, it)
+
 ZERO = Real(0)
 
 def runtest(x, y):
@@ -467,18 +539,33 @@ def PI_fn(mode=None):
     if mode is None:
         mode = CALC_MODE
     if mode == 'Float':
-        return Real(m.pi, mode)
+        ret = Real(m.pi, mode)
     else:
-        return Real(sym.pi, mode)
+        ret = Real(sym.pi, mode)
+    PI = ret
+    return ret
 
 def I_fn(mode=None):
     global I
     if mode is None:
         mode = CALC_MODE
     if mode == 'Float':
-        return Complex(1j, mode)
+        ret = Complex(1j, mode)
     else:
-        return Complex(sym.I, mode)
+        ret = Complex(sym.I, mode)
+    I = ret
+    return ret
+
+def E_fn(mode=None):
+    global E
+    if mode is None:
+        mode = CALC_MODE
+    if mode == 'Float':
+        ret = Complex(1j, mode)
+    else:
+        ret =  Complex(sym.E, mode)
+    E = ret
+    return ret
 
 float_zero_threshold = 1e-15
 
@@ -487,12 +574,15 @@ def zero_threshold_fn(mode=None):
     if mode is None:
         mode = CALC_MODE
     if mode == 'Float':
-        return float_zero_threshold
+        ret = float_zero_threshold
     else:
-        return qify(0)
+        ret = qify(0)
+    ZERO_THRESHOLD = ret
+    return ret
 
 PI = PI_fn()
 I = I_fn()
+E = E_fn()
 ZERO_THRESHOLD = zero_threshold_fn()
 
 def enough(x, threshold):
@@ -502,4 +592,31 @@ def enough(x, threshold):
     return flx >= tx
 
 def zerop(x):
-    return not enough(abs(x), ZERO_THRESHOLD)
+    """True iff x is treated as zero in the current calculation mode.
+
+    Float mode: |x| < ZERO_THRESHOLD (the existing 1e-15 numeric tolerance).
+    Symbolic mode: x simplifies to exactly 0 (no fuzzy threshold). Expressions
+    that contain free symbols and don't reduce to a literal zero return False —
+    we can't claim a symbolic weight is zero unless sympy can prove it.
+    """
+    if isq(x):
+        x = x.v
+    if CalcMode.default() == 'Float':
+        return not enough(abs(x), ZERO_THRESHOLD)
+    if issym(x):
+        return sym.simplify(x) == 0
+    return x == 0
+
+
+def simplify(w):
+    """
+    In Symbolic mode, run sympy.simplify on the wrapped value so that
+    interference identities like cos(θ)² + sin(θ)² → 1 collapse before
+    we test for zero or compare configs. No-op in Float mode.
+    """
+    if CalcMode.default() != 'Symbolic':
+        return w
+    if not isq(w):
+        w = qify(w)
+    simplified = sym.simplify(w.v)
+    return w.__class__(simplified)

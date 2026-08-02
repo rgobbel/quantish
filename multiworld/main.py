@@ -38,7 +38,7 @@ def write_points_to_csv(name, particle_names, points:list):
         writer.writerow(fieldnames)
         for v in points:
             writer.writerow(
-                [v.step] + flat_list([[coord.sign, coord.position] for coord in v.coords] + [v.weight, v.probability]))
+                [v.step] + flat_list([[coord.sign, coord.position] for coord in v.coords.values()] + [v.weight, v.probability]))
 
 
 def main():
@@ -202,134 +202,57 @@ def main():
         if len(final_points) > 0:
             log.info('final results:')
             show_points(final_points, indent='   ')
-            pad_len = [0] * len(final_points[0].coords.values())
-            by_pname_gate_pos = defaultdict(list)
-            by_pkey_gate_count = defaultdict(int)
-            # for point in final_points:
-            #     coords = list(point.coords.values())
-            #     for c in coords:
-            #         key = f'{c.name}@{c.position.origin}'
-            #         pkey = f'{c.pkey}'
-            #         if key in by_pname_gate_pos.keys():
-            #             by_pkey_gate_count[pkey] += 1
-            #             by_pname_gate_pos[key] = point
-            #         else:
-            #             by_pkey_gate_count[pkey] = 1
-            #             by_pname_gate_pos[key] = point
-            #     # positions = [c.position.origin for c in coords]
-            #     logstr = [f'{coord.position}' for coord in point.coords.values()]
-            #     for i, s in enumerate(logstr):
-            #         pad_len[i] = max(pad_len[i], len(s))
-            # by_particle = defaultdict(lambda: defaultdict(dict))
-            # for k, v in by_pname_gate_pos.items():
-            #     pkey = f'{v}'
-            #     v.weight /= by_pkey_gate_count[pkey]
-            #     pname = v.name
-            #     gname = v.position.origin.gate
-            #     port = v.position.origin.port
-            #     by_particle[pname][gname][port] = v
-
             log.info(' ')
-            # for point in final_points:
-            #     coords = list(point.coords.values())
-            #     logstr = '  |  '.join([f'{coord:<{pad_len[i]}}' for i, coord in enumerate(coords)])
-            #     log.info(f'   {logstr}')
-            # log.info(' ')
-            log.info('all nonzero:')
-            nonzeros = [point for point in final_points if not zerop(point.weight)]
-            show_points(nonzeros)
-            # for point in nonzeros:
-            #     pcvals = list(point.pcvals.values())
-            #     positions = [p.pcoord.position.origin for p in pcvals]
-            #     particles = [p.particle for p in pcvals]
-            #     logstr = '  |  '.join(
-            #         [f'{f"{particle.ps(short=True)}@{pos}":<{pad_len[i]}}' for i, (particle, pos) in
-            #          enumerate(zip(particles, positions))])
-            #     log.info(f'   {logstr}')
-            pkey_summary = {}
-            pname_summary = {}
-            gate_summary = {}
-            summary_gate_count = {}
-            for point in nonzeros:
-                by_particle = defaultdict(list)
-                by_pkey = defaultdict(list)
-                by_gate_pos = {}
-                for pcv in point.pcvals.values():
-                    by_pkey[pcv.particle.pkey] += [pcv]
-                    by_particle[pcv.particle.name] += [pcv]
-                    origin = pcv.pcoord.position.origin
-                    if pcv.pcoord.position.origin.gate not in by_gate_pos.keys():
-                        by_gate_pos[origin.gate] = default_wires()
-                    by_gate_pos[origin.gate][origin.port] += [pcv]
-                for pkey, pcvs in by_pkey.items():
-                    pkey_summary[pkey] = Particle.merge([pcv.particle for pcv in pcvs])
-                for pname, pcvs in by_particle.items():
-                    pname_summary[pname] = Particle.merge([pcv.particle for pcv in pcvs], combine_signs=True)
-                for gname, vals in by_gate_pos.items():
-                    gate_summary[gname] = default_wires()
-                    for wire in WIRES:
-                        gate_summary[gname][wire] = Particle.merge([v.particle for v in vals[wire]])
-                    # summary_gate = pcv.pcoord.position.origin.gate
-                    # summary_port = pcv.pcoord.position.origin.port
-                    # if summary_gate in summary.keys():
-                    #     merged = Particle.merge(summary[summary_gate][summary_port][pcv.particle.sign] + [pcv.particle])
-                    #     summary[summary_gate][summary_port][pcv.particle.sign] = merged
-                    #     summary_gate_count[summary_gate][summary_port][pcv.particle.sign] += 1
-                    # else:
-                    #     summary[summary_gate] = {w: {Sign.plus: [], Sign.minus: []} for w in WIRES}
-                    #     summary[summary_gate][summary_port][pcv.particle.sign] = [pcv.particle]
-                    #     summary_gate_count[summary_gate] = {w: {Sign.plus: 0, Sign.minus: 0} for w in WIRES}
-                    #     summary_gate_count[summary_gate][summary_port][pcv.particle.sign] = 1
-            # for k in gate_summary.keys():
-            #     for kk, kv in summary[k].items():
-            #         for sign in Sign:
-            #             if kv[sign]:
-            #                 summary[k][kk][sign][0].weight /= summary_gate_count[k][kk][sign]
-            # for k in summary.keys():
-            #     for kk, kv in summary[k].items():
-            #         summary[k][kk] = Particle.merge(summary[k][kk][Sign.plus] + summary[k][kk][Sign.minus], combine_signs=True)
-            #         if summary[k][kk]:
-            #             summary[k][kk] = summary[k][kk][0]
-            log.info(' ')
-            log.info('gate summary:')
-            for gate_name, v in sorted(gate_summary.items(), key=lambda x: x[0]):
-                log.info(f'   {sim.gates[gate_name]}: upper: {v["upper"]}, lower: {v["lower"]}')
-            log.info(' ')
-            log.info('particle summary:')
-            for pname in sorted(pname_summary.keys()):
-                log.info(f'   {pname}: {pname_summary[pname]}')
-            log.info(' ')
-            log.info('pkey summary:')
-            for pkey in sorted(pkey_summary.keys()):
-                log.info(f'   {pkey}: {pkey_summary[pkey]}')
+            nonzeros = final_points  # zero-weight worlds were already dropped by the runner
+            # marginal probabilities: each world contributes its |weight|^2 to
+            # every coordinate it assigns
+            try:
+                pkey_summary = defaultdict(float)
+                pname_summary = defaultdict(float)
+                gate_summary = defaultdict(lambda: defaultdict(float))
+                for point in nonzeros:
+                    prob = float(point.probability)
+                    for pname, coord in point.coords.items():
+                        origin = coord.position.origin
+                        pkey_summary[f'{coord.pkey}@{origin}'] += prob
+                        pname_summary[f'{pname}@{origin}'] += prob
+                        if origin is not None and origin.gate is not None:
+                            gate_summary[origin.gate][origin.port] += prob
+                log.info(' ')
+                log.info('gate summary (marginal probability by output port):')
+                for gate_name in sorted(gate_summary.keys()):
+                    ports = gate_summary[gate_name]
+                    portstr = ', '.join(f'{port}: {ports[port]:.4f}' for port in sorted(ports.keys()))
+                    log.info(f'   {sim.gates[gate_name]}: {portstr}')
+                log.info(' ')
+                log.info('particle summary (marginal probability by position):')
+                for pname in sorted(pname_summary.keys()):
+                    log.info(f'   {pname}: {pname_summary[pname]:.4f}')
+                log.info(' ')
+                log.info('pkey summary (marginal probability by position and sign):')
+                for pkey in sorted(pkey_summary.keys()):
+                    log.info(f'   {pkey}: {pkey_summary[pkey]:.4f}')
+            except (TypeError, ValueError):
+                log.info('skipping numeric summaries (symbolic weights with free symbols)')
 
             if config.epr_stats:
                 log.info(' ')
                 log.info(f'predicted discrepancy rate is {(sim.gates['g5'].theta - sim.gates['g6'].theta).sin ** 2:.3f}')
-                p3filtered = [p for p in nonzeros if list(p.pcvals.values())[2].pcoord.position.origin.port == 'upper']
                 probs = {'same': 0.0, 'diff': 0.0}
                 count_same = 0
                 count_diff = 0
                 log.info(f'coupled:')
-                for point in p3filtered:
-                    pcvals = list(point.pcvals.values())
-                    p1v, p2v, p3v = pcvals
-                    positions = [p.pcoord.position.origin for p in pcvals]
-                    particles = [p.particle for p in pcvals]
-                    logstr = '  |  '.join(
-                        [f'{f"{particle.ps(short=True)}@{pos}":<{pad_len[i]}}' for i, (particle, pos) in
-                         enumerate(zip(particles, positions))])
-                    log.info(f'   {logstr}')
-                    if p3v.pcoord.position.origin.port != 'upper':
+                for point in nonzeros:
+                    p1c, p2c, p3c = list(point.coords.values())
+                    if p3c.position.origin is None or p3c.position.origin.port != 'upper':
                         continue
-                    if p1v.pcoord.position.origin.port == p2v.pcoord.position.origin.port:
-                        psame = p1v.particle.probability * p2v.particle.probability
+                    log.info(f'   {point}')
+                    if p1c.position.origin.port == p2c.position.origin.port:
                         count_same += 1
-                        probs['same'] += psame
+                        probs['same'] += float(point.probability)
                     else:
-                        pdiff = p1v.particle.probability * p2v.particle.probability
                         count_diff += 1
-                        probs['diff'] += pdiff
+                        probs['diff'] += float(point.probability)
                 log.info(f'{count_same=}, {count_diff=}, {probs["same"]=:.4f}, {1 - probs["same"]=:.4f}, {probs["diff"]=:.4f}, {1 - probs["diff"]=:.4f}, {abs(probs["same"] - probs["diff"])=:.4f}, {1 - (abs(probs["same"] - probs["diff"]))=:.4f}')
 
                 # run_paths(sim.initial_point, final_points, sim.n_samples, sim)

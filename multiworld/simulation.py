@@ -4,7 +4,7 @@ from addict import Addict
 import networkx as nx
 from scipy.cluster.hierarchy import DisjointSet
 from multiworld.particle import Particle
-from multiworld.gate import FredkinGate
+from multiworld.gate import DelayGate, FredkinGate
 from multiworld.config_space import (Position, GatePort, PCoordinate,
                                      ConfigSpacePoint, ConfigSpaceRunner, ConfigSpace,
                                      LIMBO, stage_step_encode)
@@ -56,8 +56,8 @@ class Simulation:
         self.stage_gate = {}
         self.step_particles = defaultdict(set)
         self.discards = defaultdict(list)
-        # self.run_stages = list(nx.topological_generations(self.simplified_links))[1:]
-        self.run_stages = list(config.run_groups.values())
+        self.run_stages = list(nx.topological_generations(self.simplified_links))[1:]
+        # self.run_stages = list(config.run_groups.values())
         # self.run_stages = [['g1', 'g2'], ['g3'], ['g4'], ['g5', 'g6']]
         # self.run_stages = [['g1'], ['g2'], ['g3'], ['g4'], ['g5'], ['g6']]
         self.run_order = flat_list(self.run_stages)
@@ -68,9 +68,9 @@ class Simulation:
         self.sinks = Addict()
         self.run_results = Addict()
         self.fredkin_gates = Addict()
-        # self.delay_gates = Addict()
+        self.delay_gates = Addict()
         self.gates = Addict()
-        self.points = Addict()
+        self.initial_coords = {}
         self.initial_point = None
         self.result_space = None
         log.info(' ')
@@ -89,7 +89,7 @@ class Simulation:
         self.diagram_groups = config.get('diagram_groups')
         if self.diagram_groups is None:
             self.diagram_groups = {f'{"_".join(group)}': group for group in self.run_stages}
-        self.gates = self.fredkin_gates # | self.delay_gates
+        self.gates = self.fredkin_gates | self.delay_gates
         log_seq('self.qvars', self.qvars)
         log_seq('self.gates', self.gates)
         log_seq('self.particles', self.particles)
@@ -142,7 +142,8 @@ class Simulation:
         # log.debug(f'{config.links=}')
         particles = config.particles
         for pname, pval in particles.items():
-            new_particle = Particle(pname, qify(pval.sign),
+            pweight = Complex(qify(pval.weight))
+            new_particle = Particle(pname, pweight, qify(pval.sign),
                                     precision=self.precision, trace=['ORIGIN'])
             self.particles[pname] = new_particle
         gates = config.gates
@@ -160,35 +161,33 @@ class Simulation:
             new_gate = FredkinGate(gname, gval.angle)
             self.fredkin_gates[gname] = new_gate
             self.gates[gname] = new_gate
-        # for dgname in config.get('delay_gates', []):
-        #     dgate = DelayGate(dgname, self.sources[dgname], self.links[dgname])
-        #     self.delay_gates[dgname] = dgate
-        #     self.gates[dgname] = dgate
+        for dgname in config.get('delay_gates', []):
+            dgate = DelayGate(dgname, self.sources[dgname], self.links[dgname])
+            self.delay_gates[dgname] = dgate
+            self.gates[dgname] = dgate
         self.stages = [ExecutionStage(stage, i) for i, stage in enumerate(self.run_order)]
-        initial_coords = {}
-        for source_str, dest_str in links.items():
-            source_parts = source_str.split(SEP)
-            dest_gate_name, dest_port = dest_str.split(SEP)
-            endpoint = GatePort(dest_gate_name, dest_port)
-            # dest_pos = Position(source= endpoint=dest_wire)
+        for source, dest in links.items():
+            source_parts = source.split(SEP)
+            dest_gate_name, dest_port = dest.split(SEP)
+            dest_wire = GatePort(dest_gate_name, dest_port)
+            dest_pos = Position(endpoint=dest_wire)
             if len(source_parts) == 1:
-                particle = self.particles[source_str]
-                particle.trace = [f'{endpoint}']
-                dest_gate = self.gates[dest_gate_name]
-                # self.stages[dest_gate.start_step].particles.append(particle)
-                dest = Position(endpoint=endpoint)
-                pcoord = PCoordinate(name=particle.name, sign=particle.sign, position=dest)
-                initial_coords[particle.name] = pcoord
-                log.info(f'PARTICLE {particle}, INITIAL POSITION: {pcoord.position}')
+                particle = self.particles[source]
+                particle.trace = [f'{dest_pos}']
+                pcoord = PCoordinate(particle.name, particle.sign, dest_pos)
+                self.initial_coords[source] = pcoord
+                log.info(f'PARTICLE {particle}, INITIAL POSITION: {pcoord}')
         log.info(' ')
-        self.initial_point = ConfigSpacePoint(0, coords=initial_coords, weight=Complex(1))
+        # the initial world's weight is the product of the configured particle weights
+        initial_weight = qn.prod([p.weight for p in self.particles.values()])
+        self.initial_point = ConfigSpacePoint(0, list(self.initial_coords.values()), initial_weight)
         self.stages[0].inputs = [self.initial_point]
         log_seq('particles', particles, logging.DEBUG)
         log_seq('gates', gates, logging.DEBUG)
         # log.debug(f'{particles=}, {gates=}')
 
     def run(self):
-        result_space, all_points = ConfigSpaceRunner(self).run_gld(self.initial_point)
+        result_space, all_points = ConfigSpaceRunner(self).run(self.initial_point)
         self.result_space = result_space
         self.all_points = all_points
         log.info(' ')

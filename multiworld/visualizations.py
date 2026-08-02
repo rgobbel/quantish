@@ -55,7 +55,7 @@ def cs_patch(point:ConfigSpacePoint, layer_max, max_step, sim):
     from matplotlib.offsetbox import DrawingArea
     from matplotlib import colormaps
     from matplotlib.patches import Rectangle
-    nvals = len(point.pcvals)
+    nvals = len(point.coords)
     side_base = 75 / m.sqrt(layer_max)
     cmaps = [colormaps['Reds'], colormaps['Greens'], colormaps['Blues']]
     da = DrawingArea(side_base, side_base, side_base/2, side_base/2)
@@ -70,15 +70,11 @@ def cs_patch(point:ConfigSpacePoint, layer_max, max_step, sim):
             side_base/2,
             side_base/4
         ])
-    for i, pcv in enumerate(point.pcvals.values()):
-        if point.step == max_step:
-            active_gate = sim.step_gate[point.step - 1]
-        else:
-            active_gate = sim.step_gate[point.step]
-        if pcv.pcoord.position.endpoint is not None and active_gate not in pcv.particle.active_gates:
-                color = 'black'
-        else:
-            color = cmaps[i]((0.7 * (1.0 - float(pcv.particle.probability)))+0.2)
+    # the weight belongs to the world, so every particle row shows the
+    # world's probability in that particle's colormap
+    world_prob = float(point.probability)
+    for i, coord in enumerate(point.coords.values()):
+        color = cmaps[i % len(cmaps)]((0.7 * (1.0 - world_prob)) + 0.2)
         da.add_artist(
             Rectangle(boxes[i][:2],
                       boxes[i][2], boxes[i][3], facecolor=color))
@@ -91,8 +87,7 @@ def network_graph(result_space, diagram_path, sim):
     plt.set_loglevel("info")
     all_points = [point for point in result_space.index.values()]
     sorted_points = sorted(list(set(all_points)), key=lambda x: f'{x.step}{x.key}')
-    nonzeros = [point for point in sorted_points
-                if np.all([enough(abs(pcv.particle.weight), qn.ZERO_THRESHOLD) for pcv in point.pcvals.values()])]
+    nonzeros = [point for point in sorted_points if not qn.zerop(point.weight)]
     graph_points = sorted_points
     layers = defaultdict(list)
     max_step = max([point.step for point in all_points])

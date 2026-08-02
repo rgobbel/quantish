@@ -1,13 +1,13 @@
 import logging
+import cmath as cm
 from collections import defaultdict
 
 import multiworld.qnumber as qn
 from multiworld.angle import Angle
-from multiworld.config_space import ConfigSpacePoint, PCoordinate, PCoordValue
 from multiworld.particle import Particle
 from multiworld.qnumber import qify, Complex, Real
 from multiworld.util import Gensym, enough, SEP, Sign, OTHER, SWITCH_WIRES, default_wires, default_switches, \
-    switch_splits, zerop
+    switch_splits
 
 log = logging.getLogger('multiworld')
 
@@ -23,8 +23,8 @@ class FredkinGate:
         # self.sim = sim
         self.discards = defaultdict(list)
         self.input_particles = set()
-        # if type(self) is DelayGate:
-        #     return
+        if type(self) is DelayGate:
+            return
         self.measurement_cache = {}
         if type(self.theta) is Angle:
             self.atheta = self.theta
@@ -32,25 +32,25 @@ class FredkinGate:
         else:
             self.atheta = Angle(self.theta, unit='radians')
             self.theta = self.atheta.radians
-        self.twist = self.theta - qn.PI/2
+        self.twist = self.theta - qn.PI_fn()/2
 
         self.cos_theta = self.theta.cos
         self.sin_theta = self.theta.sin
         self.cos2_theta = Complex(self.cos_theta**2)
-        self.cos_sin_theta = self.cos_theta * self.sin_theta * qn.I
-        self.mcos_sin_theta = self.cos_theta * self.sin_theta * -qn.I
+        self.cos_sin_theta = self.cos_theta * self.sin_theta * qn.I_fn()
+        self.mcos_sin_theta = self.cos_theta * self.sin_theta * -qn.I_fn()
         self.sin2_theta = Complex(self.sin_theta**2)
-        self.wplusf = self.cos_theta * (qn.I * self.theta).exp
-        self.wminusf = self.sin_theta * (qn.I * self.twist).exp
+        self.wplusf = self.cos_theta * (qn.I_fn() * self.theta).exp
+        self.wminusf = self.sin_theta * (qn.I_fn() * self.twist).exp
 
         self.cos_twist = self.twist.cos
         self.sin_twist = self.twist.sin
         self.cos2_twist = Complex(self.cos_twist**2)
-        self.cos_sin_twist = qn.I * self.cos_twist * self.sin_twist
-        self.mcos_sin_twist = -qn.I * self.cos_twist * self.sin_twist
+        self.cos_sin_twist = qn.I_fn() * self.cos_twist * self.sin_twist
+        self.mcos_sin_twist = -qn.I_fn() * self.cos_twist * self.sin_twist
         self.sin2_twist = Complex(self.sin_twist**2)
-        self.wplusf_twist = self.cos_twist * (qn.I * self.twist).exp
-        self.wminusf_twist = self.sin_twist * (qn.I * self.twist).exp
+        self.wplusf_twist = self.cos_twist * (qn.I_fn() * self.twist).exp
+        self.wminusf_twist = self.sin_twist * (qn.I_fn() * self.twist).exp
 
     def report_type(self): ## HACK TO AVOID A DEPENDENCY LOOP
         return 'FredkinGate'
@@ -60,6 +60,8 @@ class FredkinGate:
         self.set_weights()
 
     def __repr__(self):
+        if qn.CalcMode.mode == 'Symbolic':
+            valstr = f'{self.atheta}'
         return f'{self.name}({self.atheta.degrees:.2f}º)'
 
     def cpair(self, w:Complex, twist=False):
@@ -79,6 +81,22 @@ class FredkinGate:
             c3b = w * self.mcos_sin_twist
         return c2a, c2b, c3a, c3b
 
+    def switch_factors(self, port:str, sign:Sign, control_present:bool):
+        """
+        The four-way split for a particle entering switch wire *port* with
+        *sign* (from §4.2.3 of Good and Real): a list of
+        (output port, output sign, weight factor) triples.
+        The first two stay on the straight-through wire, the last two cross
+        over; control presence (or a minus sign, but not both) swaps the
+        factor columns.
+        """
+        column = int((not control_present) ^ (sign == Sign.plus))
+        rows = ((port, sign, (self.cos2_theta, self.sin2_theta)),
+                (port, -sign, (self.cos_sin_theta, self.mcos_sin_theta)),
+                (OTHER[port], sign, (self.sin2_theta, self.cos2_theta)),
+                (OTHER[port], -sign, (self.mcos_sin_theta, self.cos_sin_theta)))
+        return [(out_port, out_sign, factors[column]) for out_port, out_sign, factors in rows]
+
     def reset(self):
         self.swapping = None
         self.inputs = default_wires()
@@ -92,25 +110,25 @@ class FredkinGate:
             This version computes rotation in the complex plane
             in the most straightforward but not fastest way
         """
-        twist = theta - qn.PI/2
-        wplus = w * theta.cos * (qn.I * theta).exp
-        wminus = w * theta.sin * (qn.I * twist).exp
-        return Complex(wplus.real), qn.I*wplus.imag, Complex(wminus.real), qn.I*wminus.imag
+        twist = theta - qn.PI_fn()/2
+        wplus = w * theta.cos * (qn.I_fn() * theta).exp
+        wminus = w * theta.sin * (qn.I_fn() * twist).exp
+        return Complex(wplus.real), qn.I_fn()*wplus.imag, Complex(wminus.real), qn.I_fn()*wminus.imag
 
-    def relative_angle(self, p:ConfigSpacePoint):
-        return self.theta - p.weight.phase
+    def relative_angle(self, p:Particle):
+        return self.theta - p.v_0.phase
 
-    def measure(self, p:PCoordinate, w:Complex, merge_wires=False):
+    def measure(self, p:Particle, merge_wires=False):
         """measure a particle through a gate
 
         weight -- complex-valued weight
         theta -- rotation angle
         sign -- plus or minus one
         """
-        # cache_key = p #(self.swapping, p.__hash__())
-        # if self.measurement_cache.get(cache_key) is not None:
-        #     return self.measurement_cache[cache_key]
-        c1 = w
+        cache_key = p #(self.swapping, p.__hash__())
+        if self.measurement_cache.get(cache_key) is not None:
+            return self.measurement_cache[cache_key]
+        c1 = p.weight
         par_a, par_b, perp_a, perp_b = self.cpair(c1, twist=p.sign == Sign.minus)
         # if self.norm_output and p.probability > 0:
         #     par_a, par_b, perp_a, perp_b = [x / p.weight for x in (par_a, par_b, perp_a, perp_b)]
@@ -119,40 +137,42 @@ class FredkinGate:
             return par_a+par_b, perp_a+perp_b
         return par_a, par_b, perp_a, perp_b
 
-    # def inputs_from(self, points):
-    #     for coord in points:
-    #         pcv_gate = pcv.pcoord.position.endpoint.gate
-    #         pcv_wire = pcv.pcoord.position.endpoint.port
-    #         if pcv_gate == self.name:
-    #             self.inputs[pcv_wire] += [pcv.particle]
+    def inputs_from(self, pcvs):
+        for pcv in pcvs:
+            pcv_gate = pcv.pcoord.position.endpoint.gate
+            pcv_wire = pcv.pcoord.position.endpoint.port
+            if pcv_gate == self.name:
+                self.inputs[pcv_wire] += [pcv.particle]
 
-    def set_weights(self, in_weight):
+    def set_weights(self):
         if self.swapping is None:
             self.swapping = False
             self.weights['control'] = self.inputs['control']
             if bool(self.weights['control']):
-                self.swapping = True
-                # merged = Particle.merge(self.weights['control'], combine_signs=True)[0]
-                # if enough(abs(merged.weight), qn.ZERO_THRESHOLD):
-                #     self.swapping = True
+                merged = Particle.merge(self.weights['control'], combine_signs=True)[0]
+                if enough(abs(merged.weight), qn.ZERO_THRESHOLD):
+                    self.swapping = True
             # self.swapping = bool(self.weights['control'] and enough(
             #     Particle.merge(self.weights['control']).probability, qn.ZERO_THRESHOLD))
         unswapped_weights = default_switches()
         for switch in SWITCH_WIRES:
             split_outs = switch_splits(switch)
-            for ppos in self.inputs[switch]:
-                if ppos is None: continue
-                splits = self.measure(ppos, in_weight)
-                signs = [ppos.sign, -ppos.sign, ppos.sign, -ppos.sign]
+            for particle in self.inputs[switch]:
+                if particle is None: continue
+                splits = self.measure(particle)
+                signs = [particle.sign.value, -particle.sign.value, particle.sign.value, -particle.sign.value]
                 labels = ['c2a', 'c2b', 'c3a', 'c3b']
-                measurements = [PCoordValue(pcoord=PCoordinate(ppos.name, sign, ppos.position, label), weight=measurement)
+                measurements = [Particle(name=particle.name, weight=measurement, sign=sign,
+                                         next_step=particle.next_step, active_gates=particle.active_gates,
+                                         trace=particle.trace+[f'{label}:{self.name}{SEP}{switch}',],
+                                         splits=particle.splits+[f'{self.name}{SEP}{switch}:{label}',])
                                 for measurement, sign, label in zip(splits, signs, labels)]
                 for p, sw in zip(measurements, split_outs):
-                    if not(zerop(p.weight)):
+                    if enough(abs(p.weight), qn.ZERO_THRESHOLD):
                         unswapped_weights[sw].append(p)
                         # particle.family_tree.add_edge(particle, p)
                     else:
-                        self.discards[p.pcoord] += [p]
+                        self.discards[p.pkey] += [p]
         # for wire in SWITCH_WIRES:
         #     for weight in unswapped_weights[wire]:
         #         if (not unswapped_weights[wire]) or (not enough(sum([abs(p.weight) for p in unswapped_weights[wire]]), qn.ZERO_THRESHOLD)):
@@ -214,5 +234,5 @@ class DelayGate(FredkinGate):
     def set_weights(self):
         self.weights = self.inputs
 
-    def measure(self, p: ConfigSpacePoint, **kwargs):
+    def measure(self, p: Particle, **kwargs):
         return p
