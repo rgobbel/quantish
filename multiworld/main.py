@@ -274,7 +274,7 @@ def main():
             if args.network_graph:
                 if dpath is None:  # diagrams disabled; still need a stem for the graph PDF
                     dpath = Path(args.diagram_dir, args.config).with_suffix('.mmd')
-                network_graph(all_points, dpath, sim)
+                network_graph(all_points, dpath, sim, show=args.show_graph)
 
     if 'no_diagram' not in args:
         if args.diagram_when in ('after', 'both'):

@@ -2,18 +2,13 @@ import logging
 
 
 from multiworld.simulation import Simulation
-from multiworld.util import SEP, parse_position, enough
-from multiworld.config_space import ConfigSpacePoint, NOWHERE
+from multiworld.util import SEP, parse_position, sstr, wstr
 import multiworld.qnumber as qn
 import python_mermaid.diagram as pmd
 import python_mermaid.node as pm
 from collections import namedtuple, defaultdict
-import networkx as nx
 import re
-import numpy as np
 import math as m
-# import altair as alt
-# import pandas as pd
 import time
 
 DiagramFields = namedtuple('DiagramFields', ('field', 'label'))
@@ -50,76 +45,114 @@ gate_fields = {'upper': DiagramFields(field='upper', label='UPPER'),
 #         title='Quantish Weights')
 #     return final_chart
 
-def cs_patch(point:ConfigSpacePoint, layer_max, max_step, sim):
-    logging.getLogger('multiworld').setLevel(logging.WARN)
-    from matplotlib.offsetbox import DrawingArea
-    from matplotlib import colormaps
-    from matplotlib.patches import Rectangle
-    nvals = len(point.coords)
-    side_base = 75 / m.sqrt(layer_max)
-    cmaps = [colormaps['Reds'], colormaps['Greens'], colormaps['Blues']]
-    da = DrawingArea(side_base, side_base, side_base/2, side_base/2)
-    # the outline box is mainly uuseful for debugging
-    # outline_box = [-side_base/4, nvals * -side_base/8, side_base/2, (side_base/4)*nvals]
-    # da.add_artist(Rectangle(outline_box[:2], outline_box[2], outline_box[3], edgecolor='black', facecolor='white'))
-    boxes = []
-    for i in range(nvals):
-        boxes.append([
-            -side_base/4,
-            (nvals * -side_base/8) + (nvals - 1 - i)*side_base/4,
-            side_base/2,
-            side_base/4
-        ])
-    # the weight belongs to the world, so every particle row shows the
-    # world's probability in that particle's colormap
-    world_prob = float(point.probability)
-    for i, coord in enumerate(point.coords.values()):
-        color = cmaps[i % len(cmaps)]((0.7 * (1.0 - world_prob)) + 0.2)
-        da.add_artist(
-            Rectangle(boxes[i][:2],
-                      boxes[i][2], boxes[i][3], facecolor=color))
-    return da
+def short_config(point):
+    """Compact one-line label for a world's coordinates: sign, gate, and the
+    port initial for each particle, e.g. '+g2c|+g2l|+g3u'."""
+    parts = []
+    for coord in point.coords.values():
+        port = coord.position.origin or coord.position.endpoint
+        if port is None:
+            parts.append(f'{sstr(coord.sign)}?')
+        else:
+            parts.append(f'{sstr(coord.sign)}{port.gate}{(port.port or "c")[0]}')
+    return '|'.join(parts)
 
-def network_graph(result_space, diagram_path, sim):
+
+def network_graph(result_space, diagram_path, sim, show=True):
+    """Weight-evolution trace of the simulation.
+
+    One column per step, one node per world. Node hue encodes the weight's
+    phase, node area its probability |w|^2; each node is labeled with its
+    weight and compact coordinates. Edge width tracks the magnitude of the
+    amplitude the parent world contributed to the child — a merged world
+    shows one incoming edge per interfering contribution, and its weight is
+    the sum of them.
+    """
+    import cmath
     logging.getLogger('multiworld').setLevel(logging.WARN)
-    from matplotlib.offsetbox import AnnotationBbox
     from matplotlib import pyplot as plt
-    plt.set_loglevel("info")
-    all_points = [point for point in result_space.index.values()]
-    sorted_points = sorted(list(set(all_points)), key=lambda x: f'{x.step}{x.key}')
-    nonzeros = [point for point in sorted_points if not qn.zerop(point.weight)]
-    graph_points = sorted_points
+    from matplotlib import colormaps
+    plt.set_loglevel("warning")
+
     layers = defaultdict(list)
-    max_step = max([point.step for point in all_points])
-    for p in graph_points:
-        layers[p.step] += [p]
-    for k, v in layers.items():
-        layers[k] = sorted(v, key=lambda x: x.key)
-    layer_max = max([len(x) for x in layers.values()])
-    exe_graph = nx.MultiDiGraph()
-    exe_graph.add_nodes_from(graph_points)
-    exe_nodes = list(exe_graph.nodes)
-    rejected = []
-    for node in exe_nodes:
-        for succ in node.successors:
-            if succ not in graph_points:
-                rejected.append(succ)
+    for p in result_space.index.values():
+        layers[p.step].append(p)
+    steps = sorted(layers.keys())
+    layer_max = max(len(v) for v in layers.values())
+
+    # Stable vertical order: first layer by key; later layers by the mean y
+    # of their contributing parents (barycenter), which keeps edges short.
+    pos = {}
+    for step in steps:
+        layer = layers[step]
+        def barycenter(p):
+            ys = [pos[q][1] for q in p.contributions.keys() if q in pos]
+            return sum(ys) / len(ys) if ys else 0.0
+        if step == steps[0]:
+            layer.sort(key=lambda p: p.key)
+        else:
+            layer.sort(key=lambda p: (-barycenter(p), p.key))
+        n = len(layer)
+        for i, p in enumerate(layer):
+            pos[p] = (float(p.step), (n - 1) / 2.0 - i)
+
+    fig_w = min(2.0 + 2.2 * len(steps), 24)
+    fig_h = min(1.5 + 0.85 * layer_max, 22)
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+
+    # Edges: parent -> child, one per recorded contribution.
+    for p, (x, y) in pos.items():
+        for parent, contrib in p.contributions.items():
+            if parent not in pos:
                 continue
-            if node.key != succ.key and not exe_graph.has_edge(node, succ):
-                exe_graph.add_edge(node, succ)
-    pos = nx.multipartite_layout(exe_graph, layers)
-    fig, ax = plt.subplots()
-    fig.set_size_inches(11, 8.5)
-    ax.axis('off')
-    nx.draw_networkx_edges(exe_graph, pos=pos, ax=ax, arrows=True, arrowstyle='->', arrowsize=5)
-    for cs_point, coord in pos.items():
-        da = cs_patch(cs_point, layer_max, max_step, sim)
-        ab = AnnotationBbox(da, coord, frameon=False)
-        ax.add_artist(ab)
-    plt.title(sim.title)
-    plt.savefig(diagram_path.with_stem(diagram_path.stem + '_graph').with_suffix('.pdf'),
-                orientation='landscape', bbox_inches='tight')
-    plt.show()
+            px, py = pos[parent]
+            try:
+                mag = abs(complex(contrib))
+            except (TypeError, ValueError):
+                mag = 0.5
+            ax.plot([px, x], [py, y], color='0.55',
+                    lw=0.4 + 2.6 * mag, alpha=0.75, zorder=1,
+                    solid_capstyle='round')
+
+    # Nodes: hue = phase, marker area = probability. Markers are sized in
+    # screen points so they stay circular whatever the data aspect is.
+    hsv = colormaps['hsv']
+    for p, (x, y) in pos.items():
+        try:
+            w = complex(p.weight)
+            prob = abs(w) ** 2
+            hue = (cmath.phase(w) / (2 * m.pi)) % 1.0
+        except (TypeError, ValueError):
+            prob, hue = 0.25, 0.0
+        size = 50 + 850 * prob
+        ax.scatter([x], [y], s=size, facecolor=hsv(hue),
+                   edgecolor='black', linewidth=0.6, zorder=3)
+        label = f'{wstr(p.weight, precision=2)}\n{short_config(p)}'
+        ax.annotate(label, (x, y), xytext=(0, -(9 + 0.55 * m.sqrt(size))),
+                    textcoords='offset points', ha='center', va='top',
+                    fontsize=4.5, zorder=4, family='monospace')
+
+    # X axis: step number plus the gates that fired to produce that column.
+    tick_labels = ['initial']
+    for i in range(1, len(steps)):
+        gates = sim.run_stages[i - 1] if i - 1 < len(sim.run_stages) else []
+        tick_labels.append(f'step {steps[i]}\n{", ".join(gates)}')
+    ax.set_xticks([float(s) for s in steps], tick_labels, fontsize=6)
+    ax.set_yticks([])
+    for spine in ('top', 'right', 'left'):
+        ax.spines[spine].set_visible(False)
+    ax.set_xlim(steps[0] - 0.6, steps[-1] + 0.6)
+    ax.set_ylim(-(layer_max + 1) / 2.0, (layer_max + 1) / 2.0)
+    ax.set_title(f'{sim.title} — weight evolution', fontsize=10)
+    fig.text(0.01, 0.01,
+             'node hue = phase, area = |w|²; edge width = |contributed amplitude|',
+             fontsize=6, color='0.4')
+
+    out_path = diagram_path.with_stem(diagram_path.stem + '_graph').with_suffix('.pdf')
+    plt.savefig(out_path, orientation='landscape', bbox_inches='tight')
+    if show:
+        plt.show()
+    plt.close(fig)
 
 def make_gate_node(sim, gname, inout, wire, mermaid_nodes, show_outputs=True):
     sink_nodes = []

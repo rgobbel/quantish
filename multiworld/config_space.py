@@ -107,6 +107,9 @@ class ConfigSpacePoint:
         self.weight: Complex = Complex(qn.qify(weight))
         self.predecessors = set(predecessors) if predecessors is not None else set()
         self.successors = set(successors) if successors is not None else set()
+        # amplitude contributed by each predecessor world; after merging,
+        # weight == sum(contributions.values()) — the weight-evolution trace
+        self.contributions: dict[Self, Complex] = {}
 
     @property
     def key(self):
@@ -146,6 +149,11 @@ class ConfigSpace:
                   f'{wstr(existing.weight, precision=2)} + {wstr(point.weight, precision=2)}')
         existing.weight = existing.weight + point.weight
         existing.predecessors |= point.predecessors
+        for pred, contrib in point.contributions.items():
+            if pred in existing.contributions:
+                existing.contributions[pred] = existing.contributions[pred] + contrib
+            else:
+                existing.contributions[pred] = contrib
         for pred in point.predecessors:
             pred.successors.discard(point)
             pred.successors.add(existing)
@@ -242,6 +250,7 @@ class ConfigSpaceRunner:
                             weight = weight * factor
                     successor = ConfigSpacePoint(step + 1, [coord for coord, _ in combo],
                                                  weight, predecessors={world})
+                    successor.contributions = {world: successor.weight}
                     merged = Q_next.add_point(successor)
                     world.successors.add(merged)
                     successor_count += 1
