@@ -191,6 +191,14 @@ PORT_DY = {
 PORT_IN_DX  = 0.15
 PORT_OUT_DX = GATE_WIDTH - 0.15
 
+# Group-box geometry (shared by emit_tex and the wire router so wires keep
+# clear of the drawn borders): padding around the member gates, the header
+# band that holds the group title, and the clearance wires must keep from
+# any box border.
+GROUP_PAD    = 0.28
+GROUP_HEADER = 0.5
+BOX_CLEAR    = 0.3
+
 
 
 @dataclass
@@ -327,6 +335,41 @@ def compute_layout(circuit: Circuit) -> Layout:
         L.bounds = (min(xs), min(ys), max(xs), max(ys))
     return L
 
+def group_boxes(parsed, L: Layout) -> list[dict]:
+    """Geometry of every group adornment, shared by the TikZ emitter and the
+    wire router. Returns one dict per group with member coordinates:
+    x1/x2 (left/right), y_top (border incl. header), y_bot, label, and
+    multi (True when a box is actually drawn, False for a bare label)."""
+    result = []
+    for group, label in zip(parsed.stage_gates, parsed.stage_names):
+        member_boxes = []
+        for name in group:
+            if name in L.gate_xy:
+                x, y = L.gate_xy[name]
+                member_boxes.append((x, y, x + GATE_WIDTH, y - GATE_HEIGHT))
+            elif name in L.delay_xy:
+                cx, cy = L.delay_xy[name]
+                member_boxes.append((cx - CONTROL_HALF_W, cy + DELAY_HEIGHT / 2,
+                                     cx + CONTROL_HALF_W, cy - DELAY_HEIGHT / 2))
+        if not member_boxes:
+            continue
+        x1 = min(b[0] for b in member_boxes)
+        y_gate_top = max(b[1] for b in member_boxes)
+        x2 = max(b[2] for b in member_boxes)
+        y_bot = min(b[3] for b in member_boxes)
+        multi = len(member_boxes) > 1
+        result.append({
+            'x1': x1 - GROUP_PAD if multi else x1,
+            'x2': x2 + GROUP_PAD if multi else x2,
+            'y_top': (y_gate_top + GROUP_PAD + GROUP_HEADER) if multi else (y_gate_top + 0.45),
+            'y_bot': (y_bot - GROUP_PAD) if multi else y_bot,
+            'y_gate_top': y_gate_top,
+            'label': label,
+            'multi': multi,
+        })
+    return result
+
+
 def stage_row(parsed, name: str) -> int:
     """Return the row index of `name` within its execution stage (0 if not found)."""
     for stage in parsed.stage_gates:
@@ -445,6 +488,7 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
     particles = set(parsed.particles)
     delays = set(parsed.delay_gates)
     n_cols = len(circuit.topology['engine_steps'])
+    boxes_geom = group_boxes(parsed, L)
 
     # Build the obstacle list: name → (x_left, y_top, x_right, y_bottom).
     # Tests can exclude the source/destination gates from the check (since a
@@ -494,15 +538,20 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
             return s
         return None
 
+    # Channels must clear not just the gates but the group-box borders
+    # (which protrude GROUP_PAD beyond the gates), with BOX_CLEAR to spare.
+    _GAP_MARGIN = GROUP_PAD + BOX_CLEAR
+
     def gap_x_range(gap: int) -> tuple[float, float]:
         if gap < 0:
             # Particle corridor: start past the right edge of the particle
             # circles (centers at PARTICLE_OFFSET_X, radius ~0.4) with extra
-            # clearance so a vertical channel doesn't graze a particle.
-            return (PARTICLE_OFFSET_X + 0.7, -0.3)
+            # clearance so a vertical channel doesn't graze a particle, and
+            # end clear of the first column's group-box border.
+            return (PARTICLE_OFFSET_X + 0.55, -_GAP_MARGIN)
         gate_right = gap * STAGE_WIDTH + GATE_WIDTH
         next_left = (gap + 1) * STAGE_WIDTH
-        return (gate_right + 0.2, next_left - 0.2)
+        return (gate_right + _GAP_MARGIN, next_left - _GAP_MARGIN)
 
     # Track per-gap channel (vertical-segment) allocations: list of
     # (x, y_low, y_high). When picking a new channel, we prefer one that
@@ -524,7 +573,7 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
         return the (x_lo, x_hi) of the conflicting segment."""
         lo, hi = min(x_lo, x_hi), max(x_lo, x_hi)
         for sy, sx_lo, sx_hi in horizontal_segments:
-            if abs(sy - y) > 0.05:
+            if abs(sy - y) > 0.15:
                 continue
             if sx_hi < lo + 0.05 or sx_lo > hi - 0.05:
                 continue
@@ -532,7 +581,7 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
         return None
 
     # Minimum visual separation between two channels in the same gap.
-    _CHANNEL_MIN_GAP = 0.18
+    _CHANNEL_MIN_GAP = 0.30
 
     def alloc_channel(gap: int, y_low: float, y_high: float,
                       stub_y: float | None = None,
@@ -607,9 +656,10 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
         used.append((best, y_low, y_high))
         return best
 
-    # Track per-lane usage.
+    # Track per-lane usage. The below-base clears group-box bottoms, which
+    # protrude GROUP_PAD beyond the lowest gate.
     lane_above_base = L.bounds[3] + 0.4
-    lane_below_base = L.bounds[1] - 0.4
+    lane_below_base = L.bounds[1] - 0.4 - GROUP_PAD
     lanes_above: list[tuple[float, float, float]] = []   # (y, x_lo, x_hi)
     lanes_below: list[tuple[float, float, float]] = []
 
@@ -777,8 +827,24 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
                 candidate_ys.append(gy + 0.4)
             else:
                 candidate_ys.append(gy - 0.4)
-        candidate_ys.append(L.bounds[3] + 0.4)
-        candidate_ys.append(L.bounds[1] - 0.4)
+        # Lanes hugging group-box borders, at a respectful distance.
+        for gb in boxes_geom:
+            candidate_ys.append(gb['y_top'] + BOX_CLEAR + 0.05)
+            candidate_ys.append(gb['y_bot'] - BOX_CLEAR - 0.05)
+        candidate_ys.append(lane_above_base)
+        candidate_ys.append(lane_below_base)
+
+        def clear_of_boxes(ly: float) -> bool:
+            """Reject lane ys that run along a group-box border (or through
+            its title band) anywhere in this wire's x-span."""
+            for gb in boxes_geom:
+                if gb['x2'] < x_span_lo - 0.05 or gb['x1'] > x_span_hi + 0.05:
+                    continue
+                if abs(ly - gb['y_top']) < BOX_CLEAR or abs(ly - gb['y_bot']) < BOX_CLEAR:
+                    return False
+                if gb['multi'] and gb['y_top'] > ly > gb['y_top'] - GROUP_HEADER:
+                    return False
+            return True
 
         # A candidate ly is valid if (a) no gate blocks the horizontal at ly
         # over the wire's x-span and (b) no already-routed wire's lane
@@ -801,6 +867,8 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
             if hit_horizontal(ly, x_span_lo - 0.05, x_span_hi + 0.05, exclude=skip_set):
                 continue
             if not lane_y_free(ly):
+                continue
+            if not clear_of_boxes(ly):
                 continue
             valid.append(ly)
 
@@ -991,33 +1059,18 @@ def emit_tex(circuit: Circuit, L: Layout, routes: list[Route],
 
     # Group adornments: multi-gate groups get a fitted box with the group
     # name at the top; single-gate groups get a plain label above the gate.
-    pad = 0.28
-    header = 0.5
-    for group, label in zip(parsed.stage_gates, parsed.stage_names):
-        boxes = []
-        for name in group:
-            if name in L.gate_xy:
-                x, y = L.gate_xy[name]
-                boxes.append((x, y, x + GATE_WIDTH, y - GATE_HEIGHT))
-            elif name in L.delay_xy:
-                cx, cy = L.delay_xy[name]
-                boxes.append((cx - CONTROL_HALF_W, cy + DELAY_HEIGHT / 2,
-                              cx + CONTROL_HALF_W, cy - DELAY_HEIGHT / 2))
-        if not boxes:
-            continue
-        x1 = min(b[0] for b in boxes)
-        y_top = max(b[1] for b in boxes)
-        x2 = max(b[2] for b in boxes)
-        y_bot = min(b[3] for b in boxes)
-        cx = (x1 + x2) / 2
-        if len(boxes) > 1:
-            out.append(rf"\draw[groupbox] ({x1 - pad:.2f},{y_bot - pad:.2f}) "
-                       rf"rectangle ({x2 + pad:.2f},{y_top + pad + header:.2f});")
-            out.append(rf"\node[stagelbl, anchor=north] at ({cx:.2f},{y_top + pad + header - 0.06:.2f}) "
-                       rf"{{{tex_escape(label)}}};")
+    # Geometry comes from group_boxes() so the router keeps wires clear of
+    # exactly what gets drawn.
+    for gb in group_boxes(parsed, L):
+        cx = (gb['x1'] + gb['x2']) / 2
+        if gb['multi']:
+            out.append(rf"\draw[groupbox] ({gb['x1']:.2f},{gb['y_bot']:.2f}) "
+                       rf"rectangle ({gb['x2']:.2f},{gb['y_top']:.2f});")
+            out.append(rf"\node[stagelbl, anchor=north] at ({cx:.2f},{gb['y_top'] - 0.06:.2f}) "
+                       rf"{{{tex_escape(gb['label'])}}};")
         else:
-            out.append(rf"\node[stagelbl, anchor=south] at ({cx:.2f},{y_top + 0.12:.2f}) "
-                       rf"{{{tex_escape(label)}}};")
+            out.append(rf"\node[stagelbl, anchor=south] at ({cx:.2f},{gb['y_gate_top'] + 0.12:.2f}) "
+                       rf"{{{tex_escape(gb['label'])}}};")
 
     # Gates. Override the angle text with whatever the GUI is currently
     # using (the slider's value), falling back to the YAML's literal default.
