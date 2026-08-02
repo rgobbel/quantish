@@ -29,6 +29,12 @@ def _():
     import yaml
     from addict import Addict
 
+    # Inline chart data in the Vega-Lite spec instead of marimo's
+    # shared-memory virtual files: our frames are tiny, and virtual files
+    # produce noisy 404/KeyError tracebacks when a slider re-creates a
+    # chart while the browser still holds the old data URL.
+    alt.data_transformers.enable('default')
+
     # make the repo importable no matter where marimo was launched from
     _repo = Path(__file__).resolve().parents[1]
     if str(_repo) not in sys.path:
@@ -174,7 +180,7 @@ def _(cmath, mo):
     return latex_weight, md_table, phase_deg
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(latex_weight, md_table, mo, phase_deg, short_config, sim):
     _rows = []
     for _p in sorted(sim.result_space.index.values(),
@@ -444,7 +450,9 @@ def _(
     _chart = (_vectors + _labels).properties(
         title=f'θ = {ws_theta.value}º, sign = {_sign_str}',
         width=420, height=420)
-    mo.ui.altair_chart(_chart)
+    # plain display (not mo.ui.altair_chart): no selection plumbing, and
+    # with inline data no virtual-file churn on slider moves
+    _chart
     return
 
 
