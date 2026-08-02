@@ -809,10 +809,12 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
         candidate_ys = []
         # Several y-offsets so multiple wires that all need to detour around
         # the same blocker can stack instead of all landing on one line.
+        # Base offset is half the inter-gate gap, so a lane between two gate
+        # rows lands centered instead of hugging the nearer frame.
         for ox1, oy1, ox2, oy2 in blockers:
             for k in range(3):
-                candidate_ys.append(oy1 + 0.35 + k * _LANE_STEP)   # progressively above
-                candidate_ys.append(oy2 - 0.35 - k * _LANE_STEP)   # progressively below
+                candidate_ys.append(oy1 + GATE_VSPACE / 2 + k * _LANE_STEP)   # progressively above
+                candidate_ys.append(oy2 - GATE_VSPACE / 2 - k * _LANE_STEP)   # progressively below
         # Also: row-gap y values (between adjacent gate rows) — useful when
         # the detour is just hopping a small obstacle and a global lane
         # would force a huge u-turn.
@@ -846,6 +848,23 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
                     return False
             return True
 
+        _GATE_LANE_CLEAR = 0.45
+
+        def clear_of_gate_frames(ly: float) -> bool:
+            """Reject lane ys that skim along a gate frame's top or bottom
+            edge anywhere in this wire's x-span (its own src/dst gates
+            excepted — port stubs legitimately run next to those)."""
+            for name, (ox1, oy1, ox2, oy2) in obstacles.items():
+                if name in skip_set:
+                    continue
+                if ox2 < x_span_lo - 0.05 or ox1 > x_span_hi + 0.05:
+                    continue
+                if oy1 < ly < oy1 + _GATE_LANE_CLEAR:
+                    return False
+                if oy2 - _GATE_LANE_CLEAR < ly < oy2:
+                    return False
+            return True
+
         # A candidate ly is valid if (a) no gate blocks the horizontal at ly
         # over the wire's x-span and (b) no already-routed wire's lane
         # segment within _LANE_STEP of ly overlaps the x-span. The
@@ -869,6 +888,8 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
             if not lane_y_free(ly):
                 continue
             if not clear_of_boxes(ly):
+                continue
+            if not clear_of_gate_frames(ly):
                 continue
             valid.append(ly)
 
