@@ -8,13 +8,14 @@ explorer.
 
 Run with:  marimo edit notebooks/quantish_app.py   (or `marimo run` to serve)
 """
+
 import marimo
 
 __generated_with = "0.23.16"
-app = marimo.App(width="medium")
+app = marimo.App(width="full")
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _():
     import cmath
     import logging
@@ -50,26 +51,38 @@ def _():
     REPO_DIR = Path(__file__).resolve().parents[1]
     MODELS_DIR = REPO_DIR / 'models'
     return (
-        Addict, FredkinGate, MODELS_DIR, Simulation, alt, cmath,
-        diagram, math, mo, network_graph_figure, pd, qn,
-        run_epr_experiment, run_monte_carlo, short_config, supports_epr, yaml,
+        Addict,
+        FredkinGate,
+        MODELS_DIR,
+        Simulation,
+        alt,
+        cmath,
+        diagram,
+        math,
+        mo,
+        network_graph_figure,
+        pd,
+        qn,
+        run_epr_experiment,
+        run_monte_carlo,
+        short_config,
+        supports_epr,
+        yaml,
     )
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
-    mo.md(
-        r"""
-        # Quantish Physics
-        A simulation of the quantish universe from Chapter 4 of
-        *Good and Real* (Drescher, 2006): Fredkin gates, complex-weighted
-        worlds, and EPR experiments.
-        """
-    )
+    mo.md(r"""
+    # Quantish Physics
+    A simulation of the quantish universe from Chapter 4 of
+    *Good and Real* (Drescher, 2006): Fredkin gates, complex-weighted
+    worlds, and EPR experiments.
+    """)
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(MODELS_DIR, mo):
     _model_files = sorted(p for p in MODELS_DIR.glob('*.yaml')
                           if p.stem != 'defaults')
@@ -82,7 +95,7 @@ def _(MODELS_DIR, mo):
     return (model_pick,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(Addict, MODELS_DIR, Simulation, mo, model_pick, yaml):
     def load_config(path):
         with open(MODELS_DIR / 'defaults.yaml') as _f:
@@ -104,16 +117,24 @@ def _(Addict, MODELS_DIR, Simulation, mo, model_pick, yaml):
         mo.md(f"**{base_config.title}** — gate angles"),
         mo.hstack(list(angle_sliders.values()), wrap=True),
     ])
-    return angle_sliders, base_config, load_config
+    return angle_sliders, load_config
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(Simulation, angle_sliders, load_config, math, mo, model_pick):
-    _config = load_config(model_pick.value)
-    for _g, _deg in angle_sliders.value.items():
-        _config.gates[_g].angle = math.radians(_deg)
-    sim = Simulation(_config)
-    sim.run()
+    try:
+        _config = load_config(model_pick.value)
+        for _g, _deg in angle_sliders.value.items():
+            _config.gates[_g].angle = math.radians(_deg)
+        sim = Simulation(_config)
+        sim.run()
+        _error = None
+    except Exception as _exc:  # noqa: BLE001 — old-format models raise all sorts
+        sim = None
+        _error = _exc
+    mo.stop(sim is None,
+            mo.md(f"**{model_pick.value.stem} failed to load or run** — probably "
+                  f"an old-format model.\n\n```\n{_error}\n```"))
     mo.md(f"Ran **{sim.title}** — {len(sim.run_stages)} steps, "
           f"{len(sim.result_space.index)} final world(s), "
           f"total probability "
@@ -121,7 +142,7 @@ def _(Simulation, angle_sliders, load_config, math, mo, model_pick):
     return (sim,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(cmath, mo):
     def latex_weight(w) -> str:
         _w = complex(w)
@@ -138,9 +159,15 @@ def _(cmath, mo):
         return cmath.phase(complex(w)) * 180.0 / cmath.pi
 
     def md_table(headers, rows) -> str:
-        lines = ['| ' + ' | '.join(headers) + ' |',
+        # NB: markdown needs a blank line before a table, and literal '|'
+        # inside cells (world keys use it as a separator) must be escaped
+        # or they read as column breaks.
+        def cell(c):
+            return str(c).replace('|', r'\|')
+        lines = ['',
+                 '| ' + ' | '.join(headers) + ' |',
                  '|' + '|'.join(['---'] * len(headers)) + '|']
-        lines += ['| ' + ' | '.join(str(c) for c in row) + ' |' for row in rows]
+        lines += ['| ' + ' | '.join(cell(c) for c in row) + ' |' for row in rows]
         return '\n'.join(lines)
 
     _ = mo.md('')  # helpers only
@@ -153,17 +180,18 @@ def _(latex_weight, md_table, mo, phase_deg, short_config, sim):
     for _p in sorted(sim.result_space.index.values(),
                      key=lambda x: -float(x.probability)):
         _rows.append((
-            f'`{short_config(_p)}`',
+            f'`{short_config(_p).replace("|", " ")}`',
             f'${latex_weight(_p.weight)}$',
             f'{float(_p.probability):.4f}',
             f'{phase_deg(_p.weight):+.1f}º',
         ))
     mo.md('### Final worlds\n' +
-          md_table(['configuration', 'weight $w$', '$|w|^2$', 'phase'], _rows))
+          md_table(['configuration', 'weight $w$', r'$\lvert w\rvert^2$', 'phase'],
+                   _rows))
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(md_table, mo, sim):
     _pkey = {}
     for _p in sim.result_space.index.values():
@@ -179,12 +207,16 @@ def _(md_table, mo, sim):
     return
 
 
-@app.cell
-def _(mo, sim):
+@app.cell(hide_code=True)
+def _(Simulation, load_config, mo, model_pick):
+    # Depends on the model only (not the sliders): the topology doesn't
+    # change with angles, and re-running pdflatex on every slider move is
+    # slow and noisy. The current angles are visible in the sliders.
     from multiworld.circuit_diagram import render_diagram, spec_from_simulation
     try:
-        _img = render_diagram(spec_from_simulation(sim), dpi=150)
-        _out = mo.image(_img, caption='circuit (TikZ)') if _img is not None else \
+        _base = Simulation(load_config(model_pick.value))
+        _img = render_diagram(spec_from_simulation(_base), dpi=150)
+        _out = mo.image(_img, caption='circuit (TikZ, base angles)') if _img is not None else \
             mo.md('_TikZ render unavailable (needs pdflatex + imagemagick)_')
     except Exception as _exc:  # noqa: BLE001 — show, don't crash the app
         _out = mo.md(f'_TikZ diagram failed: {_exc}_')
@@ -192,7 +224,7 @@ def _(mo, sim):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(diagram, mo, sim):
     try:
         _mermaid_src = str(diagram(sim, output_file=None, has_run=True))
@@ -203,20 +235,26 @@ def _(diagram, mo, sim):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo, network_graph_figure, sim):
+    from matplotlib import pyplot as _plt
     _fig = network_graph_figure(sim.all_points, sim)
+    # deregister from pyplot so slider-driven reruns don't accumulate open
+    # figures (the Figure object itself stays renderable)
+    _plt.close(_fig)
     mo.accordion({'Weight evolution (worlds × steps)': _fig}, lazy=True)
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
-    mo.md('## Monte Carlo')
+    mo.md("""
+    ## Monte Carlo
+    """)
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mc_trials = mo.ui.slider(1000, 100000, step=1000, value=20000,
                              label='trials', show_value=True)
@@ -228,8 +266,17 @@ def _(mo):
     return mc_button, mc_mode, mc_seed, mc_trials
 
 
-@app.cell
-def _(md_table, mc_button, mc_mode, mc_seed, mc_trials, mo, run_monte_carlo, sim):
+@app.cell(hide_code=True)
+def _(
+    mc_button,
+    mc_mode,
+    mc_seed,
+    mc_trials,
+    md_table,
+    mo,
+    run_monte_carlo,
+    sim,
+):
     mo.stop(not mc_button.value, mo.md('_press **Run Monte Carlo** to sample_'))
     _results = run_monte_carlo(sim, mc_trials.value, mode=mc_mode.value,
                                seed=int(mc_seed.value))
@@ -245,7 +292,8 @@ def _(md_table, mc_button, mc_mode, mc_seed, mc_trials, mo, run_monte_carlo, sim
         for _key in sorted(set(_tally) | set(_pred), key=lambda k: -_pred.get(k, 0)):
             _freq = _tally.get(_key, 0) / mc_trials.value
             _tvd += abs(_freq - _pred.get(_key, 0.0))
-            _rows.append((f'`{_key.split(":")[0][:60]}`', _tally.get(_key, 0),
+            _rows.append((f'`{_key.split(":")[0][:60].replace("|", " ")}`',
+                          _tally.get(_key, 0),
                           f'{_freq:.4f}', f'{_pred.get(_key, 0.0):.4f}'))
         _sections.append(f'**{_label}** — {_note}; '
                          f'total variation distance {_tvd / 2:.4f}\n\n' +
@@ -254,7 +302,7 @@ def _(md_table, mc_button, mc_mode, mc_seed, mc_trials, mo, run_monte_carlo, sim
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo, sim, supports_epr):
     mo.stop(not supports_epr(sim))
     mo.md(r"""
@@ -267,7 +315,7 @@ def _(mo, sim, supports_epr):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo, sim, supports_epr):
     mo.stop(not supports_epr(sim))
     epr_trials = mo.ui.slider(0, 50000, step=1000, value=10000,
@@ -278,8 +326,16 @@ def _(mo, sim, supports_epr):
     return epr_button, epr_trials
 
 
-@app.cell
-def _(epr_button, epr_trials, md_table, mo, run_epr_experiment, sim, supports_epr):
+@app.cell(hide_code=True)
+def _(
+    epr_button,
+    epr_trials,
+    md_table,
+    mo,
+    run_epr_experiment,
+    sim,
+    supports_epr,
+):
     mo.stop(not supports_epr(sim))
     mo.stop(not epr_button.value, mo.md('_press **Run EPR experiment** to sweep_'))
     _r = run_epr_experiment(sim, n_trials=int(epr_trials.value), seed=1)
@@ -310,22 +366,20 @@ def _(epr_button, epr_trials, md_table, mo, run_epr_experiment, sim, supports_ep
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
-    mo.md(
-        r"""
-        ## Weight-split explorer
-        The four-way split of one Fredkin-gate measurement at angle $\theta$:
-        $c_{2a} = w\cos^2\theta$, $c_{2b} = i\,w\sin\theta\cos\theta$
-        (straight), $c_{3a} = w\sin^2\theta$,
-        $c_{3b} = -i\,w\sin\theta\cos\theta$ (cross); $c_2 = c_{2a}+c_{2b}$,
-        $c_3 = c_{3a}+c_{3b}$. A minus-sign particle swaps the roles.
-        """
-    )
+    mo.md(r"""
+    ## Weight-split explorer
+    The four-way split of one Fredkin-gate measurement at angle $\theta$:
+    $c_{2a} = w\cos^2\theta$, $c_{2b} = i\,w\sin\theta\cos\theta$
+    (straight), $c_{3a} = w\sin^2\theta$,
+    $c_{3b} = -i\,w\sin\theta\cos\theta$ (cross); $c_2 = c_{2a}+c_{2b}$,
+    $c_3 = c_{3a}+c_{3b}$. A minus-sign particle swaps the roles.
+    """)
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     ws_theta = mo.ui.slider(0, 90, step=0.5, value=30, label='θ (º)',
                             show_value=True)
@@ -342,9 +396,21 @@ def _(mo):
     return ws_components, ws_sign, ws_theta, ws_wmag, ws_wphase
 
 
-@app.cell
-def _(FredkinGate, alt, cmath, math, mo, pd, qn,
-      ws_components, ws_sign, ws_theta, ws_wmag, ws_wphase):
+@app.cell(hide_code=True)
+def _(
+    FredkinGate,
+    alt,
+    cmath,
+    math,
+    mo,
+    pd,
+    qn,
+    ws_components,
+    ws_sign,
+    ws_theta,
+    ws_wmag,
+    ws_wphase,
+):
     _gate = FredkinGate('ws', qn.qify(math.radians(ws_theta.value)))
     _w = ws_wmag.value * cmath.exp(1j * math.radians(ws_wphase.value))
     _c2a, _c2b, _c3a, _c3b = (complex(_x) for _x in
