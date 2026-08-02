@@ -618,14 +618,12 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
 
         n = 32
         candidates = [x_lo + (x_hi - x_lo) * (i + 0.5) / n for i in range(n)]
-        # In spread mode, walk candidates right-to-left so the first-routed
-        # wire takes the rightmost slot. Subsequent wires get smaller x's,
-        # which ensures their horizontal stubs (running leftward from cx
-        # to the source's right edge at sx ≈ -1.4) terminate before any
-        # earlier-routed vertical at a larger x. That stops the
-        # later-particle-stub-crosses-earlier-particle-vertical collision.
-        if spread:
-            candidates = list(reversed(candidates))
+        # In spread mode candidates are walked left-to-right, so the
+        # first-routed wires (nearest destinations, routed first by the
+        # flexibility sort) take the leftmost slots. Later wires — the ones
+        # headed farthest right — get larger x's, so their long horizontal
+        # runs start to the right of every earlier-routed vertical and
+        # never cross one.
 
         def stub_ok(cx: float) -> bool:
             if stub_y is None or stub_to is None:
@@ -822,11 +820,13 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
         for x, y in L.gate_xy.values():
             all_gate_ys.append(('top', y))
             all_gate_ys.append(('bot', y - GATE_HEIGHT))
+        # Offset by half the inter-gate gap so a lane between two gate rows
+        # sits centered rather than hugging the nearer frame.
         for ttype, gy in all_gate_ys:
             if ttype == 'top':
-                candidate_ys.append(gy + 0.4)
+                candidate_ys.append(gy + GATE_VSPACE / 2)
             else:
-                candidate_ys.append(gy - 0.4)
+                candidate_ys.append(gy - GATE_VSPACE / 2)
         # Lanes hugging group-box borders, at a respectful distance.
         for gb in boxes_geom:
             candidate_ys.append(gb['y_top'] + BOX_CLEAR + 0.05)
