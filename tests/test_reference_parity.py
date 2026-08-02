@@ -61,10 +61,14 @@ PARITY_MODELS = [
     'fig417',
 ]
 
-# model YAML in this repo -> circuit YAML loaded by the reference repo's own
-# loader. Both files must describe the same experiment (topology AND angles).
+# model YAML in this repo -> (circuit YAML loaded by the reference repo's own
+# loader, harmonized gate angles applied to BOTH sides). The measurement-gate
+# angles in these models are placeholders (the EPR sweep overrides them), so
+# the comparison pins one explicit angle set and validates the topology.
 CROSS_REPO_CIRCUITS = {
-    'fig417': 'fig_4_17.yaml',
+    'fig417': ('fig_4_17.yaml',
+               {'g1': 'pi/4', 'g2': 'pi/4+pi/2', 'g3': 0, 'g4': 0,
+                'g5': 'pi/8', 'g6': 'pi/8', 'g7': 'pi/8', 'g8': 'pi/8'}),
 }
 
 
@@ -77,7 +81,7 @@ def load_model_config(name):
     return Addict(config)
 
 
-def run_multiworld(name, canonical_wire=None):
+def run_multiworld(name, canonical_wire=None, angle_override=None):
     """Run a model through the multiworld engine. Returns (finals, sim) where
     finals maps canonical world keys to complex weights. canonical_wire maps a
     final PCoordinate to the wire name used in the comparison key; the default
@@ -85,7 +89,10 @@ def run_multiworld(name, canonical_wire=None):
     from multiworld.simulation import Simulation
     if canonical_wire is None:
         canonical_wire = lambda coord: str(coord.position.endpoint)
-    sim = Simulation(load_model_config(name))
+    config = load_model_config(name)
+    for gname, angle in (angle_override or {}).items():
+        config['gates'][gname]['angle'] = angle
+    sim = Simulation(config)
     result_space, _ = sim.run()
     finals = {}
     for point in result_space.index.values():
@@ -182,10 +189,11 @@ class TestCrossRepoCircuits(ReferenceComparisonMixin, unittest.TestCase):
         CalcMode.default('Float')
         qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
 
-    def run_reference_circuit(self, circuit_file):
+    def run_reference_circuit(self, circuit_file, angle_override=None):
         result = subprocess.run(
             [str(GLD_PYTHON), str(Path(__file__).parent / 'gld_runner.py'),
-             str(GLD_DIR), str(GLD_DIR / 'circuits' / circuit_file)],
+             str(GLD_DIR), str(GLD_DIR / 'circuits' / circuit_file),
+             json.dumps(angle_override or {})],
             capture_output=True, text=True)
         self.assertEqual(result.returncode, 0,
                          f'gld_runner failed for {circuit_file}:\n{result.stderr}')
@@ -203,10 +211,11 @@ class TestCrossRepoCircuits(ReferenceComparisonMixin, unittest.TestCase):
         return f'{origin.gate}_{origin.port}_out'
 
     def test_circuits_match_across_repos(self):
-        for model_name, circuit_file in CROSS_REPO_CIRCUITS.items():
+        for model_name, (circuit_file, angles) in CROSS_REPO_CIRCUITS.items():
             with self.subTest(model=model_name, circuit=circuit_file):
-                mw, _ = run_multiworld(model_name, canonical_wire=self.emitting_wire)
-                ref = self.run_reference_circuit(circuit_file)
+                mw, _ = run_multiworld(model_name, canonical_wire=self.emitting_wire,
+                                       angle_override=angles)
+                ref = self.run_reference_circuit(circuit_file, angle_override=angles)
                 self.assert_states_match(mw, ref, model_name)
 
 

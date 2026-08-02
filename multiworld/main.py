@@ -296,6 +296,9 @@ def main():
             if config.sample and sim.n_samples > 0:
                 from multiworld.montecarlo import run_monte_carlo
                 run_monte_carlo(sim, sim.n_samples, mode=args.mc_mode, seed=args.mc_seed)
+                from multiworld.epr import run_epr_experiment, supports_epr
+                if supports_epr(sim):
+                    run_epr_experiment(sim, sim.n_samples, seed=args.mc_seed)
 
             print(f'log level was {save_ll}, setting to {logging.WARN}')
             log.setLevel(logging.WARN)

@@ -57,15 +57,32 @@ class TestEPRConventions(unittest.TestCase):
         self.assertAlmostEqual(predicted, 0.25, places=9)
         self.assertAlmostEqual(exact_discrepancy(sim, False), predicted, places=9)
 
+    def test_bell_chsh_sweep(self):
+        # Exact 3x3 sweep on fig417: every cell must match sin²(θ1−θ2),
+        # Bell's three-angle inequality is violated by 1/2 − 2·sin²(π/8),
+        # and CHSH reaches 1 + √2 on the magic set {0, π/8, π/4}.
+        import math
+        from multiworld.epr import run_epr_experiment
+        sim = run_sim('fig417')
+        results = run_epr_experiment(sim, n_trials=0)
+        for cell in results['grid'].values():
+            self.assertAlmostEqual(cell['exact'], cell['analytical'], places=9)
+        bell_excess, _ = results['bell_exact']
+        self.assertAlmostEqual(bell_excess, 0.5 - 2 * math.sin(math.pi / 8) ** 2,
+                               places=9)
+        chsh_s, _ = results['chsh_exact']
+        self.assertAlmostEqual(chsh_s, 1 + math.sqrt(2), places=9)
+
     def test_two_stage_position_outcome(self):
-        # fig417: Q5+Q6 = Q7+Q8 = pi/4, so the discrepancy is exactly 0 —
-        # perfect correlation, read as plain position.
+        # fig417's g5..g8 angles are placeholders for the sweep, so assert
+        # consistency rather than a fixed value: the exact discrepancy from
+        # the final worlds must match sin²((Q5+Q6)−(Q7+Q8)) for whatever
+        # the YAML currently says, with the plain-position outcome.
         from multiworld.epr import expected_discrepancy, is_two_stage
         sim = run_sim('fig417')
         self.assertTrue(is_two_stage(sim))
         predicted = float(expected_discrepancy(sim))
-        self.assertAlmostEqual(predicted, 0.0, places=9)
-        self.assertAlmostEqual(exact_discrepancy(sim, True), 0.0, places=9)
+        self.assertAlmostEqual(exact_discrepancy(sim, True), predicted, places=9)
 
 
 if __name__ == '__main__':
