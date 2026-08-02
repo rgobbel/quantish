@@ -21,7 +21,7 @@ from typing import Final, Iterable, Optional, Self, Union
 import multiworld.qnumber as qn
 from multiworld.qnumber import Complex, probability
 from multiworld.particle import PKey
-from multiworld.util import SEP, OTHER, Sign, wstr
+from multiworld.util import SEP, Sign, wstr
 
 log = logging.getLogger('multiworld')
 
@@ -41,16 +41,6 @@ class GatePort:
         return self.__repr__().__hash__()
 
 NOWHERE: Final[GatePort] = GatePort(None, None)
-FINISHED: Final[GatePort] = GatePort('FINISHED')
-
-def stage_step_encode(stage: int, step: int):
-    return stage * 10 + step
-
-def stage_step_step(group_step: int):
-    return group_step % 10
-
-def stage_step_stage(group_stage: int):
-    return group_stage // 10
 
 # positions are connections between gates
 @dataclass(slots=True)
@@ -72,11 +62,6 @@ class Position:
                 return f'{self.origin}_in>{self.endpoint}_out'
             else:
                 return f'{self.origin}_out>{self.endpoint}_in'
-
-ABSENT: Final[Position] = Position(None, None)
-LOST: Final[Position] = Position()
-LIMBO: Final[Position] = Position(NOWHERE, NOWHERE)
-
 
 # Configuration space has 2p dimensions, where p is the number of particles:
 # for each particle, a position and a sign. A PCoordinate is one particle's
@@ -107,10 +92,6 @@ class PCoordinate:
     @property
     def key(self):
         return f'{self.pkey}@{self.position}'
-
-    @property
-    def endkey(self):
-        return f'{self.pkey}@{self.position.endpoint}'
 
 
 class ConfigSpacePoint:

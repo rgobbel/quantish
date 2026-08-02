@@ -23,7 +23,6 @@ import multiworld.qnumber as qn
 from multiworld.qnumber import CalcMode, qify
 from multiworld.simulation import Simulation
 from multiworld.util import QLogger, max_width, flat_list, SEP, WIRES, enough, Sign, default_wires, zerop, show_points
-from multiworld.spacewalk import run_paths
 from multiworld.visualizations import diagram, network_graph
 
 log = None
@@ -262,8 +261,9 @@ def main():
             print(f'log level was {save_ll}, setting to {logging.WARN}')
             log.setLevel(logging.WARN)
             if args.network_graph:
+                if dpath is None:  # diagrams disabled; still need a stem for the graph PDF
+                    dpath = Path(args.diagram_dir, args.config).with_suffix('.mmd')
                 network_graph(all_points, dpath, sim)
-                # network_graph(result_space, dpath, sim)
 
     if 'no_diagram' not in args:
         if args.diagram_when in ('after', 'both'):

@@ -139,25 +139,13 @@ def make_gate_node(sim, gname, inout, wire, mermaid_nodes, show_outputs=True):
     graph_node_id = f'{position}{sep}{inout}'
     gcontent = f'{gate_fields[wire].label}'
     if inout == 'in':
-        parts = position.split(SEP)
-        gname, gwire = parts
-        if sim.gates[gname].inputs[gwire]:
-            pos_str = sim.pos_value_str(position, 'inputs')
-            # pos_str = str(sim.gates[gname].input[gwire])
-            cs = f'{pos_str}'
-            if len(cs) > 0:
-                make1(graph_node_id, f'{gcontent}:\n{cs}')
-            else:
-                make1(graph_node_id, f'{gcontent}')
-        elif show_outputs:
-            make1(graph_node_id, f'{gcontent}: None')
-        else:
-            make1(graph_node_id, f'{gcontent}')
+        make1(graph_node_id, f'{gcontent}')
     elif inout == 'out':
         out_pos = f'{gname}{SEP}{wire}'
         gname, gwire = out_pos.split(SEP)
-        gate = sim.gates[gname]
-        selected = gwire == gate.output_wire
+        # TODO(roadmap: Mermaid after-diagrams): mark the sampled/selected
+        # output once port values come from final-world marginals.
+        selected = False
         out_value_str = sim.pos_value_str(out_pos, 'weights')
         # pos_sink = sim.sinks.get(out_pos)
         if not show_outputs:
