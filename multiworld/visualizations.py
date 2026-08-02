@@ -99,6 +99,9 @@ def network_graph(result_space, diagram_path, sim, show=True):
     fig_w = min(2.0 + 2.2 * len(steps), 24)
     fig_h = min(1.5 + 0.85 * layer_max, 22)
     fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+    # Sparse graphs get big legible labels; dense ones stay compact.
+    label_fs = max(4.5, min(9.0, 36.0 / m.sqrt(layer_max)))
+    tick_fs = max(7.0, min(11.0, label_fs + 2))
 
     # Edges: parent -> child, one per recorded contribution.
     for p, (x, y) in pos.items():
@@ -130,23 +133,23 @@ def network_graph(result_space, diagram_path, sim, show=True):
         label = f'{wstr(p.weight, precision=2)}\n{short_config(p)}'
         ax.annotate(label, (x, y), xytext=(0, -(9 + 0.55 * m.sqrt(size))),
                     textcoords='offset points', ha='center', va='top',
-                    fontsize=4.5, zorder=4, family='monospace')
+                    fontsize=label_fs, zorder=4, family='monospace')
 
     # X axis: step number plus the gates that fired to produce that column.
     tick_labels = ['initial']
     for i in range(1, len(steps)):
         gates = sim.run_stages[i - 1] if i - 1 < len(sim.run_stages) else []
         tick_labels.append(f'step {steps[i]}\n{", ".join(gates)}')
-    ax.set_xticks([float(s) for s in steps], tick_labels, fontsize=6)
+    ax.set_xticks([float(s) for s in steps], tick_labels, fontsize=tick_fs)
     ax.set_yticks([])
     for spine in ('top', 'right', 'left'):
         ax.spines[spine].set_visible(False)
     ax.set_xlim(steps[0] - 0.6, steps[-1] + 0.6)
     ax.set_ylim(-(layer_max + 1) / 2.0, (layer_max + 1) / 2.0)
-    ax.set_title(f'{sim.title} — weight evolution', fontsize=10)
+    ax.set_title(f'{sim.title} — weight evolution', fontsize=max(11, tick_fs + 2))
     fig.text(0.01, 0.01,
              'node hue = phase, area = |w|²; edge width = |contributed amplitude|',
-             fontsize=6, color='0.4')
+             fontsize=max(7, tick_fs - 1), color='0.4')
 
     out_path = diagram_path.with_stem(diagram_path.stem + '_graph').with_suffix('.pdf')
     plt.savefig(out_path, orientation='landscape', bbox_inches='tight')

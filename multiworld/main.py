@@ -27,6 +27,20 @@ from multiworld.visualizations import diagram, network_graph
 
 log = None
 
+def mmdc_cmd():
+    """The mermaid-cli command, with our puppeteer config when present.
+
+    Homebrew's mermaid-cli pins an exact headless-Chrome version that
+    breaks on every upgrade; puppeteer-config.json points it at the
+    installed Google Chrome instead.
+    """
+    cmd = ['mmdc']
+    pconfig = Path(__file__).resolve().parents[1] / 'puppeteer-config.json'
+    if pconfig.exists():
+        cmd += ['-p', str(pconfig)]
+    return cmd
+
+
 def write_points_to_csv(name, particle_names, points:list):
     with open(f'{name}.csv', 'w') as out_csv:
         fieldnames = ['step']
@@ -174,11 +188,11 @@ def main():
                 if args.svg_diagram:
                     svg_path = Path(before_path).with_suffix('.svg')
                     log.info(f'Saving SVG version of diagram to {svg_path}')
-                    subprocess.run(['mmdc', '-i', before_path, '-o', svg_path])
+                    subprocess.run(mmdc_cmd() + ['-i', before_path, '-o', svg_path])
                 if args.pdf_diagram:
                     pdf_path = Path(before_path).with_suffix('.pdf')
                     log.info(f'Saving PDF version of diagram to {pdf_path}')
-                    subprocess.run(['mmdc', '-i', before_path, '-o', pdf_path, '--pdfFit'])
+                    subprocess.run(mmdc_cmd() + ['-i', before_path, '-o', pdf_path, '--pdfFit'])
         log.info(' ')
     if args.simulate:
         result_space, all_points = sim.run()
@@ -284,11 +298,11 @@ def main():
             if args.svg_diagram:
                 svg_path = Path(after_path).with_suffix('.svg')
                 log.info(f'Saving SVG version of diagram to {svg_path}')
-                subprocess.run(['mmdc', '-i', after_path, '-o', svg_path])
+                subprocess.run(mmdc_cmd() + ['-i', after_path, '-o', svg_path])
             if args.pdf_diagram:
                 pdf_path = Path(after_path).with_suffix('.pdf')
                 log.info(f'Saving PDF version of diagram to {pdf_path}')
-                subprocess.run(['mmdc', '-i', after_path, '-o', pdf_path, '--pdfFit'])
+                subprocess.run(mmdc_cmd() + ['-i', after_path, '-o', pdf_path, '--pdfFit'])
     log.setLevel(save_ll)
     print(f'setting log level back to {save_ll}')
 
