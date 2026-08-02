@@ -264,24 +264,30 @@ def main():
                 log.info('skipping numeric summaries (symbolic weights with free symbols)')
 
             if config.epr_stats:
+                from multiworld.epr import classify, expected_discrepancy, is_two_stage
                 log.info(' ')
-                log.info(f'predicted discrepancy rate is {(sim.gates['g5'].theta - sim.gates['g6'].theta).sin ** 2:.3f}')
+                two_stage = is_two_stage(sim)
+                predicted = expected_discrepancy(sim)
+                if predicted is not None:
+                    log.info(f'predicted discrepancy rate is {float(predicted):.4f} '
+                             f'(outcome = {"position" if two_stage else "position⊕sign"})')
                 probs = {'same': 0.0, 'diff': 0.0}
-                count_same = 0
-                count_diff = 0
+                counts = {'same': 0, 'diff': 0}
                 log.info(f'coupled:')
                 for point in nonzeros:
-                    p1c, p2c, p3c = list(point.coords.values())
-                    if p3c.position.origin is None or p3c.position.origin.port != 'upper':
+                    kind = classify(point, two_stage)
+                    if kind == 'uncoupled':
                         continue
-                    log.info(f'   {point}')
-                    if p1c.position.origin.port == p2c.position.origin.port:
-                        count_same += 1
-                        probs['same'] += float(point.probability)
-                    else:
-                        count_diff += 1
-                        probs['diff'] += float(point.probability)
-                log.info(f'{count_same=}, {count_diff=}, {probs["same"]=:.4f}, {1 - probs["same"]=:.4f}, {probs["diff"]=:.4f}, {1 - probs["diff"]=:.4f}, {abs(probs["same"] - probs["diff"])=:.4f}, {1 - (abs(probs["same"] - probs["diff"]))=:.4f}')
+                    log.info(f'   [{kind}] {point}')
+                    counts[kind] += 1
+                    probs[kind] += float(point.probability)
+                coupled = probs['same'] + probs['diff']
+                if coupled > 0:
+                    log.info(f"same: {counts['same']} world(s), p={probs['same']:.4f}; "
+                             f"diff: {counts['diff']} world(s), p={probs['diff']:.4f}; "
+                             f"observed discrepancy rate = {probs['diff'] / coupled:.4f}")
+                else:
+                    log.info('no coupled worlds')
 
                 # run_paths(sim.initial_point, final_points, sim.n_samples, sim)
 

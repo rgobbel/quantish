@@ -78,27 +78,18 @@ def sample_paths(initial_point, n_steps: int, n_trials: int,
     return tally, dead_ends
 
 
-def epr_tally(result_space, tally: Counter) -> dict:
-    """Same/diff counts for EPR-style models: among sampled worlds where the
-    third particle exited an 'upper' port, count trials where the first two
-    particles exited the same-named ports vs different ones."""
+def epr_tally(result_space, tally: Counter, two_stage: bool) -> dict:
+    """Same/diff counts for EPR-style models, using the outcome convention
+    from multiworld.epr (plain position after two measurement stages,
+    position⊕sign after one)."""
+    from multiworld.epr import classify
     by_key = {p.key: p for p in result_space.index.values()}
     counts = {'same': 0, 'diff': 0, 'uncoupled': 0}
     for key, n in tally.items():
         point = by_key.get(key)
         if point is None:
             continue
-        coords = list(point.coords.values())
-        if len(coords) < 3:
-            continue
-        p1c, p2c, p3c = coords[:3]
-        if p3c.position.origin is None or p3c.position.origin.port != 'upper':
-            counts['uncoupled'] += n
-            continue
-        if p1c.position.origin.port == p2c.position.origin.port:
-            counts['same'] += n
-        else:
-            counts['diff'] += n
+        counts[classify(point, two_stage)] += n
     return counts
 
 
@@ -124,10 +115,12 @@ def run_monte_carlo(sim, n_trials: int, mode: str = 'both', seed=None) -> dict:
     distribution, per-mode tallies, and (for epr_stats models) same/diff
     counts.
     """
+    from multiworld.epr import expected_discrepancy, is_two_stage
     if sim.result_space is None:
         sim.run()
     rng = random.Random(seed)
     predicted = predicted_distribution(sim.result_space)
+    two_stage = is_two_stage(sim)
     results = {'n_trials': n_trials, 'predicted': predicted, 'seed': seed}
     log.info(' ')
     log.info(f'MONTE CARLO: {n_trials} trials'
@@ -140,8 +133,8 @@ def run_monte_carlo(sim, n_trials: int, mode: str = 'both', seed=None) -> dict:
         log_tally('terminal sampling (one draw from the final superposition per trial)',
                   tally, predicted, n_trials)
         if sim.config.get('epr_stats'):
-            results['terminal_epr'] = epr_tally(sim.result_space, tally)
-            log_epr('terminal', results['terminal_epr'])
+            results['terminal_epr'] = epr_tally(sim.result_space, tally, two_stage)
+            log_epr('terminal', results['terminal_epr'], expected_discrepancy(sim))
 
     if mode in ('path', 'both'):
         n_steps = len(sim.run_stages)
@@ -153,18 +146,19 @@ def run_monte_carlo(sim, n_trials: int, mode: str = 'both', seed=None) -> dict:
         if dead_ends:
             log.info(f'   {dead_ends} trial(s) dead-ended in fully-cancelled worlds')
         if sim.config.get('epr_stats'):
-            results['path_epr'] = epr_tally(sim.result_space, tally)
-            log_epr('path', results['path_epr'])
+            results['path_epr'] = epr_tally(sim.result_space, tally, two_stage)
+            log_epr('path', results['path_epr'], expected_discrepancy(sim))
 
     return results
 
 
-def log_epr(label: str, counts: dict):
+def log_epr(label: str, counts: dict, predicted=None):
     coupled = counts['same'] + counts['diff']
     if coupled == 0:
         log.info(f'   EPR ({label}): no coupled trials')
         return
+    predstr = f', predicted={float(predicted):.4f}' if predicted is not None else ''
     log.info(f"   EPR ({label}): same={counts['same']}, diff={counts['diff']}, "
              f"uncoupled={counts['uncoupled']}, "
-             f"discrepancy rate={counts['diff'] / coupled:.4f}")
+             f"discrepancy rate={counts['diff'] / coupled:.4f}{predstr}")
     log.info(' ')
