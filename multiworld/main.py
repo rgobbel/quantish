@@ -90,6 +90,10 @@ def main():
     parser.add_argument('--numeric', action='store_true', default=SUPPRESS, help='Force numeric math')
     parser.add_argument('--sample', action='store_true', help='Run multiple trials and collect a histogram of results')
     parser.add_argument('--n-samples', type=int, default=1, help='Run this many sampling trials')
+    parser.add_argument('--mc-mode', choices=['terminal', 'path', 'both'], default='both',
+                        help='Monte Carlo sampling mode (with --sample): terminal draws from the '
+                             'final superposition, path walks one world-line per trial')
+    parser.add_argument('--mc-seed', type=int, default=None, help='Monte Carlo RNG seed')
     parser.add_argument('--epr-stats', action='store_true', help='Run statistics on EPR experiment model (book figure 4.16)')
     parser.add_argument('--measure-discrepancy', action='store_true',
                         help='Measure discrepancy for EPR experiment. Assumes a network consistent with book figure 4.16')
@@ -282,6 +286,10 @@ def main():
                 # run_paths(sim.initial_point, final_points, sim.n_samples, sim)
 
 
+
+            if config.sample and sim.n_samples > 0:
+                from multiworld.montecarlo import run_monte_carlo
+                run_monte_carlo(sim, sim.n_samples, mode=args.mc_mode, seed=args.mc_seed)
 
             print(f'log level was {save_ll}, setting to {logging.WARN}')
             log.setLevel(logging.WARN)
