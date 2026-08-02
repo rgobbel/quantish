@@ -110,13 +110,33 @@ def spec_from_simulation(sim, fig: str = None) -> DiagramSpec:
 
     # Particle links stay in `links` for routing; the renderer draws them
     # from the particle circle to the destination port.
-    # Columns come from diagram_groups: each group is one column, its gates
-    # stacked vertically (and boxed with the group name when there are
-    # several). Models without diagram_groups fall back to one auto-named
-    # group per topological stage via Simulation's default.
+    # Groups (from diagram_groups) mark gates with similar function; each
+    # group spans one or more columns. Independent gates in a group stack
+    # vertically in one column; a gate that depends on another gate of the
+    # same group goes in a later sub-column, side by side, so links never
+    # have to run backwards. The group box (drawn in emit_tex) spans
+    # whatever columns the group's gates occupy.
     stage_names = list(sim.diagram_groups.keys())
     stage_gates = [list(group) for group in sim.diagram_groups.values()]
-    engine_steps = [list(group) for group in stage_gates]
+    gate_deps = {}
+    for gname in list(gates) + delay_names:
+        if gname in sim.simplified_links:
+            gate_deps[gname] = {p for p in sim.simplified_links.predecessors(gname)
+                                if p in gates or p in delay_names}
+        else:
+            gate_deps[gname] = set()
+    engine_steps = []
+    fired = set()
+    for group in stage_gates:
+        remaining = list(group)
+        while remaining:
+            ready = [g for g in remaining if not (gate_deps.get(g, set()) - fired)]
+            if not ready:
+                # a gate depends on something in a *later* group; don't stall
+                ready = list(remaining)
+            engine_steps.append(ready)
+            fired.update(ready)
+            remaining = [g for g in remaining if g not in ready]
 
     return DiagramSpec(
         fig=fig or sim.title,
