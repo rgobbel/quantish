@@ -2,7 +2,7 @@ title: Quantish EPR Experiment
 
 symbolic: false
 
-loglevel: debug
+loglevel: info
 
 run_groups:
    prep: [g1, g2]
