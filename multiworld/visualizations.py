@@ -59,7 +59,19 @@ def short_config(point):
 
 
 def network_graph(result_space, diagram_path, sim, show=True):
-    """Weight-evolution trace of the simulation.
+    """Render the weight-evolution trace, save it as a PDF next to
+    diagram_path, and optionally show it on screen."""
+    from matplotlib import pyplot as plt
+    fig = network_graph_figure(result_space, sim)
+    out_path = diagram_path.with_stem(diagram_path.stem + '_graph').with_suffix('.pdf')
+    fig.savefig(out_path, orientation='landscape', bbox_inches='tight')
+    if show:
+        plt.show()
+    plt.close(fig)
+
+
+def network_graph_figure(result_space, sim):
+    """Weight-evolution trace of the simulation, as a matplotlib Figure.
 
     One column per step, one node per world. Node hue encodes the weight's
     phase, node area its probability |w|^2; each node is labeled with its
@@ -150,12 +162,7 @@ def network_graph(result_space, diagram_path, sim, show=True):
     fig.text(0.01, 0.01,
              'node hue = phase, area = |w|²; edge width = |contributed amplitude|',
              fontsize=max(7, tick_fs - 1), color='0.4')
-
-    out_path = diagram_path.with_stem(diagram_path.stem + '_graph').with_suffix('.pdf')
-    plt.savefig(out_path, orientation='landscape', bbox_inches='tight')
-    if show:
-        plt.show()
-    plt.close(fig)
+    return fig
 
 def make_gate_node(sim, gname, inout, wire, mermaid_nodes, show_outputs=True):
     sink_nodes = []
