@@ -28,6 +28,8 @@ class Simulation:
         self.run_stages = list(nx.topological_generations(self.simplified_links))[1:]
         self.run_order = flat_list(self.run_stages)
         self.run_stages = [[x] for x in self.run_order]
+        # the step whose worlds show a gate's just-produced outputs
+        self.gate_step = {g: i + 1 for i, stage in enumerate(self.run_stages) for g in stage}
         self.particles = Addict()
         self.fredkin_gates = Addict()
         self.delay_gates = Addict()
@@ -103,18 +105,24 @@ class Simulation:
 
     def pos_value_str(self, pos, val_type='results'):
         """Display string for a gate output port after a run: the marginal
-        probability of each (particle, sign) that came to rest having exited
-        through that port, summed over the final worlds. Returns None when
-        nothing exited there (or before a run)."""
-        if self.result_space is None:
+        probability of each (particle, sign) that exited through the port,
+        summed over the worlds at the step where the gate fired. Returns
+        None when nothing exited there (or before a run)."""
+        if self.all_points is None:
             return None
         parts = pos.split(SEP)
         if len(parts) != 2:
             return None
-        port = GatePort(parts[0], parts[1])
+        gname, gport = parts
+        step = self.gate_step.get(gname)
+        if step is None:
+            return None
+        port = GatePort(gname, gport)
         by_pkey = defaultdict(float)
         try:
-            for point in self.result_space.index.values():
+            for point in self.all_points.index.values():
+                if point.step != step:
+                    continue
                 for pname, coord in point.coords.items():
                     if coord.position.origin == port:
                         by_pkey[str(coord.pkey)] += float(point.probability)
