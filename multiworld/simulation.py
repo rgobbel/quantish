@@ -1,4 +1,5 @@
 import logging
+from collections import defaultdict
 from addict import Addict
 import networkx as nx
 from multiworld.particle import Particle
@@ -101,7 +102,25 @@ class Simulation:
         return result_space, all_points
 
     def pos_value_str(self, pos, val_type='results'):
-        # TODO(roadmap: Mermaid after-diagrams): recompute port values as
-        # marginal probabilities over the final worlds in result_space,
-        # instead of the per-gate particle state that no longer exists.
-        return None
+        """Display string for a gate output port after a run: the marginal
+        probability of each (particle, sign) that came to rest having exited
+        through that port, summed over the final worlds. Returns None when
+        nothing exited there (or before a run)."""
+        if self.result_space is None:
+            return None
+        parts = pos.split(SEP)
+        if len(parts) != 2:
+            return None
+        port = GatePort(parts[0], parts[1])
+        by_pkey = defaultdict(float)
+        try:
+            for point in self.result_space.index.values():
+                for pname, coord in point.coords.items():
+                    if coord.position.origin == port:
+                        by_pkey[str(coord.pkey)] += float(point.probability)
+        except (TypeError, ValueError):
+            return None  # symbolic weights with free symbols
+        if not by_pkey:
+            return None
+        return ', '.join(f'{pkey}: {prob:.{self.precision}f}'
+                         for pkey, prob in sorted(by_pkey.items()))

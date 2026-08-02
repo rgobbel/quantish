@@ -68,6 +68,9 @@ def main():
                         help='Create a PDF version of the config space plot')
     parser.add_argument('--diagram-when', choices=['before', 'after', 'both'], default='before',
                         help='When to create a diagram, before or after simulation')
+    parser.add_argument('--tikz-diagram', type=str, default=None,
+                        help='Render a TikZ circuit diagram to this file in the diagram dir '
+                             '(.pdf/.svg/.png chosen by extension, default .pdf). Requires pdflatex.')
     parser.add_argument('--csv-output', default=None, type=str, help='CSV output file, default is no CSV output')
     parser.add_argument('--symbolic', action='store_true', default=SUPPRESS, help='Force symbolic math')
     parser.add_argument('--numeric', action='store_true', default=SUPPRESS, help='Force numeric math')
@@ -150,6 +153,14 @@ def main():
     has_run = False
     save_ll = log.getEffectiveLevel()
     sim = Simulation(config)
+    if args.tikz_diagram:
+        from multiworld.circuit_diagram import render_from_simulation
+        tikz_path = Path(args.diagram_dir, args.tikz_diagram)
+        if not tikz_path.suffix:
+            tikz_path = tikz_path.with_suffix('.pdf')
+        log.info(f'Rendering TikZ circuit diagram to {tikz_path}')
+        if not render_from_simulation(sim, tikz_path):
+            log.warning(f'TikZ diagram render failed (see stderr)')
     if 'no_diagram' not in args:
         if args.diagram is None:
             dpath = Path(args.diagram_dir, args.config).with_suffix('.mmd')
