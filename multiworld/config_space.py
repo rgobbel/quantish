@@ -110,6 +110,10 @@ class ConfigSpacePoint:
         # amplitude contributed by each predecessor world; after merging,
         # weight == sum(contributions.values()) — the weight-evolution trace
         self.contributions: dict[Self, Complex] = {}
+        # the branch factor each particle took in the step that created this
+        # world (None = passed through untouched); display data for the
+        # per-particle bands of the weight-evolution graph
+        self.factors: dict[str, Optional[Complex]] = {}
 
     @property
     def key(self):
@@ -154,6 +158,9 @@ class ConfigSpace:
                 existing.contributions[pred] = existing.contributions[pred] + contrib
             else:
                 existing.contributions[pred] = contrib
+        for pname, factor in point.factors.items():
+            if existing.factors.get(pname) is None:
+                existing.factors[pname] = factor
         for pred in point.predecessors:
             pred.successors.discard(point)
             pred.successors.add(existing)
@@ -251,6 +258,7 @@ class ConfigSpaceRunner:
                     successor = ConfigSpacePoint(step + 1, [coord for coord, _ in combo],
                                                  weight, predecessors={world})
                     successor.contributions = {world: successor.weight}
+                    successor.factors = {coord.name: factor for coord, factor in combo}
                     merged = Q_next.add_point(successor)
                     world.successors.add(merged)
                     successor_count += 1

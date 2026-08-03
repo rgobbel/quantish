@@ -255,14 +255,17 @@ def _(mo, network_graph_figure, sim):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md("""
-    ## Monte Carlo
+    ## Monte Carlo sampling
+    The **exact** simulation above runs automatically whenever the model or
+    an angle slider changes — no button needed. Sampling below is the
+    optional Monte Carlo experiment on top of that exact run.
     """)
     return
 
 
 @app.cell(hide_code=True)
 def _(mo):
-    mc_trials = mo.ui.slider(1000, 100000, step=1000, value=20000,
+    mc_trials = mo.ui.slider(100, 100000, step=100, value=20000,
                              label='trials', show_value=True)
     mc_mode = mo.ui.dropdown(options=['terminal', 'path', 'both'],
                              value='both', label='mode')

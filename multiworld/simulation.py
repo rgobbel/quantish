@@ -26,7 +26,7 @@ class Simulation:
         self.simplified_links = simplify_graph(self.links)
         self.graph_roots = [node for node, degree in self.simplified_links.in_degree() if degree == 0]
         self.topo_stages = list(nx.topological_generations(self.simplified_links))[1:]
-        self.run_order = flat_list(self.topo_stages)
+        self.run_order = self.grouped_run_order(config.get('diagram_groups'))
         self.run_stages = [[x] for x in self.run_order]
         # the step whose worlds show a gate's just-produced outputs
         self.gate_step = {g: i + 1 for i, stage in enumerate(self.run_stages) for g in stage}
@@ -56,6 +56,34 @@ class Simulation:
         linkages = [f'{str(n)} -> {", ".join(list(self.simplified_links.successors(n))) or "NULL"}'
                     for n in nx.topological_sort(self.simplified_links)]
         log_seq('downstream links', linkages, logging.DEBUG)
+
+    def grouped_run_order(self, groups):
+        """Execution order for the gates. Topological order by default; when
+        the model declares diagram_groups, gates run group by group (with
+        dependency ordering inside each group) so that step numbers — and
+        everything keyed on them, like the weight-evolution graph's stage
+        boxes — line up with the declared stages. Results are identical
+        either way; only the step labeling changes."""
+        topo_order = flat_list(self.topo_stages)
+        if not groups:
+            return topo_order
+        gate_set = set(topo_order)
+        deps = {g: {p for p in self.simplified_links.predecessors(g) if p in gate_set}
+                for g in topo_order}
+        order = []
+        fired = set()
+        for group in groups.values():
+            remaining = [g for g in group if g in gate_set]
+            while remaining:
+                ready = [g for g in remaining if not (deps.get(g, set()) - fired)]
+                if not ready:
+                    # group order conflicts with the topology; don't stall
+                    ready = list(remaining)
+                order += ready
+                fired |= set(ready)
+                remaining = [g for g in remaining if g not in ready]
+        order += [g for g in topo_order if g not in fired]
+        return order
 
     def load_elements(self, config):
         links = config.links
@@ -92,6 +120,9 @@ class Simulation:
         # the initial world's weight is the product of the configured particle weights
         initial_weight = qn.prod([p.weight for p in self.particles.values()])
         self.initial_point = ConfigSpacePoint(0, list(self.initial_coords.values()), initial_weight)
+        # display data: the initial "factor" of each particle is its
+        # configured weight (see the weight-evolution graph's band glyphs)
+        self.initial_point.factors = {p.name: p.weight for p in self.particles.values()}
         log_seq('particles', particles, logging.DEBUG)
         log_seq('gates', gates, logging.DEBUG)
 

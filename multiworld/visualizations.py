@@ -80,7 +80,6 @@ def network_graph_figure(result_space, sim):
     shows one incoming edge per interfering contribution, and its weight is
     the sum of them.
     """
-    import cmath
     logging.getLogger('multiworld').setLevel(logging.WARN)
     from matplotlib import pyplot as plt
     from matplotlib import colormaps
@@ -129,38 +128,85 @@ def network_graph_figure(result_space, sim):
                     lw=0.4 + 2.6 * mag, alpha=0.75, zorder=1,
                     solid_capstyle='round')
 
-    # Nodes: hue = phase, marker area = probability. Markers are sized in
-    # screen points so they stay circular whatever the data aspect is.
-    hsv = colormaps['hsv']
+    # Nodes: one horizontal band per particle — hue identifies the particle,
+    # brightness the branch factor it took in the step that created this
+    # world (|factor| -> light = strong, dark = weak); black = the particle
+    # passed through untouched that step.
+    from matplotlib.patches import Rectangle
+    band_cmaps = [colormaps[name] for name in ('Reds', 'Greens', 'Blues',
+                                               'Purples', 'Oranges', 'Greys')]
+    n_particles = max(len(p.coords) for p in pos)
+    band_h = 0.36 / max(1, n_particles)
+    node_w = 0.20
+    node_h = band_h * n_particles
     for p, (x, y) in pos.items():
-        try:
-            w = complex(p.weight)
-            prob = abs(w) ** 2
-            hue = (cmath.phase(w) / (2 * m.pi)) % 1.0
-        except (TypeError, ValueError):
-            prob, hue = 0.25, 0.0
-        size = 50 + 850 * prob
-        ax.scatter([x], [y], s=size, facecolor=hsv(hue),
-                   edgecolor='black', linewidth=0.6, zorder=3)
+        for i, pname in enumerate(sorted(p.coords.keys())):
+            factor = p.factors.get(pname)
+            if factor is None:
+                color = 'black'
+            else:
+                try:
+                    v = min(1.0, abs(complex(factor)))
+                except (TypeError, ValueError):
+                    v = 0.5
+                color = band_cmaps[i % len(band_cmaps)](0.2 + 0.7 * (1.0 - v))
+            ax.add_patch(Rectangle((x - node_w / 2, y + node_h / 2 - (i + 1) * band_h),
+                                   node_w, band_h, facecolor=color,
+                                   edgecolor='black', linewidth=0.3, zorder=3))
         label = f'{wstr(p.weight, precision=2)}\n{short_config(p)}'
-        ax.annotate(label, (x, y), xytext=(0, -(9 + 0.55 * m.sqrt(size))),
+        ax.annotate(label, (x, y - node_h / 2), xytext=(0, -4),
                     textcoords='offset points', ha='center', va='top',
                     fontsize=label_fs, zorder=4, family='monospace')
 
-    # X axis: step number plus the gates that fired to produce that column.
-    tick_labels = ['initial']
+    # Boxes marking gate boundaries: one per step column (labeled with the
+    # gate that fired), plus a dashed outer box per multi-gate diagram group.
+    from matplotlib.patches import FancyBboxPatch
+    label_space = 0.75  # room for the two text lines under each node
+    col_extent = {}
+    for p, (x, y) in pos.items():
+        y_lo, y_hi = col_extent.get(p.step, (y, y))
+        col_extent[p.step] = (min(y_lo, y), max(y_hi, y))
+    box_y = {}
+    for step, (y_lo, y_hi) in col_extent.items():
+        box_y[step] = (y_lo - node_h / 2 - label_space, y_hi + node_h / 2 + 0.2)
     for i in range(1, len(steps)):
+        step = steps[i]
         gates = sim.run_stages[i - 1] if i - 1 < len(sim.run_stages) else []
-        tick_labels.append(f'step {steps[i]}\n{", ".join(gates)}')
+        y_lo, y_hi = box_y[step]
+        ax.add_patch(FancyBboxPatch((step - 0.38, y_lo), 0.76, y_hi - y_lo,
+                                    boxstyle='round,pad=0.02',
+                                    facecolor='0.97', edgecolor='0.75',
+                                    linewidth=0.8, zorder=0.5))
+        ax.annotate(', '.join(gates), (step, y_hi), xytext=(0, -3),
+                    textcoords='offset points', ha='center', va='top',
+                    fontsize=tick_fs, color='0.35', zorder=4)
+    # dashed stage boxes for diagram groups spanning several gates
+    for group_name, group in sim.diagram_groups.items():
+        cols = sorted(sim.gate_step[g] for g in group if g in sim.gate_step)
+        if len(cols) < 2:
+            continue
+        y_lo = min(box_y[c][0] for c in cols if c in box_y) - 0.12
+        y_hi = max(box_y[c][1] for c in cols if c in box_y) + 0.35
+        ax.add_patch(FancyBboxPatch((cols[0] - 0.45, y_lo),
+                                    cols[-1] - cols[0] + 0.9, y_hi - y_lo,
+                                    boxstyle='round,pad=0.02', fill=False,
+                                    edgecolor='0.6', linewidth=0.9,
+                                    linestyle='--', zorder=0.4))
+        ax.annotate(group_name, ((cols[0] + cols[-1]) / 2, y_hi), xytext=(0, 3),
+                    textcoords='offset points', ha='center', va='bottom',
+                    fontsize=tick_fs, color='0.45', style='italic', zorder=4)
+
+    tick_labels = ['initial'] + [f'step {s}' for s in steps[1:]]
     ax.set_xticks([float(s) for s in steps], tick_labels, fontsize=tick_fs)
     ax.set_yticks([])
     for spine in ('top', 'right', 'left'):
         ax.spines[spine].set_visible(False)
     ax.set_xlim(steps[0] - 0.6, steps[-1] + 0.6)
-    ax.set_ylim(-(layer_max + 1) / 2.0, (layer_max + 1) / 2.0)
+    ax.set_ylim(-(layer_max + 1) / 2.0 - 1.0, (layer_max + 1) / 2.0 + 0.7)
     ax.set_title(f'{sim.title} — weight evolution', fontsize=max(11, tick_fs + 2))
     fig.text(0.01, 0.01,
-             'node hue = phase, area = |w|²; edge width = |contributed amplitude|',
+             'bands: hue = particle, light↔dark = strong↔weak step factor, '
+             'black = untouched; edge width = |contributed amplitude|',
              fontsize=max(7, tick_fs - 1), color='0.4')
     return fig
 
