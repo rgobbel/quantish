@@ -136,21 +136,42 @@ def _(Addict, MODELS_DIR, Simulation, mo, model_pick, yaml):
              'expr': str(base_config.gates[_g].angle)}
         for _g, _gate in _base_sim.fredkin_gates.items()
     })
-    return (angles_get, angles_set, base_config, gate_names, load_config,
-            mode_pick, units_pick)
+    return (
+        angles_get,
+        angles_set,
+        base_config,
+        gate_names,
+        load_config,
+        mode_pick,
+        units_pick,
+    )
 
 
 @app.cell(hide_code=True)
-def _(angles_get, angles_set, base_config, gate_names, math, mo, mode_pick,
-      qn, units_pick):
-    def _update(_g, _entry):
-        angles_set({**angles_get(), _g: _entry})
-
+def _(angles_get, angles_set, gate_names, mo):
+    # Sliders live in their OWN cell (and the text entries in theirs):
+    # marimo never re-runs the cell that invoked a state setter, so tied
+    # elements must be defined in separate cells — a text edit re-runs
+    # this cell (rebuilding the sliders), a slider move re-runs the text
+    # cell. Registration through mo.ui.dictionary globals keeps on_change
+    # events flowing.
     def _slider_cb(_g):
         def _cb(_v):
-            _update(_g, {'deg': float(_v), 'expr': None})
+            angles_set({**angles_get(), _g: {'deg': float(_v), 'expr': None}})
         return _cb
 
+    angle_slider_elems = mo.ui.dictionary({
+        _g: mo.ui.slider(
+            -180, 180, step=0.5,
+            value=max(-180.0, min(180.0, round(angles_get()[_g]['deg'] * 2) / 2)),
+            label=f'**{_g}**', show_value=True, full_width=True,
+            on_change=_slider_cb(_g))
+        for _g in gate_names})
+    return (angle_slider_elems,)
+
+
+@app.cell(hide_code=True)
+def _(angles_get, angles_set, gate_names, math, mo, mode_pick, qn, units_pick):
     def _text_cb(_g):
         def _cb(_raw):
             _txt = (_raw or '').strip().rstrip('º°').strip()
@@ -159,13 +180,14 @@ def _(angles_get, angles_set, base_config, gate_names, math, mo, mode_pick,
             try:
                 _num = float(_txt)
                 _deg = _num if units_pick.value == 'degrees' else math.degrees(_num)
-                _update(_g, {'deg': _deg, 'expr': None})
+                angles_set({**angles_get(), _g: {'deg': _deg, 'expr': None}})
                 return
             except ValueError:
                 pass
             try:
                 _rad = float(qn.qify(_txt))  # symbolic expression, radians
-                _update(_g, {'deg': math.degrees(_rad), 'expr': _txt})
+                angles_set({**angles_get(),
+                            _g: {'deg': math.degrees(_rad), 'expr': _txt}})
             except Exception:  # noqa: BLE001 — unparseable: keep previous value
                 pass
         return _cb
@@ -177,19 +199,15 @@ def _(angles_get, angles_set, base_config, gate_names, math, mo, mode_pick,
             return _cur['expr']
         return f"{_cur['deg']:.1f}º"
 
-    # NB: the widgets must be registered through globals (mo.ui.dictionary)
-    # — marimo drops on_change events from anonymous elements that only
-    # live inside a layout container.
-    angle_slider_elems = mo.ui.dictionary({
-        _g: mo.ui.slider(
-            -180, 180, step=0.5,
-            value=max(-180.0, min(180.0, round(angles_get()[_g]['deg'] * 2) / 2)),
-            label=f'**{_g}**', show_value=True, full_width=True,
-            on_change=_slider_cb(_g))
-        for _g in gate_names})
     angle_text_elems = mo.ui.dictionary({
         _g: mo.ui.text(value=_shown(angles_get()[_g]), on_change=_text_cb(_g))
         for _g in gate_names})
+    return (angle_text_elems,)
+
+
+@app.cell(hide_code=True)
+def _(angle_slider_elems, angle_text_elems, base_config, gate_names, mo,
+      mode_pick, units_pick):
     _rows = [mo.hstack([angle_slider_elems[_g], angle_text_elems[_g]],
                        widths=[5, 1], align='center')
              for _g in gate_names]
@@ -201,7 +219,7 @@ def _(angles_get, angles_set, base_config, gate_names, math, mo, mode_pick,
         mo.hstack([mode_pick, units_pick], wrap=True, justify='start', gap=2),
         mo.vstack(_rows),
     ])
-    return angle_slider_elems, angle_text_elems
+    return
 
 
 @app.cell(hide_code=True)
@@ -348,7 +366,7 @@ def _(md_table, mo, sim):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo, sim):
     # Depends on sim, so it refreshes on every Run (runs are now explicit,
     # so the pdflatex cost is paid once per Run, not per slider move).

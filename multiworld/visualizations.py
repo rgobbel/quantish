@@ -130,22 +130,26 @@ def network_graph_figure(result_space, sim):
                 and pname in parent.coords
                 and parent.coords[pname].key != w.coords[pname].key)
 
-    # Vertical order within a column: by the acted-on particle's outcome —
-    # upper+ first, then upper−, lower+, lower−, then control pass-throughs.
-    port_rank = {'upper': 0, 'lower': 1, 'control': 2}
+    # Vertical order within a column: per acted-on particle, by gate, then
+    # port in the book's order (control, upper, lower), then sign (+ first).
+    port_rank = {'control': 0, 'upper': 1, 'lower': 2}
 
-    def sort_key(w):
+    def world_ranks(w):
         ranks = []
         if w.step != steps[0]:
             for pname in sorted(w.coords.keys()):
                 coord = w.coords[pname]
-                if w.factors.get(pname) is not None:
-                    port = coord.position.origin.port if coord.position.origin else None
-                    ranks.append((port_rank.get(port, 3),
-                                  0 if int(coord.sign) >= 0 else 1))
-                elif _moved(w, pname):
-                    ranks.append((2, 0 if int(coord.sign) >= 0 else 1))
-        return (tuple(ranks), w.key)
+                acted = w.factors.get(pname) is not None or _moved(w, pname)
+                if not acted:
+                    continue
+                origin = coord.position.origin
+                ranks.append((origin.gate if origin else '',
+                              port_rank.get(origin.port if origin else None, 3),
+                              0 if int(coord.sign) >= 0 else 1))
+        return ranks
+
+    def sort_key(w):
+        return (tuple(world_ranks(w)), w.key)
 
     pos = {}
     for step in steps:
@@ -202,10 +206,8 @@ def network_graph_figure(result_space, sim):
             out_v = display_val.get((id(p), pname), 1.0)
             in_v = (display_val.get((id(parent), pname), out_v)
                     if parent is not None else out_v)
-            split_here = p.step != steps[0] and p.factors.get(pname) is not None
-            control_here = (p.step != steps[0]
-                            and p.factors.get(pname) is None
-                            and _moved(p, pname))
+            acted = (p.step != steps[0]
+                     and (p.factors.get(pname) is not None or _moved(p, pname)))
             y0 = y + node_h / 2 - (i + 1) * band_h
             ax.add_patch(Rectangle((x - node_w / 2, y0), node_w / 2, band_h,
                                    facecolor=shade(cmap, in_v),
@@ -213,15 +215,10 @@ def network_graph_figure(result_space, sim):
             ax.add_patch(Rectangle((x, y0), node_w / 2, band_h,
                                    facecolor=shade(cmap, out_v),
                                    edgecolor='none', zorder=3))
-            if split_here:
-                _edge, _lw, _ls = 'black', 1.0, '-'
-            elif control_here:
-                _edge, _lw, _ls = 'black', 1.0, (0, (2, 1.2))
-            else:
-                _edge, _lw, _ls = '0.55', 0.35, '-'
             ax.add_patch(Rectangle((x - node_w / 2, y0), node_w, band_h,
-                                   fill=False, edgecolor=_edge,
-                                   linewidth=_lw, linestyle=_ls,
+                                   fill=False,
+                                   edgecolor='black' if acted else '0.55',
+                                   linewidth=1.0 if acted else 0.35,
                                    zorder=3.5))
 
     # Boxes marking gate boundaries: one per step column (labeled with the
@@ -239,27 +236,32 @@ def network_graph_figure(result_space, sim):
         # extra headroom at the top of each column for the gate label
         box_y[step] = (y_lo - node_h / 2 - label_space, y_hi + node_h / 2 + 0.55)
 
-    # experimental upper/lower/control cluster boxes
-    _cluster_names = {0: 'upper', 1: 'lower', 2: 'control'}
+    # experimental cluster boxes: group each column's worlds by the first
+    # (gate, port) coordinate that differs between them
+    _port_names = {0: 'control', 1: 'upper', 2: 'lower'}
     for step in steps[1:]:
+        ranked = [(w, world_ranks(w)) for w in layers[step]]
+        ranked = [(w, r) for w, r in ranked if r]
+        if len(ranked) < 2:
+            continue
+        _depth = min(len(r) for _, r in ranked)
+        _vary = next((idx for idx in range(_depth)
+                      if len({r[idx][:2] for _, r in ranked}) > 1), None)
+        if _vary is None:
+            continue
         clusters = {}
-        for w in layers[step]:
-            ranks = sort_key(w)[0]
-            if not ranks:
-                continue
-            port_group = ranks[0][0]
-            if port_group not in _cluster_names:
-                continue
-            ys = clusters.setdefault(port_group, [])
-            ys.append(pos[w][1])
-        for port_group, ys in clusters.items():
+        for w, r in ranked:
+            clusters.setdefault(r[_vary][:2], []).append(pos[w][1])
+        if len(clusters) < 2:
+            continue
+        for (_gate, _prank), ys in clusters.items():
             ax.add_patch(Rectangle((step - node_w / 2 - 0.05,
                                     min(ys) - node_h / 2 - 0.05),
                                    node_w + 0.10,
                                    max(ys) - min(ys) + node_h + 0.10,
                                    fill=False, edgecolor='0.65',
                                    linewidth=0.6, linestyle=':', zorder=2.5))
-            ax.annotate(_cluster_names[port_group],
+            ax.annotate(f'{_gate} {_port_names.get(_prank, "?")}',
                         (step - node_w / 2 - 0.08, (min(ys) + max(ys)) / 2),
                         ha='right', va='center', fontsize=max(5, tick_fs - 3),
                         color='0.5', rotation=90, zorder=2.6)
@@ -290,7 +292,7 @@ def network_graph_figure(result_space, sim):
                     textcoords='offset points', ha='center', va='bottom',
                     fontsize=tick_fs, color='0.45', style='italic', zorder=4)
 
-    tick_labels = ['initial'] + [f'step {s}' for s in steps[1:]]
+    tick_labels = ['initial'] + [f'stage {s}' for s in steps[1:]]
     ax.set_xticks([float(s) for s in steps], tick_labels, fontsize=tick_fs)
     ax.set_yticks([])
     for spine in ('top', 'right', 'left'):
@@ -300,9 +302,8 @@ def network_graph_figure(result_space, sim):
     ax.set_title(f'{sim.title} — weight evolution', fontsize=max(11, tick_fs + 2))
     fig.text(0.01, 0.01,
              'bands: hue = particle; halves: left = in, right = out, '
-             'light↔dark = strong↔weak amplitude; solid outline = switch '
-             'split, dashed outline = control move; '
-             'edge width = |contributed amplitude|',
+             'light↔dark = strong↔weak amplitude; heavy outline = particle '
+             'acted on this stage; edge width = |contributed amplitude|',
              fontsize=max(7, tick_fs - 1), color='0.4')
     return fig
 

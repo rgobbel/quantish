@@ -26,8 +26,8 @@ class Simulation:
         self.simplified_links = simplify_graph(self.links)
         self.graph_roots = [node for node, degree in self.simplified_links.in_degree() if degree == 0]
         self.topo_stages = list(nx.topological_generations(self.simplified_links))[1:]
-        self.run_order = self.grouped_run_order(config.get('diagram_groups'))
-        self.run_stages = [[x] for x in self.run_order]
+        self.run_stages = self.grouped_run_stages(config.get('diagram_groups'))
+        self.run_order = flat_list(self.run_stages)
         # the step whose worlds show a gate's just-produced outputs
         self.gate_step = {g: i + 1 for i, stage in enumerate(self.run_stages) for g in stage}
         self.particles = Addict()
@@ -57,20 +57,23 @@ class Simulation:
                     for n in nx.topological_sort(self.simplified_links)]
         log_seq('downstream links', linkages, logging.DEBUG)
 
-    def grouped_run_order(self, groups):
-        """Execution order for the gates. Topological order by default; when
-        the model declares diagram_groups, gates run group by group (with
-        dependency ordering inside each group) so that step numbers — and
-        everything keyed on them, like the weight-evolution graph's stage
-        boxes — line up with the declared stages. Results are identical
-        either way; only the step labeling changes."""
-        topo_order = flat_list(self.topo_stages)
+    def grouped_run_stages(self, groups):
+        """Execution stages: gates in one stage fire logically
+        simultaneously (the engine treats them so, as does the reference
+        implementation). Without diagram_groups the stages are the
+        topological generations of the link graph; with them, each group
+        contributes one stage per dependency layer inside it (fig 4.17's
+        'couple' group becomes the stages [g3], [g4]). Everything keyed on
+        step numbers — the weight-evolution graph, port marginals, path
+        sampling — is therefore stage-based, matching the book's figures
+        rather than any serialized implementation order."""
         if not groups:
-            return topo_order
+            return [list(stage) for stage in self.topo_stages]
+        topo_order = flat_list(self.topo_stages)
         gate_set = set(topo_order)
         deps = {g: {p for p in self.simplified_links.predecessors(g) if p in gate_set}
                 for g in topo_order}
-        order = []
+        stages = []
         fired = set()
         for group in groups.values():
             remaining = [g for g in group if g in gate_set]
@@ -79,11 +82,15 @@ class Simulation:
                 if not ready:
                     # group order conflicts with the topology; don't stall
                     ready = list(remaining)
-                order += ready
+                stages.append(ready)
                 fired |= set(ready)
                 remaining = [g for g in remaining if g not in ready]
-        order += [g for g in topo_order if g not in fired]
-        return order
+        for stage in self.topo_stages:
+            leftover = [g for g in stage if g not in fired]
+            if leftover:
+                stages.append(leftover)
+                fired |= set(leftover)
+        return stages
 
     def load_elements(self, config):
         links = config.links

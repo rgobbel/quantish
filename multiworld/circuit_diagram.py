@@ -118,25 +118,10 @@ def spec_from_simulation(sim, fig: str = None) -> DiagramSpec:
     # whatever columns the group's gates occupy.
     stage_names = list(sim.diagram_groups.keys())
     stage_gates = [list(group) for group in sim.diagram_groups.values()]
-    gate_deps = {}
-    for gname in list(gates) + delay_names:
-        if gname in sim.simplified_links:
-            gate_deps[gname] = {p for p in sim.simplified_links.predecessors(gname)
-                                if p in gates or p in delay_names}
-        else:
-            gate_deps[gname] = set()
-    engine_steps = []
-    fired = set()
-    for group in stage_gates:
-        remaining = list(group)
-        while remaining:
-            ready = [g for g in remaining if not (gate_deps.get(g, set()) - fired)]
-            if not ready:
-                # a gate depends on something in a *later* group; don't stall
-                ready = list(remaining)
-            engine_steps.append(ready)
-            fired.update(ready)
-            remaining = [g for g in remaining if g not in ready]
+    # Columns come straight from the Simulation's stage schedule, which is
+    # the same per-group dependency layering — one source of truth for
+    # "which gates are simultaneous".
+    engine_steps = [list(stage) for stage in sim.run_stages]
 
     return DiagramSpec(
         fig=fig or sim.title,
