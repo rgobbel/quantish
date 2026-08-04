@@ -73,12 +73,13 @@ def network_graph(result_space, diagram_path, sim, show=True):
 def network_graph_figure(result_space, sim):
     """Weight-evolution trace of the simulation, as a matplotlib Figure.
 
-    One column per step, one node per world. Node hue encodes the weight's
-    phase, node area its probability |w|^2; each node is labeled with its
-    weight and compact coordinates. Edge width tracks the magnitude of the
-    amplitude the parent world contributed to the child — a merged world
-    shows one incoming edge per interfering contribution, and its weight is
-    the sum of them.
+    One column per step, one node per world. A node is a stack of bands,
+    one per particle: hue identifies the particle; each band is split into
+    a left (input) and right (output) half whose brightness encodes the
+    particle's cumulative amplitude factor before and after the step
+    (light = strong, dark = weak). Bands acted on this step get a heavy
+    outline. Edge width tracks the amplitude each parent world contributed
+    — a merged world shows one incoming edge per interfering contribution.
     """
     logging.getLogger('multiworld').setLevel(logging.WARN)
     from matplotlib import pyplot as plt
@@ -91,28 +92,66 @@ def network_graph_figure(result_space, sim):
     steps = sorted(layers.keys())
     layer_max = max(len(v) for v in layers.values())
 
-    # Stable vertical order: first layer by key; later layers by the mean y
-    # of their contributing parents (barycenter), which keeps edges short.
+    def primary_parent(w):
+        best, best_mag = None, -1.0
+        for parent, contrib in w.contributions.items():
+            try:
+                mag = abs(complex(contrib))
+            except (TypeError, ValueError):
+                mag = 0.0
+            if mag > best_mag:
+                best, best_mag = parent, mag
+        return best
+
+    # Cumulative per-particle display amplitude: the product of the branch
+    # factors the particle has taken along its (primary-parent) lineage.
+    # This is what the band brightness shows — the particle's share of the
+    # world's weight, not just the latest step's factor.
+    display_val = {}
+    for step in steps:
+        for w in layers[step]:
+            parent = primary_parent(w)
+            for pname in w.coords:
+                factor = w.factors.get(pname)
+                if parent is None:  # initial world: factors are the weights
+                    value = factor if factor is not None else 1.0
+                else:
+                    value = display_val.get((id(parent), pname), 1.0)
+                    if factor is not None:
+                        try:
+                            value = complex(value) * complex(factor)
+                        except (TypeError, ValueError):
+                            pass
+                display_val[(id(w), pname)] = value
+
+    # Vertical order within a column: by the acted-on particle's outcome —
+    # upper+ first, then upper−, lower+, lower−.
+    port_rank = {'upper': 0, 'lower': 1, 'control': 2}
+
+    def sort_key(w):
+        ranks = []
+        if w.step != steps[0]:
+            for pname in sorted(w.factors.keys()):
+                if w.factors[pname] is None:
+                    continue
+                coord = w.coords[pname]
+                port = coord.position.origin.port if coord.position.origin else None
+                ranks.append((port_rank.get(port, 3),
+                              0 if int(coord.sign) >= 0 else 1))
+        return (tuple(ranks), w.key)
+
     pos = {}
     for step in steps:
         layer = layers[step]
-        def barycenter(p):
-            ys = [pos[q][1] for q in p.contributions.keys() if q in pos]
-            return sum(ys) / len(ys) if ys else 0.0
-        if step == steps[0]:
-            layer.sort(key=lambda p: p.key)
-        else:
-            layer.sort(key=lambda p: (-barycenter(p), p.key))
+        layer.sort(key=sort_key)
         n = len(layer)
         for i, p in enumerate(layer):
             pos[p] = (float(p.step), (n - 1) / 2.0 - i)
 
     fig_w = min(2.0 + 2.2 * len(steps), 24)
-    fig_h = min(1.5 + 0.85 * layer_max, 22)
+    fig_h = min(1.2 + 0.72 * layer_max, 22)
     fig, ax = plt.subplots(figsize=(fig_w, fig_h))
-    # Sparse graphs get big legible labels; dense ones stay compact.
-    label_fs = max(4.5, min(9.0, 36.0 / m.sqrt(layer_max)))
-    tick_fs = max(7.0, min(11.0, label_fs + 2))
+    tick_fs = max(7.0, min(11.0, 38.0 / m.sqrt(layer_max)))
 
     # Edges: parent -> child, one per recorded contribution.
     for p, (x, y) in pos.items():
@@ -128,47 +167,82 @@ def network_graph_figure(result_space, sim):
                     lw=0.4 + 2.6 * mag, alpha=0.75, zorder=1,
                     solid_capstyle='round')
 
-    # Nodes: one horizontal band per particle — hue identifies the particle,
-    # brightness the branch factor it took in the step that created this
-    # world (|factor| -> light = strong, dark = weak); black = the particle
-    # passed through untouched that step.
+    # Nodes: per-particle bands, each split into input (left) and output
+    # (right) halves.
     from matplotlib.patches import Rectangle
     band_cmaps = [colormaps[name] for name in ('Reds', 'Greens', 'Blues',
                                                'Purples', 'Oranges', 'Greys')]
     n_particles = max(len(p.coords) for p in pos)
-    band_h = 0.36 / max(1, n_particles)
-    node_w = 0.20
+    band_h = 0.5 / max(1, n_particles)
+    node_w = 0.26
     node_h = band_h * n_particles
+
+    def shade(cmap, value):
+        try:
+            v = min(1.0, abs(complex(value)))
+        except (TypeError, ValueError):
+            v = 0.5
+        return cmap(0.2 + 0.7 * (1.0 - v))
+
     for p, (x, y) in pos.items():
+        parent = primary_parent(p)
         for i, pname in enumerate(sorted(p.coords.keys())):
-            factor = p.factors.get(pname)
-            if factor is None:
-                color = 'black'
-            else:
-                try:
-                    v = min(1.0, abs(complex(factor)))
-                except (TypeError, ValueError):
-                    v = 0.5
-                color = band_cmaps[i % len(band_cmaps)](0.2 + 0.7 * (1.0 - v))
-            ax.add_patch(Rectangle((x - node_w / 2, y + node_h / 2 - (i + 1) * band_h),
-                                   node_w, band_h, facecolor=color,
-                                   edgecolor='black', linewidth=0.3, zorder=3))
-        label = f'{wstr(p.weight, precision=2)}\n{short_config(p)}'
-        ax.annotate(label, (x, y - node_h / 2), xytext=(0, -4),
-                    textcoords='offset points', ha='center', va='top',
-                    fontsize=label_fs, zorder=4, family='monospace')
+            cmap = band_cmaps[i % len(band_cmaps)]
+            out_v = display_val.get((id(p), pname), 1.0)
+            in_v = (display_val.get((id(parent), pname), out_v)
+                    if parent is not None else out_v)
+            touched = p.step != steps[0] and p.factors.get(pname) is not None
+            y0 = y + node_h / 2 - (i + 1) * band_h
+            ax.add_patch(Rectangle((x - node_w / 2, y0), node_w / 2, band_h,
+                                   facecolor=shade(cmap, in_v),
+                                   edgecolor='none', zorder=3))
+            ax.add_patch(Rectangle((x, y0), node_w / 2, band_h,
+                                   facecolor=shade(cmap, out_v),
+                                   edgecolor='none', zorder=3))
+            ax.add_patch(Rectangle((x - node_w / 2, y0), node_w, band_h,
+                                   fill=False,
+                                   edgecolor='black' if touched else '0.55',
+                                   linewidth=1.0 if touched else 0.35,
+                                   zorder=3.5))
 
     # Boxes marking gate boundaries: one per step column (labeled with the
-    # gate that fired), plus a dashed outer box per multi-gate diagram group.
+    # gate that fired), plus a dashed outer box per multi-gate diagram
+    # group, plus (experimental) thin boxes around the upper/lower halves
+    # of each gate's outcomes.
     from matplotlib.patches import FancyBboxPatch
-    label_space = 0.75  # room for the two text lines under each node
+    label_space = 0.12
     col_extent = {}
     for p, (x, y) in pos.items():
         y_lo, y_hi = col_extent.get(p.step, (y, y))
         col_extent[p.step] = (min(y_lo, y), max(y_hi, y))
     box_y = {}
     for step, (y_lo, y_hi) in col_extent.items():
-        box_y[step] = (y_lo - node_h / 2 - label_space, y_hi + node_h / 2 + 0.2)
+        # extra headroom at the top of each column for the gate label
+        box_y[step] = (y_lo - node_h / 2 - label_space, y_hi + node_h / 2 + 0.55)
+
+    # experimental upper/lower cluster boxes
+    for step in steps[1:]:
+        clusters = {}
+        for w in layers[step]:
+            ranks = sort_key(w)[0]
+            if not ranks:
+                continue
+            port_group = ranks[0][0]
+            if port_group > 1:
+                continue
+            ys = clusters.setdefault(port_group, [])
+            ys.append(pos[w][1])
+        for port_group, ys in clusters.items():
+            ax.add_patch(Rectangle((step - node_w / 2 - 0.05,
+                                    min(ys) - node_h / 2 - 0.05),
+                                   node_w + 0.10,
+                                   max(ys) - min(ys) + node_h + 0.10,
+                                   fill=False, edgecolor='0.65',
+                                   linewidth=0.6, linestyle=':', zorder=2.5))
+            ax.annotate('upper' if port_group == 0 else 'lower',
+                        (step - node_w / 2 - 0.08, (min(ys) + max(ys)) / 2),
+                        ha='right', va='center', fontsize=max(5, tick_fs - 3),
+                        color='0.5', rotation=90, zorder=2.6)
     for i in range(1, len(steps)):
         step = steps[i]
         gates = sim.run_stages[i - 1] if i - 1 < len(sim.run_stages) else []
@@ -202,11 +276,12 @@ def network_graph_figure(result_space, sim):
     for spine in ('top', 'right', 'left'):
         ax.spines[spine].set_visible(False)
     ax.set_xlim(steps[0] - 0.6, steps[-1] + 0.6)
-    ax.set_ylim(-(layer_max + 1) / 2.0 - 1.0, (layer_max + 1) / 2.0 + 0.7)
+    ax.set_ylim(-(layer_max + 1) / 2.0 - 0.5, (layer_max + 1) / 2.0 + 0.7)
     ax.set_title(f'{sim.title} — weight evolution', fontsize=max(11, tick_fs + 2))
     fig.text(0.01, 0.01,
-             'bands: hue = particle, light↔dark = strong↔weak step factor, '
-             'black = untouched; edge width = |contributed amplitude|',
+             'bands: hue = particle; halves: left = in, right = out, '
+             'light↔dark = strong↔weak amplitude; heavy outline = acted on '
+             'this step; edge width = |contributed amplitude|',
              fontsize=max(7, tick_fs - 1), color='0.4')
     return fig
 

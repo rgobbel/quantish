@@ -58,6 +58,7 @@ def _():
     MODELS_DIR = REPO_DIR / 'models'
     return (
         Addict,
+        CalcMode,
         FredkinGate,
         MODELS_DIR,
         Simulation,
@@ -113,25 +114,73 @@ def _(Addict, MODELS_DIR, Simulation, mo, model_pick, yaml):
 
     base_config = load_config(model_pick.value)
     _base_sim = Simulation(load_config(model_pick.value))
+
+    mode_pick = mo.ui.radio(['Float', 'Symbolic'], value='Float',
+                            label='math mode', inline=True)
+    units_pick = mo.ui.radio(['degrees', 'radians'], value='degrees',
+                             label='typed numbers are', inline=True)
+
+    def _centered(deg):
+        _d = deg % 360.0
+        return _d - 360.0 if _d > 180.0 else _d
+
     angle_sliders = mo.ui.dictionary({
-        _g: mo.ui.slider(0, 360, step=0.5,
-                         value=round(float(_gate.atheta.degrees), 1) % 360,
+        _g: mo.ui.slider(-180, 180, step=0.5,
+                         value=round(_centered(float(_gate.atheta.degrees)) * 2) / 2,
                          label=f'{_g} (º)', show_value=True)
         for _g, _gate in _base_sim.fredkin_gates.items()
     })
+    angle_texts = mo.ui.dictionary({
+        _g: mo.ui.text(value='', placeholder=str(base_config.gates[_g].angle),
+                       label=f'{_g} =')
+        for _g in _base_sim.fredkin_gates.keys()
+    })
     mo.vstack([
-        mo.md(f"**{base_config.title}** — gate angles"),
-        mo.hstack(list(angle_sliders.values()), wrap=True),
+        mo.md(f"**{base_config.title}** — gate angles. Sliders are degrees "
+              "(0-centered). A typed entry overrides its slider: plain "
+              "numbers use the units selector; anything else is a symbolic "
+              "radian expression (`pi/8`, `rad(30)`, `acos(4/5)`). "
+              "Placeholders show the model's own values."),
+        mo.hstack([mode_pick, units_pick], wrap=True, justify='start'),
+        mo.vstack([mo.hstack([angle_sliders[_g], angle_texts[_g]],
+                             wrap=True, justify='start')
+                   for _g in _base_sim.fredkin_gates.keys()]),
     ])
-    return angle_sliders, load_config
+    return angle_sliders, angle_texts, load_config, mode_pick, units_pick
 
 
 @app.cell(hide_code=True)
-def _(Simulation, angle_sliders, load_config, math, mo, model_pick):
+def _(mo):
+    run_btn = mo.ui.run_button(label='▶ Run simulation')
+    run_btn
+    return (run_btn,)
+
+
+@app.cell(hide_code=True)
+def _(CalcMode, Simulation, angle_sliders, angle_texts, load_config, math, mo,
+      mode_pick, model_pick, qn, run_btn, units_pick):
+    # Gated on the button: changing sliders/text/model/mode marks results
+    # stale (this message) but leaves the previous results visible below.
+    mo.stop(not run_btn.value,
+            mo.md('_settings changed — press **▶ Run simulation** to (re)compute; '
+                  'results below are from the previous run_'))
+
+    def _angle_for(_g):
+        _txt = angle_texts.value[_g].strip()
+        if not _txt:
+            return math.radians(angle_sliders.value[_g])
+        try:
+            _num = float(_txt)
+            return math.radians(_num) if units_pick.value == 'degrees' else _num
+        except ValueError:
+            return qn.qify(_txt)  # symbolic expression, in radians
+
     try:
+        CalcMode.default(mode_pick.value)
+        qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
         _config = load_config(model_pick.value)
-        for _g, _deg in angle_sliders.value.items():
-            _config.gates[_g].angle = math.radians(_deg)
+        for _g in angle_sliders.value.keys():
+            _config.gates[_g].angle = _angle_for(_g)
         sim = Simulation(_config)
         sim.run()
         _error = None
@@ -141,7 +190,10 @@ def _(Simulation, angle_sliders, load_config, math, mo, model_pick):
     mo.stop(sim is None,
             mo.md(f"**{model_pick.value.stem} failed to load or run** — probably "
                   f"an old-format model.\n\n```\n{_error}\n```"))
-    mo.md(f"Ran **{sim.title}** — {len(sim.run_stages)} steps, "
+    _angles = ', '.join(f'{_g}={float(_gate.atheta.degrees):.1f}º'
+                        for _g, _gate in sim.fredkin_gates.items())
+    mo.md(f"Ran **{sim.title}** ({mode_pick.value} mode) — {_angles}; "
+          f"{len(sim.run_stages)} steps, "
           f"{len(sim.result_space.index)} final world(s), "
           f"total probability "
           f"{sum(float(_p.probability) for _p in sim.result_space.index.values()):.6f}")
@@ -149,8 +201,15 @@ def _(Simulation, angle_sliders, load_config, math, mo, model_pick):
 
 
 @app.cell(hide_code=True)
-def _(cmath, mo):
+def _(cmath, mo, qn):
     def latex_weight(w) -> str:
+        # In Symbolic mode, render the exact sympy expression as LaTeX.
+        try:
+            if qn.CalcMode.default() == 'Symbolic' and qn.isq(w):
+                import sympy as _sym
+                return _sym.latex(qn.simplify(w).v)
+        except Exception:  # noqa: BLE001 — fall back to the numeric form
+            pass
         _w = complex(w)
         _re, _im = _w.real, _w.imag
         parts = []
@@ -198,6 +257,20 @@ def _(latex_weight, md_table, mo, phase_deg, short_config, sim):
 
 
 @app.cell(hide_code=True)
+def _(latex_weight, mo, short_config, sim):
+    _lines = []
+    for _p in sorted(sim.result_space.index.values(),
+                     key=lambda x: -float(x.probability)):
+        _cfg = short_config(_p).replace('|', r'\;')
+        _lines.append(
+            rf"w(\texttt{{{_cfg}}}) &= {latex_weight(_p.weight)}"
+            rf" &\quad \lvert w\rvert^2 &= {float(_p.probability):.4f} \\")
+    _latex = '$$\n\\begin{aligned}\n' + '\n'.join(_lines) + '\n\\end{aligned}\n$$'
+    mo.accordion({'Final worlds (LaTeX)': mo.md(_latex)})
+    return
+
+
+@app.cell(hide_code=True)
 def _(md_table, mo, sim):
     _pkey = {}
     for _p in sim.result_space.index.values():
@@ -214,15 +287,16 @@ def _(md_table, mo, sim):
 
 
 @app.cell(hide_code=True)
-def _(Simulation, load_config, mo, model_pick):
-    # Depends on the model only (not the sliders): the topology doesn't
-    # change with angles, and re-running pdflatex on every slider move is
-    # slow and noisy. The current angles are visible in the sliders.
+def _(mo, sim):
+    # Depends on sim, so it refreshes on every Run (runs are now explicit,
+    # so the pdflatex cost is paid once per Run, not per slider move).
     from multiworld.circuit_diagram import render_diagram, spec_from_simulation
     try:
-        _base = Simulation(load_config(model_pick.value))
-        _img = render_diagram(spec_from_simulation(_base), dpi=150)
-        _out = mo.image(_img, caption='circuit (TikZ, base angles)') if _img is not None else \
+        _overrides = {_g: f'{float(_gate.atheta.degrees):.1f}°'
+                      for _g, _gate in sim.fredkin_gates.items()}
+        _img = render_diagram(spec_from_simulation(sim), dpi=150,
+                              angle_overrides=_overrides)
+        _out = mo.image(_img, caption='circuit (TikZ)') if _img is not None else \
             mo.md('_TikZ render unavailable (needs pdflatex + imagemagick)_')
     except Exception as _exc:  # noqa: BLE001 — show, don't crash the app
         _out = mo.md(f'_TikZ diagram failed: {_exc}_')
@@ -252,13 +326,22 @@ def _(mo, network_graph_figure, sim):
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
-    mo.md("""
+    mo.md(r"""
     ## Monte Carlo sampling
-    The **exact** simulation above runs automatically whenever the model or
-    an angle slider changes — no button needed. Sampling below is the
-    optional Monte Carlo experiment on top of that exact run.
+    Optional sampled trials on top of the exact run above. Two modes:
+
+    - **terminal** — each trial draws one final world from the evolved
+      superposition with probability $\lvert w\rvert^2$. This is the
+      faithful simulation of a real experiment: interference stays intact
+      until observation, and frequencies converge on the exact values.
+    - **path** — each trial walks the world graph one stage at a time,
+      picking a successor in proportion to the amplitude it received. That
+      yields a world-line story per trial, but choosing per stage amounts
+      to *collapsing at every stage*: where worlds interfere, path
+      statistics legitimately diverge from the exact values — the
+      divergence measures how much interference matters.
     """)
     return
 
@@ -411,7 +494,6 @@ def _(
     alt,
     cmath,
     math,
-    mo,
     pd,
     qn,
     ws_components,
