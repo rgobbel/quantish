@@ -124,24 +124,31 @@ def _(Addict, MODELS_DIR, Simulation, mo, model_pick, yaml):
         _d = deg % 360.0
         return _d - 360.0 if _d > 180.0 else _d
 
-    # One state per gate: {'deg': float, 'expr': str | None}. Slider and
-    # text field both read from and write to this, which keeps them in sync
-    # (marimo's mo.state pattern for tied elements). 'expr' preserves a
-    # typed symbolic expression for Symbolic-mode runs.
+    # ONE state for all gate angles: {gate: {'deg': float, 'expr': str|None}}.
+    # marimo's state reactivity keys on the getter being referenced as a
+    # global variable — a dict of per-gate states breaks the subscription
+    # (the earlier bug), so everything lives under a single getter/setter.
+    # 'expr' preserves the symbolic form (model YAML or typed) alongside
+    # its numeric degree equivalent.
     gate_names = list(_base_sim.fredkin_gates.keys())
-    angle_state = {
-        _g: mo.state({'deg': round(_centered(float(_gate.atheta.degrees)) * 2) / 2,
-                      'expr': None})
+    angles_get, angles_set = mo.state({
+        _g: {'deg': round(_centered(float(_gate.atheta.degrees)) * 2) / 2,
+             'expr': str(base_config.gates[_g].angle)}
         for _g, _gate in _base_sim.fredkin_gates.items()
-    }
-    return angle_state, base_config, gate_names, load_config, mode_pick, units_pick
+    })
+    return (angles_get, angles_set, base_config, gate_names, load_config,
+            mode_pick, units_pick)
 
 
 @app.cell(hide_code=True)
-def _(angle_state, base_config, gate_names, math, mo, mode_pick, qn, units_pick):
+def _(angles_get, angles_set, base_config, gate_names, math, mo, mode_pick,
+      qn, units_pick):
+    def _update(_g, _entry):
+        angles_set({**angles_get(), _g: _entry})
+
     def _slider_cb(_g):
         def _cb(_v):
-            angle_state[_g][1]({'deg': float(_v), 'expr': None})
+            _update(_g, {'deg': float(_v), 'expr': None})
         return _cb
 
     def _text_cb(_g):
@@ -152,28 +159,32 @@ def _(angle_state, base_config, gate_names, math, mo, mode_pick, qn, units_pick)
             try:
                 _num = float(_txt)
                 _deg = _num if units_pick.value == 'degrees' else math.degrees(_num)
-                angle_state[_g][1]({'deg': _deg, 'expr': None})
+                _update(_g, {'deg': _deg, 'expr': None})
                 return
             except ValueError:
                 pass
             try:
                 _rad = float(qn.qify(_txt))  # symbolic expression, radians
-                angle_state[_g][1]({'deg': math.degrees(_rad), 'expr': _txt})
+                _update(_g, {'deg': math.degrees(_rad), 'expr': _txt})
             except Exception:  # noqa: BLE001 — unparseable: keep previous value
                 pass
         return _cb
 
     _rows = []
     for _g in gate_names:
-        _cur = angle_state[_g][0]()
+        _cur = angles_get()[_g]
         _slider = mo.ui.slider(
             -180, 180, step=0.5,
             value=max(-180.0, min(180.0, round(_cur['deg'] * 2) / 2)),
             label=f'**{_g}**', show_value=True, full_width=True,
             on_change=_slider_cb(_g))
-        _text = mo.ui.text(
-            value=_cur['expr'] if _cur['expr'] else f"{_cur['deg']:.1f}º",
-            on_change=_text_cb(_g))
+        # The entry mirrors the current math mode: symbolic form when in
+        # Symbolic mode (and one exists), numeric degrees otherwise.
+        if mode_pick.value == 'Symbolic' and _cur['expr']:
+            _shown = _cur['expr']
+        else:
+            _shown = f"{_cur['deg']:.1f}º"
+        _text = mo.ui.text(value=_shown, on_change=_text_cb(_g))
         _rows.append(mo.hstack([_slider, _text], widths=[5, 1], align='center'))
     mo.vstack([
         mo.md(f"**{base_config.title}** — gate angles. Slider and entry track "
@@ -197,7 +208,7 @@ def _(mo):
 def _(
     CalcMode,
     Simulation,
-    angle_state,
+    angles_get,
     gate_names,
     load_config,
     math,
@@ -214,7 +225,7 @@ def _(
                   'results below are from the previous run_'))
 
     def _angle_for(_g):
-        _cur = angle_state[_g][0]()
+        _cur = angles_get()[_g]
         if _cur['expr']:
             return qn.qify(_cur['expr'])  # symbolic expression, in radians
         return math.radians(_cur['deg'])
