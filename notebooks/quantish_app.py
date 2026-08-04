@@ -124,29 +124,66 @@ def _(Addict, MODELS_DIR, Simulation, mo, model_pick, yaml):
         _d = deg % 360.0
         return _d - 360.0 if _d > 180.0 else _d
 
-    angle_sliders = mo.ui.dictionary({
-        _g: mo.ui.slider(-180, 180, step=0.5,
-                         value=round(_centered(float(_gate.atheta.degrees)) * 2) / 2,
-                         label=f'{_g} (º)', show_value=True)
+    # One state per gate: {'deg': float, 'expr': str | None}. Slider and
+    # text field both read from and write to this, which keeps them in sync
+    # (marimo's mo.state pattern for tied elements). 'expr' preserves a
+    # typed symbolic expression for Symbolic-mode runs.
+    gate_names = list(_base_sim.fredkin_gates.keys())
+    angle_state = {
+        _g: mo.state({'deg': round(_centered(float(_gate.atheta.degrees)) * 2) / 2,
+                      'expr': None})
         for _g, _gate in _base_sim.fredkin_gates.items()
-    })
-    angle_texts = mo.ui.dictionary({
-        _g: mo.ui.text(value='', placeholder=str(base_config.gates[_g].angle),
-                       label=f'{_g} =')
-        for _g in _base_sim.fredkin_gates.keys()
-    })
+    }
+    return angle_state, base_config, gate_names, load_config, mode_pick, units_pick
+
+
+@app.cell(hide_code=True)
+def _(angle_state, base_config, gate_names, math, mo, mode_pick, qn, units_pick):
+    def _slider_cb(_g):
+        def _cb(_v):
+            angle_state[_g][1]({'deg': float(_v), 'expr': None})
+        return _cb
+
+    def _text_cb(_g):
+        def _cb(_raw):
+            _txt = (_raw or '').strip().rstrip('º°').strip()
+            if not _txt:
+                return
+            try:
+                _num = float(_txt)
+                _deg = _num if units_pick.value == 'degrees' else math.degrees(_num)
+                angle_state[_g][1]({'deg': _deg, 'expr': None})
+                return
+            except ValueError:
+                pass
+            try:
+                _rad = float(qn.qify(_txt))  # symbolic expression, radians
+                angle_state[_g][1]({'deg': math.degrees(_rad), 'expr': _txt})
+            except Exception:  # noqa: BLE001 — unparseable: keep previous value
+                pass
+        return _cb
+
+    _rows = []
+    for _g in gate_names:
+        _cur = angle_state[_g][0]()
+        _slider = mo.ui.slider(
+            -180, 180, step=0.5,
+            value=max(-180.0, min(180.0, round(_cur['deg'] * 2) / 2)),
+            label=f'**{_g}**', show_value=True, full_width=True,
+            on_change=_slider_cb(_g))
+        _text = mo.ui.text(
+            value=_cur['expr'] if _cur['expr'] else f"{_cur['deg']:.1f}º",
+            on_change=_text_cb(_g))
+        _rows.append(mo.hstack([_slider, _text], widths=[5, 1], align='center'))
     mo.vstack([
-        mo.md(f"**{base_config.title}** — gate angles. Sliders are degrees "
-              "(0-centered). A typed entry overrides its slider: plain "
-              "numbers use the units selector; anything else is a symbolic "
-              "radian expression (`pi/8`, `rad(30)`, `acos(4/5)`). "
-              "Placeholders show the model's own values."),
-        mo.hstack([mode_pick, units_pick], wrap=True, justify='start'),
-        mo.vstack([mo.hstack([angle_sliders[_g], angle_texts[_g]],
-                             wrap=True, justify='start')
-                   for _g in _base_sim.fredkin_gates.keys()]),
+        mo.md(f"**{base_config.title}** — gate angles. Slider and entry track "
+              "each other; sliders are degrees (0-centered). Typed numbers "
+              "use the units selector; anything else is a symbolic radian "
+              "expression (`pi/8`, `rad(30)`, `acos(4/5)`)."),
+        mo.hstack([mode_pick, units_pick], wrap=True, justify='start', gap=2),
+        mo.vstack(_rows),
     ])
-    return angle_sliders, angle_texts, load_config, mode_pick, units_pick
+    return
 
 
 @app.cell(hide_code=True)
@@ -157,8 +194,19 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(CalcMode, Simulation, angle_sliders, angle_texts, load_config, math, mo,
-      mode_pick, model_pick, qn, run_btn, units_pick):
+def _(
+    CalcMode,
+    Simulation,
+    angle_state,
+    gate_names,
+    load_config,
+    math,
+    mo,
+    mode_pick,
+    model_pick,
+    qn,
+    run_btn,
+):
     # Gated on the button: changing sliders/text/model/mode marks results
     # stale (this message) but leaves the previous results visible below.
     mo.stop(not run_btn.value,
@@ -166,20 +214,16 @@ def _(CalcMode, Simulation, angle_sliders, angle_texts, load_config, math, mo,
                   'results below are from the previous run_'))
 
     def _angle_for(_g):
-        _txt = angle_texts.value[_g].strip()
-        if not _txt:
-            return math.radians(angle_sliders.value[_g])
-        try:
-            _num = float(_txt)
-            return math.radians(_num) if units_pick.value == 'degrees' else _num
-        except ValueError:
-            return qn.qify(_txt)  # symbolic expression, in radians
+        _cur = angle_state[_g][0]()
+        if _cur['expr']:
+            return qn.qify(_cur['expr'])  # symbolic expression, in radians
+        return math.radians(_cur['deg'])
 
     try:
         CalcMode.default(mode_pick.value)
         qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
         _config = load_config(model_pick.value)
-        for _g in angle_sliders.value.keys():
+        for _g in gate_names:
             _config.gates[_g].angle = _angle_for(_g)
         sim = Simulation(_config)
         sim.run()
@@ -266,7 +310,7 @@ def _(latex_weight, mo, short_config, sim):
             rf"w(\texttt{{{_cfg}}}) &= {latex_weight(_p.weight)}"
             rf" &\quad \lvert w\rvert^2 &= {float(_p.probability):.4f} \\")
     _latex = '$$\n\\begin{aligned}\n' + '\n'.join(_lines) + '\n\\end{aligned}\n$$'
-    mo.accordion({'Final worlds (LaTeX)': mo.md(_latex)})
+    mo.accordion({'## Final worlds (LaTeX)': mo.md(_latex)})
     return
 
 
@@ -280,13 +324,13 @@ def _(md_table, mo, sim):
             _pkey[_key] = _pkey.get(_key, 0.0) + _prob
     _rows = [(f'`{_k}`', f'{_v:.4f}') for _k, _v in sorted(_pkey.items())]
     mo.accordion({
-        'Marginal probabilities (particle, sign, position)':
+        '## Marginal probabilities (particle, sign, position)':
             mo.md(md_table(['coordinate', 'probability'], _rows))
     })
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo, sim):
     # Depends on sim, so it refreshes on every Run (runs are now explicit,
     # so the pdflatex cost is paid once per Run, not per slider move).
@@ -300,7 +344,7 @@ def _(mo, sim):
             mo.md('_TikZ render unavailable (needs pdflatex + imagemagick)_')
     except Exception as _exc:  # noqa: BLE001 — show, don't crash the app
         _out = mo.md(f'_TikZ diagram failed: {_exc}_')
-    mo.accordion({'Circuit diagram (TikZ)': _out})
+    mo.accordion({'## Circuit diagram (TikZ)': _out})
     return
 
 
@@ -311,7 +355,7 @@ def _(diagram, mo, sim):
         _out = mo.mermaid(_mermaid_src)
     except Exception as _exc:  # noqa: BLE001
         _out = mo.md(f'_Mermaid diagram failed: {_exc}_')
-    mo.accordion({'Gate network with port values (Mermaid)': _out})
+    mo.accordion({'## Gate network with port values (Mermaid)': _out})
     return
 
 
@@ -322,11 +366,11 @@ def _(mo, network_graph_figure, sim):
     # deregister from pyplot so slider-driven reruns don't accumulate open
     # figures (the Figure object itself stays renderable)
     _plt.close(_fig)
-    mo.accordion({'Weight evolution (worlds × steps)': _fig}, lazy=True)
+    mo.accordion({'## Weight evolution (worlds × steps)': _fig}, lazy=True)
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
     ## Monte Carlo sampling
