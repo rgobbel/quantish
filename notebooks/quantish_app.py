@@ -90,15 +90,27 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(MODELS_DIR, mo):
-    _model_files = sorted(p for p in MODELS_DIR.glob('*.yaml')
-                          if p.stem != 'defaults')
+def _(mo):
+    model_rescan = mo.ui.run_button(label='↻ rescan models')
+    # remembers the selection across rescans (see the dropdown's on_change)
+    last_model_get, last_model_set = mo.state('fig417')
+    return last_model_get, last_model_set, model_rescan
+
+
+@app.cell(hide_code=True)
+def _(MODELS_DIR, last_model_get, last_model_set, mo, model_rescan):
+    model_rescan  # dependency: pressing the button re-globs the directory
+    _options = {p.stem: p for p in sorted(MODELS_DIR.glob('*.yaml'))
+                if p.stem != 'defaults'}
+    _default = last_model_get() if last_model_get() in _options \
+        else next(iter(_options))
     model_pick = mo.ui.dropdown(
-        options={p.stem: p for p in _model_files},
-        value='fig417' if (MODELS_DIR / 'fig417.yaml').exists() else _model_files[0].stem,
+        options=_options,
+        value=_default,
         label='model',
+        on_change=lambda _p: last_model_set(_p.stem) if _p is not None else None,
     )
-    model_pick
+    mo.hstack([model_pick, model_rescan], justify='start', gap=1)
     return (model_pick,)
 
 

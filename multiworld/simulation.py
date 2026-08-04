@@ -40,7 +40,17 @@ class Simulation:
         self.all_points = None
         log.debug(' ')
         self.load_elements(config)
-        assert self.graph_roots == list(self.particles.keys())
+        # The zero-in-degree nodes of the link graph must be exactly the
+        # declared particles — as SETS: YAML declaration order and graph
+        # insertion order are both arbitrary and must never matter.
+        _roots = set(self.graph_roots)
+        _pnames = set(self.particles.keys())
+        if _roots != _pnames:
+            raise ValueError(
+                f'model links are inconsistent with its particles: '
+                f'link-graph roots {sorted(_roots)} vs particles {sorted(_pnames)} '
+                f'(unfed non-particles: {sorted(_roots - _pnames)}; '
+                f'particles that are link targets: {sorted(_pnames - _roots)})')
         log.debug(' ')
         self.diagram_groups = config.get('diagram_groups')
         if self.diagram_groups is None:
