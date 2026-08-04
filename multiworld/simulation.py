@@ -45,6 +45,17 @@ class Simulation:
         self.diagram_groups = config.get('diagram_groups')
         if self.diagram_groups is None:
             self.diagram_groups = {f'{"_".join(group)}': group for group in self.topo_stages}
+        # Gates wired only through their control port are pure pass-throughs
+        # (delays): diagrams render them as simple boxes instead of full
+        # Fredkin gates.
+        _ports_used = defaultdict(set)
+        for _src, _dst in self.links.items():
+            for _end in (_src, _dst):
+                _parts = _end.split(SEP)
+                if len(_parts) == 2:
+                    _ports_used[_parts[0]].add(_parts[1])
+        self.pass_through_gates = {g for g in self.gates.keys()
+                                   if _ports_used.get(g) == {'control'}}
         self.gates = self.fredkin_gates | self.delay_gates
         log_seq('self.qvars', self.qvars, logging.DEBUG)
         log_seq('self.gates', self.gates, logging.DEBUG)

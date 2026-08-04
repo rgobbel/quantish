@@ -379,6 +379,12 @@ def gnodes(sim, gname, mermaid_nodes, show_outputs=True):
     return sink_nodes
 
 def diagram(sim:Simulation, output_file=None, has_run=False):
+    def is_delay(gname):
+        # explicit DelayGate instances, plus gates wired only through their
+        # control port (pure pass-throughs) — both render as simple boxes
+        return (sim.gates[gname].report_type() == 'DelayGate'
+                or gname in getattr(sim, 'pass_through_gates', set()))
+
     mermaid_nodes = {}
     if has_run:
         title = f'{sim.title} after run at {time.asctime()}'
@@ -412,7 +418,7 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
         phase_graphs[stage_id] = pg
         for gname in gate_group:
             gate = sim.gates[gname]
-            if gate.report_type() == 'DelayGate':
+            if is_delay(gname):
                 gate_inout = f'{gate.name}{SEP}control'
                 if has_run and gate_inout not in sim.links.keys():
                     sink_node_id = f'{gate_inout}_SINK'
@@ -448,7 +454,7 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
                              mermaid_nodes[f'{gname}.{gate_fields['upper'].field}_out'], shape='dotted')]
     for gate_name, gate in sim.gates.items():
         control_pos = f'{gate_name}{SEP}control'
-        if gate.report_type() == 'DelayGate':
+        if is_delay(gate_name):
             ctrl_gate_node = mermaid_nodes[gate_name]
         else:
             ctrl_gate_node = mermaid_nodes[control_pos]
@@ -464,7 +470,7 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
             dest_parts = parse_position(dest)
             dest_gate_name, dest_wire = dest_parts
             dest_gate = sim.gates[dest_gate_name]
-            if dest_gate.report_type() == 'DelayGate':
+            if is_delay(dest_gate_name):
                 dest_node = mermaid_nodes[dest_gate_name]
             else:
                 if dest_wire == 'control':
@@ -478,7 +484,7 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
                 dest_node = mermaid_nodes[f'{control_pos}_SINK']
         if dest_node is not None:
             mermaid_links.append(pmd.Link(ctrl_gate_node, dest_node))
-        if gate.report_type() == 'DelayGate': continue
+        if is_delay(gate_name): continue
         for switch_set in ('upper', 'lower'):
             switch_pos = f'{gate_name}{SEP}{switch_set}'
             for inout in ('in', 'out'):
@@ -497,7 +503,7 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
                         dest_parts = parse_position(dest)
                         dest_gate_name, dest_wire = dest_parts
                         dest_gate = sim.gates[dest_gate_name]
-                        if dest_gate.report_type() == 'DelayGate':
+                        if is_delay(dest_gate_name):
                             dest_node = mermaid_nodes[dest_gate_name]
                         else:
                             if dest_wire == 'control':

@@ -66,9 +66,13 @@ def spec_from_simulation(sim, fig: str = None) -> DiagramSpec:
     """
     config = sim.config
     links = dict(sim.links)
-    delay_names = list(sim.delay_gates.keys())
+    # explicit DelayGates plus gates wired only through their control port:
+    # both are pure pass-throughs, drawn as small boxes
+    _pass_through = sorted(getattr(sim, 'pass_through_gates', set()))
+    delay_names = list(sim.delay_gates.keys()) + _pass_through
     gates = {gname: {'angle': str(config.gates[gname].angle)}
-             for gname in sim.fredkin_gates.keys()}
+             for gname in sim.fredkin_gates.keys()
+             if gname not in sim.pass_through_gates}
     particles = {pname: {} for pname in sim.particles.keys()}
 
     # Wire naming mirrors quantish_gld's resolve_topology: every wire is named
@@ -81,6 +85,8 @@ def spec_from_simulation(sim, fig: str = None) -> DiagramSpec:
     def out_wire(src: str) -> str | None:
         if SEP in src:
             g, port = src.split(SEP, 1)
+            if g in delay_out:  # 'd1.control' — the delay's single output
+                return delay_out[g]
             return gate_outputs[g][port]
         if src in delay_out:
             return delay_out[src]
@@ -89,13 +95,18 @@ def spec_from_simulation(sim, fig: str = None) -> DiagramSpec:
     def set_in_wire(dst: str, wire: str) -> None:
         if SEP in dst:
             g, port = dst.split(SEP, 1)
-            gate_inputs[g][port] = wire
+            if g in delay_in:
+                delay_in[g] = wire
+            else:
+                gate_inputs[g][port] = wire
         elif dst in delay_in:
             delay_in[dst] = wire
 
     def in_wire(dst: str) -> str:
         if SEP in dst:
             g, port = dst.split(SEP, 1)
+            if g in delay_in:
+                return delay_in[g]
             return gate_inputs[g][port]
         return delay_in.get(dst, dst)
 
