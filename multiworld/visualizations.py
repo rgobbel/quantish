@@ -124,20 +124,27 @@ def network_graph_figure(result_space, sim):
                             pass
                 display_val[(id(w), pname)] = value
 
+    def _moved(w, pname):
+        parent = primary_parent(w)
+        return (parent is not None
+                and pname in parent.coords
+                and parent.coords[pname].key != w.coords[pname].key)
+
     # Vertical order within a column: by the acted-on particle's outcome —
-    # upper+ first, then upper−, lower+, lower−.
+    # upper+ first, then upper−, lower+, lower−, then control pass-throughs.
     port_rank = {'upper': 0, 'lower': 1, 'control': 2}
 
     def sort_key(w):
         ranks = []
         if w.step != steps[0]:
-            for pname in sorted(w.factors.keys()):
-                if w.factors[pname] is None:
-                    continue
+            for pname in sorted(w.coords.keys()):
                 coord = w.coords[pname]
-                port = coord.position.origin.port if coord.position.origin else None
-                ranks.append((port_rank.get(port, 3),
-                              0 if int(coord.sign) >= 0 else 1))
+                if w.factors.get(pname) is not None:
+                    port = coord.position.origin.port if coord.position.origin else None
+                    ranks.append((port_rank.get(port, 3),
+                                  0 if int(coord.sign) >= 0 else 1))
+                elif _moved(w, pname):
+                    ranks.append((2, 0 if int(coord.sign) >= 0 else 1))
         return (tuple(ranks), w.key)
 
     pos = {}
@@ -173,8 +180,12 @@ def network_graph_figure(result_space, sim):
     band_cmaps = [colormaps[name] for name in ('Reds', 'Greens', 'Blues',
                                                'Purples', 'Oranges', 'Greys')]
     n_particles = max(len(p.coords) for p in pos)
-    band_h = 0.5 / max(1, n_particles)
-    node_w = 0.26
+    # Size the node in *screen* inches (the data aspect is far from square),
+    # so the stack renders taller than it is wide.
+    _x_range = (steps[-1] - steps[0]) + 1.2
+    _y_range = (layer_max + 1) + 1.2
+    node_w = 0.34 * _x_range / fig_w
+    band_h = min(0.20 * _y_range / fig_h, 0.78 / max(1, n_particles))
     node_h = band_h * n_particles
 
     def shade(cmap, value):
@@ -191,7 +202,10 @@ def network_graph_figure(result_space, sim):
             out_v = display_val.get((id(p), pname), 1.0)
             in_v = (display_val.get((id(parent), pname), out_v)
                     if parent is not None else out_v)
-            touched = p.step != steps[0] and p.factors.get(pname) is not None
+            split_here = p.step != steps[0] and p.factors.get(pname) is not None
+            control_here = (p.step != steps[0]
+                            and p.factors.get(pname) is None
+                            and _moved(p, pname))
             y0 = y + node_h / 2 - (i + 1) * band_h
             ax.add_patch(Rectangle((x - node_w / 2, y0), node_w / 2, band_h,
                                    facecolor=shade(cmap, in_v),
@@ -199,10 +213,15 @@ def network_graph_figure(result_space, sim):
             ax.add_patch(Rectangle((x, y0), node_w / 2, band_h,
                                    facecolor=shade(cmap, out_v),
                                    edgecolor='none', zorder=3))
+            if split_here:
+                _edge, _lw, _ls = 'black', 1.0, '-'
+            elif control_here:
+                _edge, _lw, _ls = 'black', 1.0, (0, (2, 1.2))
+            else:
+                _edge, _lw, _ls = '0.55', 0.35, '-'
             ax.add_patch(Rectangle((x - node_w / 2, y0), node_w, band_h,
-                                   fill=False,
-                                   edgecolor='black' if touched else '0.55',
-                                   linewidth=1.0 if touched else 0.35,
+                                   fill=False, edgecolor=_edge,
+                                   linewidth=_lw, linestyle=_ls,
                                    zorder=3.5))
 
     # Boxes marking gate boundaries: one per step column (labeled with the
@@ -220,7 +239,8 @@ def network_graph_figure(result_space, sim):
         # extra headroom at the top of each column for the gate label
         box_y[step] = (y_lo - node_h / 2 - label_space, y_hi + node_h / 2 + 0.55)
 
-    # experimental upper/lower cluster boxes
+    # experimental upper/lower/control cluster boxes
+    _cluster_names = {0: 'upper', 1: 'lower', 2: 'control'}
     for step in steps[1:]:
         clusters = {}
         for w in layers[step]:
@@ -228,7 +248,7 @@ def network_graph_figure(result_space, sim):
             if not ranks:
                 continue
             port_group = ranks[0][0]
-            if port_group > 1:
+            if port_group not in _cluster_names:
                 continue
             ys = clusters.setdefault(port_group, [])
             ys.append(pos[w][1])
@@ -239,7 +259,7 @@ def network_graph_figure(result_space, sim):
                                    max(ys) - min(ys) + node_h + 0.10,
                                    fill=False, edgecolor='0.65',
                                    linewidth=0.6, linestyle=':', zorder=2.5))
-            ax.annotate('upper' if port_group == 0 else 'lower',
+            ax.annotate(_cluster_names[port_group],
                         (step - node_w / 2 - 0.08, (min(ys) + max(ys)) / 2),
                         ha='right', va='center', fontsize=max(5, tick_fs - 3),
                         color='0.5', rotation=90, zorder=2.6)
@@ -280,8 +300,9 @@ def network_graph_figure(result_space, sim):
     ax.set_title(f'{sim.title} — weight evolution', fontsize=max(11, tick_fs + 2))
     fig.text(0.01, 0.01,
              'bands: hue = particle; halves: left = in, right = out, '
-             'light↔dark = strong↔weak amplitude; heavy outline = acted on '
-             'this step; edge width = |contributed amplitude|',
+             'light↔dark = strong↔weak amplitude; solid outline = switch '
+             'split, dashed outline = control move; '
+             'edge width = |contributed amplitude|',
              fontsize=max(7, tick_fs - 1), color='0.4')
     return fig
 

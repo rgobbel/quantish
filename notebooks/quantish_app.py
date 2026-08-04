@@ -170,22 +170,29 @@ def _(angles_get, angles_set, base_config, gate_names, math, mo, mode_pick,
                 pass
         return _cb
 
-    _rows = []
-    for _g in gate_names:
-        _cur = angles_get()[_g]
-        _slider = mo.ui.slider(
-            -180, 180, step=0.5,
-            value=max(-180.0, min(180.0, round(_cur['deg'] * 2) / 2)),
-            label=f'**{_g}**', show_value=True, full_width=True,
-            on_change=_slider_cb(_g))
+    def _shown(_cur):
         # The entry mirrors the current math mode: symbolic form when in
         # Symbolic mode (and one exists), numeric degrees otherwise.
         if mode_pick.value == 'Symbolic' and _cur['expr']:
-            _shown = _cur['expr']
-        else:
-            _shown = f"{_cur['deg']:.1f}º"
-        _text = mo.ui.text(value=_shown, on_change=_text_cb(_g))
-        _rows.append(mo.hstack([_slider, _text], widths=[5, 1], align='center'))
+            return _cur['expr']
+        return f"{_cur['deg']:.1f}º"
+
+    # NB: the widgets must be registered through globals (mo.ui.dictionary)
+    # — marimo drops on_change events from anonymous elements that only
+    # live inside a layout container.
+    angle_slider_elems = mo.ui.dictionary({
+        _g: mo.ui.slider(
+            -180, 180, step=0.5,
+            value=max(-180.0, min(180.0, round(angles_get()[_g]['deg'] * 2) / 2)),
+            label=f'**{_g}**', show_value=True, full_width=True,
+            on_change=_slider_cb(_g))
+        for _g in gate_names})
+    angle_text_elems = mo.ui.dictionary({
+        _g: mo.ui.text(value=_shown(angles_get()[_g]), on_change=_text_cb(_g))
+        for _g in gate_names})
+    _rows = [mo.hstack([angle_slider_elems[_g], angle_text_elems[_g]],
+                       widths=[5, 1], align='center')
+             for _g in gate_names]
     mo.vstack([
         mo.md(f"**{base_config.title}** — gate angles. Slider and entry track "
               "each other; sliders are degrees (0-centered). Typed numbers "
@@ -194,7 +201,7 @@ def _(angles_get, angles_set, base_config, gate_names, math, mo, mode_pick,
         mo.hstack([mode_pick, units_pick], wrap=True, justify='start', gap=2),
         mo.vstack(_rows),
     ])
-    return
+    return angle_slider_elems, angle_text_elems
 
 
 @app.cell(hide_code=True)
