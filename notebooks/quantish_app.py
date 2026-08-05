@@ -440,14 +440,18 @@ def _(mo):
 
 @app.cell(hide_code=True)
 def _(mo):
-    mc_trials = mo.ui.slider(100, 100000, step=100, value=20000,
-                             label='trials', show_value=True)
+    mc_trials = mo.ui.slider(
+        steps=[100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000,
+               100000, 200000, 500000, 1000000],
+        value=20000, label='trials', show_value=True)
+    mc_trials_text = mo.ui.text(value='', placeholder='custom trial count')
     mc_mode = mo.ui.dropdown(options=['terminal', 'path', 'both'],
                              value='both', label='mode')
     mc_seed = mo.ui.number(value=42, label='seed')
     mc_button = mo.ui.run_button(label='Run Monte Carlo')
-    mo.hstack([mc_trials, mc_mode, mc_seed, mc_button], wrap=True)
-    return mc_button, mc_mode, mc_seed, mc_trials
+    mo.hstack([mc_trials, mc_trials_text, mc_mode, mc_seed, mc_button],
+              wrap=True)
+    return mc_button, mc_mode, mc_seed, mc_trials, mc_trials_text
 
 
 @app.cell(hide_code=True)
@@ -456,13 +460,18 @@ def _(
     mc_mode,
     mc_seed,
     mc_trials,
+    mc_trials_text,
     md_table,
     mo,
     run_monte_carlo,
     sim,
 ):
     mo.stop(not mc_button.value, mo.md('_press **Run Monte Carlo** to sample_'))
-    _results = run_monte_carlo(sim, mc_trials.value, mode=mc_mode.value,
+    try:  # the text entry, when it parses, overrides the slider
+        _n_trials = max(1, int(mc_trials_text.value.strip()))
+    except ValueError:
+        _n_trials = int(mc_trials.value)
+    _results = run_monte_carlo(sim, _n_trials, mode=mc_mode.value,
                                seed=int(mc_seed.value))
     _sections = []
     for _label, _note in (('terminal', 'one draw from the final superposition per trial'),
@@ -474,7 +483,7 @@ def _(
         _rows = []
         _tvd = 0.0
         for _key in sorted(set(_tally) | set(_pred), key=lambda k: -_pred.get(k, 0)):
-            _freq = _tally.get(_key, 0) / mc_trials.value
+            _freq = _tally.get(_key, 0) / _n_trials
             _tvd += abs(_freq - _pred.get(_key, 0.0))
             _rows.append((f'`{_key.split(":")[0][:60].replace("|", " ")}`',
                           _tally.get(_key, 0),

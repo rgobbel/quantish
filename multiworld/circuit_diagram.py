@@ -1043,11 +1043,11 @@ TEX_GATE_DEF = r"""
           at ($(#1-box.north)$)
           {\textbf{#2}\;{\scriptsize\color{black!60}#3}};
     %% Angle glyph: a compass-needle arrow at the measurement angle #6
-    %% (degrees, 0 pointing right as in the book's figures), in the free
-    %% area left of the control box.
-    \fill[black!65] ($(#1-box.north west)+(0.7,-0.95)$) circle (0.045);
+    %% (degrees, 0 pointing right as in the book's figures), in the title
+    %% row to the right of the angle text — clear of the control port.
+    \fill[black!65] ($(#1-box.north west)+(3.55,-0.35)$) circle (0.04);
     \draw[->, line width=0.7pt, color=black!65]
-        ($(#1-box.north west)+(0.7,-0.95)$) -- ++(#6:0.48);
+        ($(#1-box.north west)+(3.55,-0.35)$) -- ++(#6:0.3);
     %% Single control port (centered horizontally).
     \node[fport, anchor=center] (#1-control)
           at ($(#1-box.north)+(0,-0.95)$) {control};
