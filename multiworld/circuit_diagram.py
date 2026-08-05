@@ -70,7 +70,8 @@ def spec_from_simulation(sim, fig: str = None) -> DiagramSpec:
     # both are pure pass-throughs, drawn as small boxes
     _pass_through = sorted(getattr(sim, 'pass_through_gates', set()))
     delay_names = list(sim.delay_gates.keys()) + _pass_through
-    gates = {gname: {'angle': str(config.gates[gname].angle)}
+    gates = {gname: {'angle': str(config.gates[gname].angle),
+                     'deg': float(sim.fredkin_gates[gname].atheta.degrees)}
              for gname in sim.fredkin_gates.keys()
              if gname not in sim.pass_through_gates}
     particles = {pname: {} for pname in sim.particles.keys()}
@@ -1005,7 +1006,7 @@ TEX_PREAMBLE = r"""\documentclass[border=8pt,tikz]{standalone}
 ]
 """
 TEX_GATE_DEF = r"""
-%% Fredkin gate macro: \fgate{name}{title}{angle}{x}{y}.
+%% Fredkin gate macro: \fgate{name}{title}{angle}{x}{y}{angle-degrees}.
 %%
 %% Visual model:
 %%
@@ -1032,7 +1033,7 @@ TEX_GATE_DEF = r"""
 %%   width  ≈ 4.2 cm  (frame)
 %%   height ≈ 2.4 cm
 %%   port box width ≈ 1.4 cm, height ≈ 0.4 cm
-\newcommand{\fgate}[5]{%
+\newcommand{\fgate}[6]{%
     %% Outer frame
     \node[fgate, anchor=north west,
           minimum width=4.2cm, minimum height=2.4cm]
@@ -1041,6 +1042,12 @@ TEX_GATE_DEF = r"""
     \node[anchor=north, inner sep=0pt, yshift=-2pt]
           at ($(#1-box.north)$)
           {\textbf{#2}\;{\scriptsize\color{black!60}#3}};
+    %% Angle glyph: a compass-needle arrow at the measurement angle #6
+    %% (degrees, 0 pointing right as in the book's figures), in the free
+    %% area left of the control box.
+    \fill[black!65] ($(#1-box.north west)+(0.7,-0.95)$) circle (0.045);
+    \draw[->, line width=0.7pt, color=black!65]
+        ($(#1-box.north west)+(0.7,-0.95)$) -- ++(#6:0.48);
     %% Single control port (centered horizontally).
     \node[fport, anchor=center] (#1-control)
           at ($(#1-box.north)+(0,-0.95)$) {control};
@@ -1099,7 +1106,9 @@ def emit_tex(circuit: Circuit, L: Layout, routes: list[Route],
             angle_text = format_angle(angle_overrides[gname])
         else:
             angle_text = format_angle(gdata.get('angle', 0))
-        out.append(rf"\fgate{{{gname}}}{{{title}}}{{{angle_text}}}{{{x:.2f}}}{{{y:.2f}}}")
+        _deg = float(gdata.get('deg', 0.0))
+        out.append(rf"\fgate{{{gname}}}{{{title}}}{{{angle_text}}}"
+                   rf"{{{x:.2f}}}{{{y:.2f}}}{{{_deg:.1f}}}")
 
     # Delays.
     for dname, (cx, cy) in L.delay_xy.items():
