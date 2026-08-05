@@ -62,16 +62,28 @@ def outcome(coord, two_stage: bool) -> str:
 
 
 def classify(point, two_stage: bool) -> str:
-    """'same' / 'diff' (p1's and p2's outcomes agree / disagree) for worlds
-    where p3 exited on the upper wire, else 'uncoupled'."""
+    """'same' / 'diff' (the two measured particles' outcomes agree /
+    disagree) for worlds where the coupling particle exited g4 on the
+    upper wire, else 'uncoupled'.
+
+    The coupling particle is identified structurally — the one whose final
+    origin is the coupling gate g4 — so renaming or reordering particles
+    in the model can't silently misassign the roles. (Falls back to the
+    positional p1/p2/p3 convention if the structure is ambiguous.)"""
     coords = list(point.coords.values())
     if len(coords) < 3:
         return 'uncoupled'
-    p1c, p2c, p3c = coords[:3]
-    origin = p3c.position.origin
+    couplers = [c for c in coords
+                if c.position.origin is not None
+                and c.position.origin.gate == 'g4']
+    others = [c for c in coords if c not in couplers]
+    if len(couplers) != 1 or len(others) < 2:
+        couplers = [coords[2]]
+        others = coords[:2]
+    origin = couplers[0].position.origin
     if origin is None or origin.port != 'upper':
         return 'uncoupled'
-    if outcome(p1c, two_stage) == outcome(p2c, two_stage):
+    if outcome(others[0], two_stage) == outcome(others[1], two_stage):
         return 'same'
     return 'diff'
 

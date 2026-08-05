@@ -2,7 +2,8 @@
 
 Fires particles one at a time at a two-slit barrier built from Fredkin
 gates and watches the interference pattern build up dot by dot — then
-turns on a which-way observer and watches the fringes wash out.
+blocks a slit and watches the fringes give way to the smooth single-slit
+curve, exactly as in *Good and Real* figs. 4.12/4.13.
 
 Run with:  marimo run notebooks/double_slit_app.py
 """
@@ -46,27 +47,21 @@ def _(mo):
     mo.md(r"""
     # The double-slit experiment, in quantish physics
 
-    Particles are fired one at a time at a barrier with two slits and land
-    on a screen. Each **screen position** is one run of a small Fredkin-gate
-    interferometer: a *split* gate is the two slits, an *unsplit* gate whose
-    angle encodes the path-length difference at that position recombines
-    the arms, and a *test* gate is the screen pixel.
+    Particles are fired **one at a time** at a barrier with two slits.
+    In the quantish universe of *Good and Real* (ch. 4), the two slits are
+    the two switch-wire inputs of a recombining Fredkin gate; each screen
+    position is one run of the apparatus with a path-length offset;
+    blocking a slit is diverting that arm away (figs. 4.12/4.13).
 
-    - **Slits open, nobody watching** — each particle traverses *both* arms
-      in superposed worlds that recombine: bright and dark **fringes**
-      appear, one dot at a time. No single particle "makes" the pattern;
-      the pattern is interference between worlds.
-    - **Which-way observer on** — a second particle is coupled to one arm
-      (it crosses a gate iff the first particle takes that arm). Nothing
-      else changes, nobody "looks" — yet the recombination fails and the
-      fringes **wash out**, because worlds that differ in the observer's
-      record can no longer interfere.
+    - **Both slits open**: each particle traverses both slits in superposed
+      worlds that interfere. Dark fringes appear where the worlds cancel —
+      positions where *either slit alone* would deliver particles receive
+      **none**. Bright fringes exceed what the two single-slit curves sum to.
+    - **One slit blocked**: no superposition, no interference — the smooth
+      single-slit curve, "the probability returns to normal."
 
-    A quantish twist worth teaching: without the prepare/test gates that
-    bracket the interferometer, the bare cos² pattern of this circuit
-    *survives* observation — that version of the pattern is classically
-    reproducible, and the genuinely quantum coherence is exactly the part
-    the observer destroys.
+    No single particle makes a pattern; every dot below is one particle,
+    drawn from exact world-probabilities computed by the quantish engine.
     """)
     return
 
@@ -90,32 +85,34 @@ def _(mo):
 
 @app.cell(hide_code=True)
 def _(mo):
-    hits_get, hits_set = mo.state({'open': [], 'observed': []})
+    hits_get, hits_set = mo.state({'slit1': [], 'both': [], 'slit2': []})
     return hits_get, hits_set
 
 
 @app.cell(hide_code=True)
 def _(envelope, fringes, mo, n_points, screen_curve):
     # Exact screen intensities from engine runs — one tiny simulation per
-    # screen position, for each of the two setups.
+    # screen position, for each of the three slit configurations.
     with mo.status.spinner(title='running the exact simulations…'):
-        xs, open_curve = screen_curve(n_points.value, fringes.value,
-                                      observe=False, envelope=envelope.value)
-        _, observed_curve = screen_curve(n_points.value, fringes.value,
-                                         observe=True, envelope=envelope.value)
-    return observed_curve, open_curve, xs
+        xs, both_curve = screen_curve(n_points.value, fringes.value,
+                                      mode='both', envelope=envelope.value)
+        _, slit1_curve = screen_curve(n_points.value, fringes.value,
+                                      mode='slit1', envelope=envelope.value)
+        _, slit2_curve = screen_curve(n_points.value, fringes.value,
+                                      mode='slit2', envelope=envelope.value)
+    return both_curve, slit1_curve, slit2_curve, xs
 
 
 @app.cell(hide_code=True)
-def _(fire_btn, hits_get, hits_set, mo, observed_curve, open_curve, random,
-      sample_hits, shots, xs):
+def _(both_curve, fire_btn, hits_get, hits_set, mo, random, sample_hits,
+      shots, slit1_curve, slit2_curve, xs):
     mo.stop(not fire_btn.value)
     _rng = random.Random()
     _cur = hits_get()
     hits_set({
-        'open': _cur['open'] + sample_hits(xs, open_curve, shots.value, _rng),
-        'observed': _cur['observed'] + sample_hits(xs, observed_curve,
-                                                   shots.value, _rng),
+        'slit1': _cur['slit1'] + sample_hits(xs, slit1_curve, shots.value, _rng),
+        'both': _cur['both'] + sample_hits(xs, both_curve, shots.value, _rng),
+        'slit2': _cur['slit2'] + sample_hits(xs, slit2_curve, shots.value, _rng),
     })
     return
 
@@ -124,20 +121,21 @@ def _(fire_btn, hits_get, hits_set, mo, observed_curve, open_curve, random,
 def _(hits_get, hits_set, mo, reset_btn):
     mo.stop(not reset_btn.value)
     hits_get()  # subscription keeps ordering sane
-    hits_set({'open': [], 'observed': []})
+    hits_set({'slit1': [], 'both': [], 'slit2': []})
     return
 
 
 @app.cell(hide_code=True)
-def _(alt, hits_get, mo, observed_curve, open_curve, pd, xs):
-    def _panel(title, curve, hits):
+def _(alt, both_curve, hits_get, mo, pd, slit1_curve, slit2_curve, xs):
+    def _panel(title, curve, hits, width=300):
         _screen = alt.Chart(pd.DataFrame({
             'x': [h[0] for h in hits],
             'y': [h[1] for h in hits],
         })).mark_circle(size=6, color='#f5f0c0', opacity=0.65).encode(
             x=alt.X('x:Q', scale=alt.Scale(domain=[-1, 1]), axis=None),
             y=alt.Y('y:Q', scale=alt.Scale(domain=[0, 1]), axis=None),
-        ).properties(width=430, height=190, title=f'{title} — {len(hits)} hits')
+        ).properties(width=width, height=180,
+                     title=f'{title} — {len(hits)} hits')
         _screen = _screen.configure_view(fill='#101018', stroke='#444')
         _line = alt.Chart(pd.DataFrame({'x': xs, 'P': curve})).mark_line(
             color='#4477cc').encode(
@@ -145,24 +143,55 @@ def _(alt, hits_get, mo, observed_curve, open_curve, pd, xs):
                     axis=alt.Axis(title='screen position')),
             y=alt.Y('P:Q', scale=alt.Scale(domain=[0, 1]),
                     axis=alt.Axis(title='P(hit)')),
-        ).properties(width=430, height=110)
+        ).properties(width=width, height=100)
         return mo.vstack([_screen, _line])
 
     _hits = hits_get()
     mo.hstack([
-        _panel('slits open — unobserved', open_curve, _hits['open']),
-        _panel('which-way observer on', observed_curve, _hits['observed']),
-    ], justify='center', gap=2)
+        _panel('slit 2 blocked', slit1_curve, _hits['slit1']),
+        _panel('both slits open', both_curve, _hits['both']),
+        _panel('slit 1 blocked', slit2_curve, _hits['slit2']),
+    ], justify='center', gap=1.5)
+    return
+
+
+@app.cell(hide_code=True)
+def _(alt, both_curve, mo, pd, slit1_curve, slit2_curve, xs):
+    # The punchline chart: what classical physics would predict for two
+    # open slits (the sum of the single-slit curves) against what actually
+    # happens — super-additive at bright fringes, ZERO at dark ones.
+    _frame = pd.concat([
+        pd.DataFrame({'x': xs, 'P': both_curve,
+                      'curve': ['both slits (actual)'] * len(xs)}),
+        pd.DataFrame({'x': xs,
+                      'P': [a + b for a, b in zip(slit1_curve, slit2_curve)],
+                      'curve': ['slit1 + slit2 (classical sum)'] * len(xs)}),
+    ])
+    _chart = alt.Chart(_frame).mark_line().encode(
+        x=alt.X('x:Q', axis=alt.Axis(title='screen position')),
+        y=alt.Y('P:Q', axis=alt.Axis(title='P(hit)')),
+        color=alt.Color('curve:N', legend=alt.Legend(orient='top')),
+        strokeDash=alt.condition(
+            alt.datum.curve == 'slit1 + slit2 (classical sum)',
+            alt.value([6, 4]), alt.value([0])),
+    ).properties(width=940, height=180)
+    mo.vstack([
+        mo.md('### Interference is not additivity\n'
+              'Opening the second slit *removes* particles from the dark '
+              'fringes and delivers *more than both slits\' worth* to the '
+              'bright ones:'),
+        _chart,
+    ])
     return
 
 
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    *Every volley fires the same particles at both apparatuses. The dots are
-    Monte Carlo draws from the exact world probabilities computed by the
-    quantish engine — the left screen accumulates fringes; the right screen,
-    identical except for one untouched observer particle, does not.*
+    *A follow-on lesson (figs. 4.14/4.15): keep both slits open but couple a
+    which-way recorder particle to one arm — the fringes wash out even
+    though nothing blocks either path. The engine module
+    (`multiworld.double_slit`, mode `'observed'`) already supports it.*
     """)
     return
 

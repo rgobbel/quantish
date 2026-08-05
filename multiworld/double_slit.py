@@ -1,26 +1,25 @@
 """The double-slit experiment, built from quantish Fredkin gates.
 
-The analogy
------------
-Each position x on the detection screen corresponds to one run of a small
-interferometer whose recombination angle depends on x (the path-length
-difference at that screen position):
+Per *Good and Real* (p. 200), the setup of figures 4.12/4.13 is the
+double-slit analog: "The two slits are like the two switch-wire inputs to
+g2 … The diversion away from the lower input to g2 in fig. 4.13 is like
+blocking one of the two slits."
 
-    p1 -> g0 (prepare, theta0) -> g1 (split, theta_s)  [the two slits]
-        -> upper arm ----------------------> g2 (unsplit, theta_s + delta(x))
-        -> lower arm --[g4 observer, opt.]-> g2
-        -> g3 (test, theta0)   [the screen pixel]
+    p1 -> g0 (prepare, theta0) -> g1 (split)   [the barrier]
+        -> upper arm -> g2.upper  \\  the two slits = g2's switch inputs
+        -> lower arm -> g2.lower  /   (blocking = diverting an arm away)
+        -> g2 (unsplit, theta_s + delta(x)) -> g3 (test, theta0)
 
-The screen intensity at x is P(p1 exits g3 upper). Open slits give the
-textbook fringes; inserting the which-way observer g4 (an angle-0 gate
-whose control is threaded by the lower arm, with a recorder particle p2
-on its switch wire) visibly washes them out.
+Each screen position x is one run with recombination offset delta(x); the
+intensity is P(p1 exits g3's upper switch wire). With both slits open the
+superposed path-worlds interfere — constructively (arrivals EXCEED the sum
+of the single-slit curves) and destructively (arrivals vanish where either
+slit alone would deliver them). Blocking either slit removes the
+interference and "returns the probability to normal".
 
-A quantish subtlety worth teaching: WITHOUT the prepare/test bracket
-(g0/g3), this circuit's cos²-pattern survives observation untouched — the
-marginal is classically reproducible and is not a genuine interference
-signature. The coherence that observation destroys lives in the sign
-dimension that g0 creates and g3 tests.
+Modes: 'both', 'slit1' (lower arm diverted), 'slit2' (upper arm diverted),
+plus 'observed' — the fig 4.14-style which-way recorder in the lower arm,
+the follow-on lesson.
 """
 import math
 import random
@@ -31,12 +30,17 @@ from addict import Addict
 DEFAULT_THETA0 = math.radians(22.5)   # prepare/test angle
 DEFAULT_THETA_S = math.radians(45.0)  # split/unsplit base angle (equal arms)
 
+MODES = ('both', 'slit1', 'slit2', 'observed')
 
-def slit_config(delta_rad: float, observe: bool,
+
+def slit_config(delta_rad: float, mode: str = 'both',
                 theta0: float = DEFAULT_THETA0,
                 theta_s: float = DEFAULT_THETA_S) -> Addict:
-    """The interferometer for one screen position (delta = recombination
-    offset in radians), with or without the which-way observer."""
+    """The apparatus for one screen position (delta = recombination offset
+    in radians). A blocked slit is a diverted arm: its link to g2 simply
+    doesn't exist, so those worlds exit the apparatus."""
+    if mode not in MODES:
+        raise ValueError(f'unknown mode {mode!r}; expected one of {MODES}')
     gates = {'g0': {'angle': theta0},
              'g1': {'angle': theta_s},
              'g2': {'angle': theta_s + delta_rad},
@@ -44,29 +48,31 @@ def slit_config(delta_rad: float, observe: bool,
     particles = {'p1': {'sign': 1, 'weight': 1}}
     links = {'p1': 'g0.upper',
              'g0.control': 'g1.control', 'g0.upper': 'g1.upper',
-             'g1.control': 'g2.control', 'g1.upper': 'g2.upper',
+             'g1.control': 'g2.control',
              'g2.control': 'g3.control',
              'g2.upper': 'g3.upper', 'g2.lower': 'g3.lower'}
-    if observe:
+    if mode in ('both', 'slit1', 'observed'):
+        links['g1.upper'] = 'g2.upper'
+    if mode in ('both', 'slit2'):
+        links['g1.lower'] = 'g2.lower'
+    if mode == 'observed':
         gates['g4'] = {'angle': 0}
         particles['p2'] = {'sign': 1, 'weight': 1}
         links['p2'] = 'g4.upper'
         links['g1.lower'] = 'g4.control'
         links['g4.control'] = 'g2.lower'
-    else:
-        links['g1.lower'] = 'g2.lower'
     return Addict({'title': 'double slit', 'symbolic': False,
                    'loglevel': 'error', 'variables': {},
                    'particles': particles, 'gates': gates, 'links': links})
 
 
-def screen_probability(delta_rad: float, observe: bool,
+def screen_probability(delta_rad: float, mode: str = 'both',
                        theta0: float = DEFAULT_THETA0,
                        theta_s: float = DEFAULT_THETA_S) -> float:
-    """P(p1 exits the test gate on the upper wire) for one screen position,
-    from an exact engine run."""
+    """P(p1 exits the test gate's upper switch wire) for one screen
+    position, from an exact engine run."""
     from multiworld.simulation import Simulation
-    sim = Simulation(slit_config(delta_rad, observe, theta0, theta_s))
+    sim = Simulation(slit_config(delta_rad, mode, theta0, theta_s))
     sim.run()
     total = 0.0
     for point in sim.result_space.index.values():
@@ -81,7 +87,7 @@ def screen_positions(n_points: int) -> list[float]:
     return [-1.0 + 2.0 * i / (n_points - 1) for i in range(n_points)]
 
 
-def screen_curve(n_points: int, fringes: float, observe: bool,
+def screen_curve(n_points: int, fringes: float, mode: str = 'both',
                  envelope: bool = True,
                  theta0: float = DEFAULT_THETA0,
                  theta_s: float = DEFAULT_THETA_S) -> tuple[list[float], list[float]]:
@@ -92,7 +98,7 @@ def screen_curve(n_points: int, fringes: float, observe: bool,
     intensities = []
     for x in xs:
         delta = fringes * math.pi * x
-        p = screen_probability(delta, observe, theta0, theta_s)
+        p = screen_probability(delta, mode, theta0, theta_s)
         if envelope:
             p *= math.exp(-(x * 1.6) ** 2)
         intensities.append(p)
