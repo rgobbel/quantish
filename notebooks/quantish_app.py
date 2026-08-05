@@ -487,27 +487,40 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(mo, sim, supports_epr):
-    mo.stop(not supports_epr(sim))
-    mo.md(r"""
-    ## EPR-Bell experiment
-    Sweeps the measurement angles $(\theta_1, \theta_2)$ over the magic set
-    $\{Q_a, Q_b, Q_c\}$ and tests **Bell**
-    ($d(a,c) \le d(a,b) + d(b,c)$) and **CHSH** ($|S| \le 2$).
-    The intrinsic law is $d = \sin^2(\theta_1 - \theta_2)$.
-    """)
-    return
-
-
-@app.cell(hide_code=True)
-def _(mo, sim, supports_epr):
-    mo.stop(not supports_epr(sim))
-    epr_trials = mo.ui.slider(0, 50000, step=1000, value=10000,
+def _(mo):
+    # Defined independently of sim/mode so a math-mode change or a Run can
+    # never reset the user's chosen trial count.
+    epr_trials = mo.ui.slider(0, 50000, step=1000, value=0,
                               label='trials per cell (0 = exact only)',
                               show_value=True)
     epr_button = mo.ui.run_button(label='Run EPR experiment')
-    mo.hstack([epr_trials, epr_button])
     return epr_button, epr_trials
+
+
+@app.cell(hide_code=True)
+def _(epr_button, epr_trials, mo, sim, supports_epr):
+    mo.stop(not supports_epr(sim))
+    mo.vstack([
+        mo.md(r"""
+    ## EPR-Bell experiment
+    **What the sweep does:** it re-runs the whole circuit **nine times**,
+    once per pair $(\theta_1, \theta_2)$ from the magic angle set
+    $\{Q_a, Q_b, Q_c\}$ — "measuring $p_1$ at $\theta_1$ and $p_2$ at
+    $\theta_2$" by overriding the measurement gates
+    ($g_7 = \theta_1$, $g_8 = (Q_5{+}Q_6) - \theta_2$ on two-stage
+    circuits; $g_5/g_6$ on one-stage). Each cell tabulates the conditional
+    discrepancy of the two outcomes; the grid then tests **Bell**
+    ($d(a,c) \le d(a,b)+d(b,c)$) and **CHSH** ($|S| \le 2$) against the
+    intrinsic law $d = \sin^2(\theta_1 - \theta_2)$.
+
+    With trials = 0 (the default) each cell uses only the exact final
+    worlds — fast. Setting trials adds per-cell Monte Carlo sampling on
+    top. **Symbolic mode multiplies the cost**: nine exact symbolic runs
+    with non-special angles take several seconds even at 0 trials.
+    """),
+        mo.hstack([epr_trials, epr_button], justify='start'),
+    ])
+    return
 
 
 @app.cell(hide_code=True)

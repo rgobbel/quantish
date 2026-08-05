@@ -149,8 +149,11 @@ class ConfigSpace:
         if existing is None:
             self.index[point.key] = point
             return point
-        log.debug(f'      MERGE at {point.key}: '
-                  f'{wstr(existing.weight, precision=2)} + {wstr(point.weight, precision=2)}')
+        if log.isEnabledFor(logging.DEBUG):
+            # guarded: the f-string formats symbolic weights via evalf, an
+            # expensive no-op when debug logging is off
+            log.debug(f'      MERGE at {point.key}: '
+                      f'{wstr(existing.weight, precision=2)} + {wstr(point.weight, precision=2)}')
         existing.weight = existing.weight + point.weight
         existing.predecessors |= point.predecessors
         for pred, contrib in point.contributions.items():
@@ -178,9 +181,38 @@ class ConfigSpace:
         self.index[f'{point.step}#{point.key}'] = point
 
 
+def _weight_is_zero(w) -> bool:
+    """Zero test for a merged world weight that has already been through
+    qn.simplify, cheap in Symbolic mode: structural zero, then a fast
+    numeric probe that proves NON-zero for almost every point; only
+    near-zero candidates pay for the exact confirmation (qn.zerop, which
+    runs sympy.simplify again)."""
+    if qn.CalcMode.default() == 'Float':
+        return qn.zerop(w)
+    v = w.v if qn.isq(w) else w
+    if v == 0:
+        return True
+    try:
+        if abs(complex(v.evalf(15))) > 1e-9:
+            return False
+    except (TypeError, ValueError):
+        pass
+    return qn.zerop(w)
+
+
 class ConfigSpaceRunner:
     def __init__(self, sim=None):
         self.sim = sim
+        # Branch factors are the gates' precomputed constants (cos²θ, ...):
+        # the same few objects recur for every world, so their zero-checks
+        # (sympy.simplify each, in Symbolic mode) are cached by identity.
+        self._factor_zero_cache = {}
+
+    def _factor_is_zero(self, factor) -> bool:
+        key = id(factor)
+        if key not in self._factor_zero_cache:
+            self._factor_zero_cache[key] = qn.zerop(factor)
+        return self._factor_zero_cache[key]
 
     def __repr__(self):
         return f'{self.sim.gates.keys()}'
@@ -221,7 +253,7 @@ class ConfigSpaceRunner:
         alternatives = []
         for out_port, out_sign, factor in gate.switch_factors(endpoint.port, coord.sign,
                                                               control_present):
-            if qn.zerop(factor):
+            if self._factor_is_zero(factor):
                 continue  # a zero-weight branch can never contribute
             origin = GatePort(gate.name, out_port)
             dest = self.link_dest(origin)
@@ -262,11 +294,12 @@ class ConfigSpaceRunner:
                     merged = Q_next.add_point(successor)
                     world.successors.add(merged)
                     successor_count += 1
-                log.debug(f'   {world} -> {successor_count} successor world(s)')
+                if log.isEnabledFor(logging.DEBUG):
+                    log.debug(f'   {world} -> {successor_count} successor world(s)')
             # interference may have cancelled a world's weight to zero
             for point in list(Q_next.index.values()):
                 point.weight = qn.simplify(point.weight)
-                if qn.zerop(point.weight):
+                if _weight_is_zero(point.weight):
                     log.debug(f'   dropping cancelled world {point.key}')
                     Q_next.remove(point)
             self.check_total_probability(Q_next, step)
