@@ -57,6 +57,27 @@ class TestEPRConventions(unittest.TestCase):
         self.assertAlmostEqual(predicted, 0.25, places=9)
         self.assertAlmostEqual(exact_discrepancy(sim, False), predicted, places=9)
 
+    def test_epr_with_qnumber_angles_in_config(self):
+        # Regression: run_pair deep-copies sim.config, and qnumber Reals
+        # stored as gate angles (as the marimo app does, especially with
+        # symbolic expressions) used to break deepcopy — Real.__new__
+        # requires its value argument, so Complex.__getnewargs__ must
+        # supply it.
+        from copy import deepcopy
+
+        from multiworld.epr import run_pair
+        for _mode in ('Float', 'Symbolic'):
+            CalcMode.default(_mode)
+            qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
+            val = qn.qify('pi/8')
+            self.assertEqual(complex(deepcopy(val)), complex(val))
+        CalcMode.default('Float')
+        qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
+        sim = run_sim('fig417')
+        sim.config.gates['g7'].angle = qn.qify('pi/8')
+        cell = run_pair(sim, qn.qify('0'), qn.qify('pi/8'))
+        self.assertAlmostEqual(cell['exact'], cell['analytical'], places=9)
+
     def test_bell_chsh_sweep(self):
         # Exact 3x3 sweep on fig417: every cell must match sin²(θ1−θ2),
         # Bell's three-angle inequality is violated by 1/2 − 2·sin²(π/8),

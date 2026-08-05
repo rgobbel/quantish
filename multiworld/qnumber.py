@@ -219,6 +219,12 @@ class Complex(n.Number):
     def __hash__(self):
         return self._value.__hash__()
 
+    def __getnewargs__(self):
+        # copy/pickle support: Real.__new__ requires its value argument, so
+        # deepcopy would otherwise fail with "missing 1 required positional
+        # argument" (e.g. copying a config whose gate angles are Reals).
+        return (self._value,)
+
     def same(self, other):
         result = type(self) is type(other)
         return result
