@@ -1,4 +1,6 @@
+import cmath
 import logging
+import math
 from collections import defaultdict
 from addict import Addict
 import networkx as nx
@@ -179,10 +181,16 @@ class Simulation:
         return result_space, all_points
 
     def pos_value_str(self, pos, val_type='results'):
-        """Display string for a gate output port after a run: the marginal
-        probability of each (particle, sign) that exited through the port,
-        summed over the worlds at the step where the gate fired. Returns
-        None when nothing exited there (or before a run)."""
+        """Display string for a gate output port after a run, one line per
+        particle that exited through it:
+
+            p1+: 0.56, p1-: 0.19 | Σ: 0.75 ∠+30º
+
+        The per-sign values are marginal probabilities (Σ|w|² over the
+        worlds at the step where the gate fired). Σ is the aggregate: the
+        two signed component amplitudes summed as complex numbers, shown
+        as its squared magnitude and its phase — the port's wire-weight
+        view. Returns None when nothing exited there (or before a run)."""
         if self.all_points is None:
             return None
         parts = pos.split(SEP)
@@ -193,17 +201,27 @@ class Simulation:
         if step is None:
             return None
         port = GatePort(gname, gport)
-        by_pkey = defaultdict(float)
+        probs = defaultdict(lambda: defaultdict(float))   # pname -> sign -> Σ|w|²
+        amps = defaultdict(complex)                       # pname -> Σ of world weights
         try:
             for point in self.all_points.index.values():
                 if point.step != step:
                     continue
                 for pname, coord in point.coords.items():
                     if coord.position.origin == port:
-                        by_pkey[str(coord.pkey)] += float(point.probability)
+                        probs[pname][str(coord.sign)] += float(point.probability)
+                        amps[pname] += complex(point.weight)
         except (TypeError, ValueError):
             return None  # symbolic weights with free symbols
-        if not by_pkey:
+        if not probs:
             return None
-        return ', '.join(f'{pkey}: {prob:.{self.precision}f}'
-                         for pkey, prob in sorted(by_pkey.items()))
+        lines = []
+        for pname in sorted(probs.keys()):
+            sign_parts = ', '.join(
+                f'{pname}{sign}: {prob:.{self.precision}f}'
+                for sign, prob in sorted(probs[pname].items(), reverse=True))
+            agg = amps[pname]
+            phase_deg = math.degrees(cmath.phase(agg)) if abs(agg) > 1e-12 else 0.0
+            lines.append(f'{sign_parts} | Σ: {abs(agg) ** 2:.{self.precision}f} '
+                         f'∠{phase_deg:+.0f}º')
+        return '\n'.join(lines)
