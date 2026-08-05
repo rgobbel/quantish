@@ -392,7 +392,7 @@ def _(mo, sim):
             mo.md('_TikZ render unavailable (needs pdflatex + imagemagick)_')
     except Exception as _exc:  # noqa: BLE001 — show, don't crash the app
         _out = mo.md(f'_TikZ diagram failed: {_exc}_')
-    mo.accordion({'## Circuit diagram (TikZ)': _out})
+    mo.vstack([mo.md('## Circuit diagram (TikZ)'), _out])
     return
 
 
@@ -403,7 +403,7 @@ def _(diagram, mo, sim):
         _out = mo.mermaid(_mermaid_src)
     except Exception as _exc:  # noqa: BLE001
         _out = mo.md(f'_Mermaid diagram failed: {_exc}_')
-    mo.accordion({'## Gate network with port values (Mermaid)': _out})
+    mo.vstack([mo.md('## Gate network with port values (Mermaid)'), _out])
     return
 
 
@@ -414,7 +414,7 @@ def _(mo, network_graph_figure, sim):
     # deregister from pyplot so slider-driven reruns don't accumulate open
     # figures (the Figure object itself stays renderable)
     _plt.close(_fig)
-    mo.accordion({'## Weight evolution (worlds × steps)': _fig}, lazy=True)
+    mo.vstack([mo.md('## Weight evolution (worlds × steps)'), _fig])
     return
 
 

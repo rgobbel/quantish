@@ -1229,12 +1229,17 @@ CACHE_DIR = Path.home() / '.cache' / 'quantish' / 'diagrams'
 
 def cache_key(circuit: Circuit,
               angle_overrides: dict[str, object] | None = None) -> str:
-    """Stable cache key: a hash of the circuit's topology and angles, so any
-    change to links, gates, stages, or angle overrides invalidates the cache."""
+    """Stable cache key: a hash of the circuit's topology and angles — plus
+    the TeX templates themselves, so editing the renderer (gate macro,
+    styles) invalidates old cached images instead of silently serving
+    stale ones."""
+    template_hash = hashlib.sha1(
+        (TEX_PREAMBLE + TEX_GATE_DEF).encode()).hexdigest()[:8]
     parsed = circuit.topology['parsed']
-    ident = repr((circuit.fig,
+    ident = repr((template_hash, circuit.fig,
                   sorted(parsed.links.items()),
-                  sorted((g, d.get('angle')) for g, d in parsed.gates.items()),
+                  sorted((g, d.get('angle'), d.get('deg'))
+                         for g, d in parsed.gates.items()),
                   parsed.stage_gates,
                   sorted((angle_overrides or {}).items(), key=lambda kv: kv[0])))
     h = hashlib.sha1(ident.encode()).hexdigest()[:12]

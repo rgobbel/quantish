@@ -26,7 +26,11 @@ class Simulation:
         self.simplified_links = simplify_graph(self.links)
         self.graph_roots = [node for node, degree in self.simplified_links.in_degree() if degree == 0]
         self.topo_stages = list(nx.topological_generations(self.simplified_links))[1:]
-        self.run_stages = self.grouped_run_stages(config.get('diagram_groups'))
+        # one group resolution drives both the stage schedule and diagram
+        # labels: explicit diagram_groups, else the model's run groups
+        # (either historical key), else auto-named topological stages
+        self.declared_groups = self.resolve_groups(config)
+        self.run_stages = self.grouped_run_stages(self.declared_groups)
         self.run_order = flat_list(self.run_stages)
         # the step whose worlds show a gate's just-produced outputs
         self.gate_step = {g: i + 1 for i, stage in enumerate(self.run_stages) for g in stage}
@@ -52,7 +56,7 @@ class Simulation:
                 f'(unfed non-particles: {sorted(_roots - _pnames)}; '
                 f'particles that are link targets: {sorted(_pnames - _roots)})')
         log.debug(' ')
-        self.diagram_groups = config.get('diagram_groups')
+        self.diagram_groups = self.declared_groups
         if self.diagram_groups is None:
             self.diagram_groups = {f'{"_".join(group)}': group for group in self.topo_stages}
         # Gates wired only through their control port are pure pass-throughs
@@ -77,6 +81,18 @@ class Simulation:
         linkages = [f'{str(n)} -> {", ".join(list(self.simplified_links.successors(n))) or "NULL"}'
                     for n in nx.topological_sort(self.simplified_links)]
         log_seq('downstream links', linkages, logging.DEBUG)
+
+    @staticmethod
+    def resolve_groups(config):
+        """The model's declared gate grouping: diagram_groups when present,
+        else run_groups / run_stages (both historical key names). Values
+        are normalized to lists. None when the model declares nothing."""
+        for key in ('diagram_groups', 'run_groups', 'run_stages'):
+            groups = config.get(key)
+            if groups:
+                return {name: ([g] if isinstance(g, str) else list(g))
+                        for name, g in groups.items()}
+        return None
 
     def grouped_run_stages(self, groups):
         """Execution stages: gates in one stage fire logically
