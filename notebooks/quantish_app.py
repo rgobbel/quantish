@@ -175,7 +175,7 @@ def _(angles_get, angles_set, gate_names, mo):
     angle_slider_elems = mo.ui.dictionary({
         _g: mo.ui.slider(
             -180, 180, step=0.5,
-            value=max(-180.0, min(180.0, round(angles_get()[_g]['deg'] * 2) / 2)),
+            value=max(0.0, min(180.0, round(angles_get()[_g]['deg'] * 2) / 2)),
             label=f'**{_g}**', show_value=True, full_width=True,
             on_change=_slider_cb(_g))
         for _g in gate_names})
@@ -218,8 +218,15 @@ def _(angles_get, angles_set, gate_names, math, mo, mode_pick, qn, units_pick):
 
 
 @app.cell(hide_code=True)
-def _(angle_slider_elems, angle_text_elems, base_config, gate_names, mo,
-      mode_pick, units_pick):
+def _(
+    angle_slider_elems,
+    angle_text_elems,
+    base_config,
+    gate_names,
+    mo,
+    mode_pick,
+    units_pick,
+):
     _rows = [mo.hstack([angle_slider_elems[_g], angle_text_elems[_g]],
                        widths=[5, 1], align='center')
              for _g in gate_names]
@@ -239,6 +246,12 @@ def _(mo):
     run_btn = mo.ui.run_button(label='▶ Run simulation')
     run_btn
     return (run_btn,)
+
+
+@app.cell
+def _(mo, sim):
+    mo.accordion(sim.__dict__, multiple=True, lazy=True)
+    return
 
 
 @app.cell(hide_code=True)
@@ -294,7 +307,7 @@ def _(
 
 @app.cell(hide_code=True)
 def _(cmath, mo, qn):
-    def latex_weight(w) -> str:
+    def latex_weight(w, prec=4) -> str:
         # In Symbolic mode, render the exact sympy expression as LaTeX.
         try:
             if qn.CalcMode.default() == 'Symbolic' and qn.isq(w):
@@ -306,11 +319,12 @@ def _(cmath, mo, qn):
         _re, _im = _w.real, _w.imag
         parts = []
         if abs(_re) > 1e-12:
-            parts.append(f'{_re:.4g}')
+            # parts.append(f'{_re:5.{prec}g}')
+            parts.append(f'${round(_re, 2)}$')
         if abs(_im) > 1e-12:
             sign = '-' if _im < 0 else ('+' if parts else '')
-            parts.append(f'{sign}{abs(_im):.4g}i')
-        return ''.join(parts) if parts else '0'
+            parts.append(f'{sign}${abs(_im):5.{prec}g}$i')
+        return ''.join(parts) if parts else '$0$'
 
     def phase_deg(w) -> float:
         return cmath.phase(complex(w)) * 180.0 / cmath.pi
@@ -334,31 +348,18 @@ def _(cmath, mo, qn):
 @app.cell(hide_code=True)
 def _(latex_weight, md_table, mo, phase_deg, short_config, sim):
     _rows = []
-    for _p in sorted(sim.result_space.index.values(),
-                     key=lambda x: -float(x.probability)):
+    for _k, _p in sorted(sim.result_space.index.items(),
+                     key=lambda x: x[0]):
+                     # key=lambda x: -float(x.probability)):
         _rows.append((
             f'`{short_config(_p).replace("|", " ")}`',
-            f'${latex_weight(_p.weight)}$',
-            f'{float(_p.probability):.4f}',
-            f'{phase_deg(_p.weight):+.1f}º',
+            f'{latex_weight(_p.weight)}',
+            f'${float(_p.probability):.4f}$',
+            f'${phase_deg(_p.weight):+.1f}º$',
         ))
-    mo.md('### Final worlds\n' +
-          md_table(['configuration', 'weight $w$', r'$\lvert w\rvert^2$', 'phase'],
-                   _rows))
-    return
-
-
-@app.cell(hide_code=True)
-def _(latex_weight, mo, short_config, sim):
-    _lines = []
-    for _p in sorted(sim.result_space.index.values(),
-                     key=lambda x: -float(x.probability)):
-        _cfg = short_config(_p).replace('|', r'\;')
-        _lines.append(
-            rf"w(\texttt{{{_cfg}}}) &= {latex_weight(_p.weight)}"
-            rf" &\quad \lvert w\rvert^2 &= {float(_p.probability):.4f} \\")
-    _latex = '$$\n\\begin{aligned}\n' + '\n'.join(_lines) + '\n\\end{aligned}\n$$'
-    mo.accordion({'## Final worlds (LaTeX)': mo.md(_latex)})
+    mo.accordion({'## Final worlds\n':
+          mo.md(md_table(['configuration', 'weight $w$', r'$\lvert w\rvert^2$', 'phase'],
+                   _rows))})
     return
 
 
@@ -367,6 +368,8 @@ def _(md_table, mo, sim):
     _pkey = {}
     for _p in sim.result_space.index.values():
         _prob = float(_p.probability)
+        for _coord in _p.coords.values():
+            pass
         for _name, _coord in _p.coords.items():
             _key = f'{_coord.pkey}@{_coord.position.origin}'
             _pkey[_key] = _pkey.get(_key, 0.0) + _prob
@@ -374,6 +377,22 @@ def _(md_table, mo, sim):
     mo.accordion({
         '## Marginal probabilities (particle, sign, position)':
             mo.md(md_table(['coordinate', 'probability'], _rows))
+    })
+    return
+
+
+@app.cell(hide_code=True)
+def _(md_table, mo, sim):
+    # Per-step gate traffic: what arrived at each port (previous step's
+    # coordinate endpoints) and what left it (that step's origins), with
+    # per-sign probabilities and the aggregate Σ (|Σ|² and phase).
+    _rows = [(_r['step'], _r['gate'], _r['port'],
+              _r['input'].replace('\n', '<br>'),
+              _r['output'].replace('\n', '<br>'))
+             for _r in sim.gate_io()]
+    mo.accordion({
+        '## Gate inputs and outputs by step':
+            mo.md(md_table(['step', 'gate', 'port', 'input', 'output'], _rows))
     })
     return
 
@@ -587,7 +606,7 @@ def _(mo):
 
 @app.cell(hide_code=True)
 def _(mo):
-    ws_theta = mo.ui.slider(0, 90, step=0.5, value=30, label='θ (º)',
+    ws_theta = mo.ui.slider(-90, 90, step=5, value=30, label='θ (º)',
                             show_value=True)
     ws_sign = mo.ui.switch(value=True, label='sign + (off = −)')
     ws_wmag = mo.ui.slider(0.0, 1.0, step=0.05, value=1.0, label='|w|',
@@ -607,8 +626,11 @@ def _(
     FredkinGate,
     alt,
     cmath,
+    latex_weight,
     math,
+    mo,
     pd,
+    phase_deg,
     qn,
     ws_components,
     ws_sign,
@@ -619,9 +641,9 @@ def _(
     _gate = FredkinGate('ws', qn.qify(math.radians(ws_theta.value)))
     _w = ws_wmag.value * cmath.exp(1j * math.radians(ws_wphase.value))
     _c2a, _c2b, _c3a, _c3b = (complex(_x) for _x in
-                              _gate.cpair(qn.Complex(_w), twist=not ws_sign.value))
+        _gate.cpair(qn.Complex(_w), twist=not ws_sign.value))
     _data = {'c2': _c2a + _c2b, 'c3': _c3a + _c3b,
-             'c2a': _c2a, 'c2b': _c2b, 'c3a': _c3a, 'c3b': _c3b}
+            'c2a': _c2a, 'c2b': _c2b, 'c3a': _c3a, 'c3b': _c3b}
     _order = ['c2', 'c3', 'c2a', 'c2b', 'c3a', 'c3b']
     _sel = [c for c in _order if c in ws_components.value]
     _frame = pd.DataFrame({
@@ -648,10 +670,23 @@ def _(
     _sign_str = '+' if ws_sign.value else '−'
     _chart = (_vectors + _labels).properties(
         title=f'θ = {ws_theta.value}º, sign = {_sign_str}',
-        width=420, height=420)
+        width=300, height=300)
+    _lines = []
+    for _label in _sel:
+        _val = _data[_label]
+        _lines.append(
+            rf"{_label} &= {latex_weight(_val, prec=2)}"
+            rf" &\quad \texttt{{Pr}} &= {abs(_val)**2:.2f} & \phi &= {phase_deg(_val):.1f}\\")
+    _latex = rf"""
+    $$
+    \begin{{aligned}}
+    {'\n'.join(_lines)}
+    \end{{aligned}}
+    $$
+    """
     # plain display (not mo.ui.altair_chart): no selection plumbing, and
     # with inline data no virtual-file churn on slider moves
-    _chart
+    mo.hstack([_chart, mo.md(_latex)], align='center', justify='start')
     return
 
 

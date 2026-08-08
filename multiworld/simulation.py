@@ -180,27 +180,20 @@ class Simulation:
         log.debug('DONE!')
         return result_space, all_points
 
-    def pos_value_str(self, pos, val_type='results'):
-        """Display string for a gate output port after a run, one line per
-        particle that exited through it:
+    def port_summary(self, step, port, end='origin'):
+        """Formatted per-particle summary of the amplitudes at `port` over
+        the worlds at `step`, one line per particle:
 
             p1+: 0.56, p1-: 0.19 | Σ: 0.75 ∠+30º
 
-        The per-sign values are marginal probabilities (Σ|w|² over the
-        worlds at the step where the gate fired). Σ is the aggregate: the
-        two signed component amplitudes summed as complex numbers, shown
-        as its squared magnitude and its phase — the port's wire-weight
-        view. Returns None when nothing exited there (or before a run)."""
+        The per-sign values are marginal probabilities (Σ|w|²). Σ is the
+        aggregate: the two signed component amplitudes summed as complex
+        numbers, shown as squared magnitude and phase — the port's
+        wire-weight view. end='origin' summarizes what exited the port,
+        end='endpoint' what is arriving at it. None when nothing matches
+        (or symbolic weights with free symbols)."""
         if self.all_points is None:
             return None
-        parts = pos.split(SEP)
-        if len(parts) != 2:
-            return None
-        gname, gport = parts
-        step = self.gate_step.get(gname)
-        if step is None:
-            return None
-        port = GatePort(gname, gport)
         probs = defaultdict(lambda: defaultdict(float))   # pname -> sign -> Σ|w|²
         amps = defaultdict(complex)                       # pname -> Σ of world weights
         try:
@@ -208,7 +201,9 @@ class Simulation:
                 if point.step != step:
                     continue
                 for pname, coord in point.coords.items():
-                    if coord.position.origin == port:
+                    where = (coord.position.origin if end == 'origin'
+                             else coord.position.endpoint)
+                    if where == port:
                         probs[pname][str(coord.sign)] += float(point.probability)
                         amps[pname] += complex(point.weight)
         except (TypeError, ValueError):
@@ -225,3 +220,38 @@ class Simulation:
             lines.append(f'{sign_parts} | Σ: {abs(agg) ** 2:.{self.precision}f} '
                          f'∠{phase_deg:+.0f}º')
         return '\n'.join(lines)
+
+    def gate_io(self):
+        """Per-step gate traffic: a list of rows {step, gate, port, input,
+        output} for every gate port that saw a particle — inputs are what
+        was arriving at the port in the previous step's worlds (coordinate
+        endpoints), outputs what exited it when the gate fired (coordinate
+        origins), both in port_summary format."""
+        rows = []
+        if self.all_points is None:
+            return rows
+        for i, stage in enumerate(self.run_stages):
+            step = i + 1
+            for gname in stage:
+                for wire in ('control', 'upper', 'lower'):
+                    port = GatePort(gname, wire)
+                    arriving = self.port_summary(step - 1, port, end='endpoint')
+                    leaving = self.port_summary(step, port, end='origin')
+                    if arriving is None and leaving is None:
+                        continue
+                    rows.append({'step': step, 'gate': gname, 'port': wire,
+                                 'input': arriving or '—',
+                                 'output': leaving or '—'})
+        return rows
+
+    def pos_value_str(self, pos, val_type='results'):
+        """Display string for a gate output port after a run (see
+        port_summary). Returns None when nothing exited there."""
+        parts = pos.split(SEP)
+        if len(parts) != 2:
+            return None
+        gname, gport = parts
+        step = self.gate_step.get(gname)
+        if step is None:
+            return None
+        return self.port_summary(step, GatePort(gname, gport), end='origin')

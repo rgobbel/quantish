@@ -398,7 +398,7 @@ class TestMeasure(unittest.TestCase):
         with open(config_path, 'r') as f:
             config.update(yaml.safe_load(f))
         sim = Simulation(config)
-        random_angle = random.random() * qn.PI() * 2
+        random_angle = random.random() * qn.PI_fn()() * 2
         # p1 = random_particle('p1')
         p1 = Particle('p1', 1, 1)
         sim.particles['p1'] = p1
