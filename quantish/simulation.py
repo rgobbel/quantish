@@ -30,16 +30,16 @@ class Simulation:
         self.title = config['title']
         self.symbolic = config.get('symbolic', False)
         self.precision = config.get('string_precision', 2)
-        self.add_with_signs = config.get('add_with_signs', False)
-        self.swap_if_selected = config.get('swap_if_selected', False)
-        self.always_forward_switch_weights = config.get('always_forward', {}).get('switch_weights', False)
-        self.always_forward_control_weights = config.get('always_forward', {}).get('control_weights', False)
-        self.alternative_measure = config.get('alternative_measure', False)
-        self.merge_before_measure = config.get('merge', {'before_measure': False}).get('before_measure', False)
-        self.merge_before_forward = config.get('merge', {'before_forwarding': False}).get('before_forwarding', False)
-        self.add_with_signs = config.get('merge', {'add_with_signs': False}).get('add_with_signs', False)
-        self.combine_signs = config.get('merge', {'combine_signs': True}).get('combine_signs', True)
-        self.combine_names = config.get('merge', {'combine_names': True}).get('combine_names', True)
+        # self.add_with_signs = config.get('add_with_signs', False)
+        # self.swap_if_selected = config.get('swap_if_selected', False)
+        # self.always_forward_switch_weights = config.get('always_forward', {}).get('switch_weights', False)
+        # self.always_forward_control_weights = config.get('always_forward', {}).get('control_weights', False)
+        # self.alternative_measure = config.get('alternative_measure', False)
+        # self.merge_before_measure = config.get('merge', {'before_measure': False}).get('before_measure', False)
+        # self.merge_before_forward = config.get('merge', {'before_forwarding': False}).get('before_forwarding', False)
+        # self.add_with_signs = config.get('merge', {'add_with_signs': False}).get('add_with_signs', False)
+        # self.combine_signs = config.get('merge', {'combine_signs': True}).get('combine_signs', True)
+        # self.combine_names = config.get('merge', {'combine_names': True}).get('combine_names', True)
         self.sample = config.get('sample', False)
         self.n_samples = config.get('n_samples', 0)
         self.qvars = {vname: vval for vname, vval in config['variables'].items()}
@@ -50,8 +50,8 @@ class Simulation:
         self.run_results = {}
         self.run_stages = {}
         self.gates = Dict()
-        self.normalize_output = config.normalize_weights.output
-        self.normalize_input = config.normalize_weights.input
+        # self.normalize_output = config.normalize_weights.output
+        # self.normalize_input = config.normalize_weights.input
 
         # selector chooses a value to determine probability thresholds
         # no value: a fixed random value,
@@ -66,9 +66,9 @@ class Simulation:
             self.selector_value =  self.config.probability_threshold.selector
         else:
             self.selector_value = fixed_random
-        self.swap_threshold = None
-        self.forwarding_threshold = None
-        self.presence_threshold = None
+        # self.swap_threshold = None
+        # self.forwarding_threshold = None
+        # self.presence_threshold = None
         if self.selector_value is None:
             self.selector = lambda: fixed_random
         else:
@@ -93,34 +93,34 @@ class Simulation:
         #             self.presence_threshold = random.random
         # else:
         #     self.presence_threshold = self.selector
-        log.info(f'merge:')
-        log.info(f'   before measure={self.merge_before_measure}')
-        log.info(f'   before forward={self.merge_before_forward}')
-        log.info(f'always forward:')
-        log.info(f'   switch weights={self.always_forward_switch_weights}')
-        log.info(f'   control weights={self.always_forward_control_weights}')
-        log.info(f'combine:')
-        log.info(f'   signs={self.combine_signs}')
-        log.info(f'   names={self.combine_names}')
-        log.info(f'   add with signs={self.add_with_signs}')
-        log.info(f'normalize:')
-        log.info(f'   before measure={self.normalize_input}')
-        log.info(f'   before forwarding={self.normalize_output}')
-        log.info(f'swap if selected={self.swap_if_selected}')
+        # log.info(f'merge:')
+        # log.info(f'   before measure={self.merge_before_measure}')
+        # log.info(f'   before forward={self.merge_before_forward}')
+        # log.info(f'always forward:')
+        # log.info(f'   switch weights={self.always_forward_switch_weights}')
+        # log.info(f'   control weights={self.always_forward_control_weights}')
+        # log.info(f'combine:')
+        # log.info(f'   signs={self.combine_signs}')
+        # log.info(f'   names={self.combine_names}')
+        # log.info(f'   add with signs={self.add_with_signs}')
+        # log.info(f'normalize:')
+        # log.info(f'   before measure={self.normalize_input}')
+        # log.info(f'   before forwarding={self.normalize_output}')
+        # log.info(f'swap if selected={self.swap_if_selected}')
         log.info('')
         for pname, pval in config['particles'].items():
             self.particles[pname] = Particle(pname, pval['sign'], precision=self.precision,add_with_signs=self.add_with_signs)
             log.info(f'PARTICLE: {self.particles[pname]}')
         log.info('')
         for gname, gval in config.gates.items():
-            if 'swap_threshold' in gval:
-                swap_threshold = gval.swap_threshold
-            else:
-                swap_threshold = self.swap_threshold
-            if 'forwarding_threshold' in gval:
-                forwarding_threshold = gval.forwarding_threshold
-            else:
-                forwarding_threshold = self.forwarding_threshold
+            # if 'swap_threshold' in gval:
+            #     swap_threshold = gval.swap_threshold
+            # else:
+            #     swap_threshold = self.swap_threshold
+            # if 'forwarding_threshold' in gval:
+            #     forwarding_threshold = gval.forwarding_threshold
+            # else:
+            #     forwarding_threshold = self.forwarding_threshold
             self.gates[gname] = FredkinGate(gname, gval.angle)
         if 'delay_gates' in config:
             for dgname in config.delay_gates:
@@ -135,7 +135,7 @@ class Simulation:
         log.info(f'{self.gates=}')
         log.info(f'{self.particles=}')
         # log.info(f'{self.swap_threshold=}, {self.forwarding_threshold=}, {self.presence_threshold=}')
-        log.info(f'{self.normalize_input=}, {self.normalize_output=}')
+        # log.info(f'{self.normalize_input=}, {self.normalize_output=}')
         log.info('')
 
     def run(self):

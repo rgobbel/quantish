@@ -365,6 +365,12 @@ class Complex(n.Number):
         """Returns the Real distance from 0. Called for abs(self)."""
         return Real(abs(self._value))
 
+    def __round__(self, n=None):
+        if self.imag == 0:
+            return Real(round(self.real, n))
+        else:
+            return Complex(round(self.real, n)+round(self.imag, n)*I)
+
     def conjugate(self):
         """(x+y*i).conjugate() returns (x-y*i)."""
         return self.newme(self._value.conjugate())

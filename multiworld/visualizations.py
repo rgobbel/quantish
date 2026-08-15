@@ -45,11 +45,16 @@ gate_fields = {'upper': DiagramFields(field='upper', label='UPPER'),
 #         title='Quantish Weights')
 #     return final_chart
 
-def short_config(point):
+def short_config(point, key=None):
     """Compact one-line label for a world's coordinates: sign, gate, and the
-    port initial for each particle, e.g. '+g2c|+g2l|+g3u'."""
+    port initial for each particle, e.g. '+g2c|+g2l|+g3u'. Coordinates
+    appear in particle-name order unless a sort key (e.g.
+    sim.coord_sort_key) is supplied."""
+    coords = point.coords.values()
+    if key is not None:
+        coords = sorted(coords, key=key)
     parts = []
-    for coord in point.coords.values():
+    for coord in coords:
         port = coord.position.origin or coord.position.endpoint
         if port is None:
             parts.append(f'{sstr(coord.sign)}?')
@@ -332,7 +337,7 @@ def make_gate_node(sim, gname, inout, wire, mermaid_nodes, show_outputs=True):
         # TODO(roadmap: Mermaid after-diagrams): mark the sampled/selected
         # output once port values come from final-world marginals.
         selected = False
-        out_value_str = sim.pos_value_str(out_pos, 'weights')
+        out_value_str = sim.pos_value_str(out_pos)
         # pos_sink = sim.sinks.get(out_pos)
         if not show_outputs:
             cs = ''
@@ -351,7 +356,7 @@ def make_gate_node(sim, gname, inout, wire, mermaid_nodes, show_outputs=True):
         else:
             make1(graph_node_id, f'{gcontent}', bold=selected)
     elif inout == '':
-        out_value_str = sim.pos_value_str(position, 'weights')
+        out_value_str = sim.pos_value_str(position)
         if not show_outputs:
             cs = ''
         elif out_value_str is None:
@@ -365,9 +370,9 @@ def make_gate_node(sim, gname, inout, wire, mermaid_nodes, show_outputs=True):
             else:
                 sink_nodes += [make1(sink_node_id, f'{gcontent}', shape='stadium-shape')]
         if len(cs) > 0:
-            make1(graph_node_id, f'{gcontent}: {cs}', bold=sim.pos_value_str(position, 'weights'))
+            make1(graph_node_id, f'{gcontent}: {cs}', bold=sim.pos_value_str(position))
         else:
-            make1(graph_node_id, f'{gcontent}', bold=sim.pos_value_str(position, 'weights'))
+            make1(graph_node_id, f'{gcontent}', bold=sim.pos_value_str(position))
     return sink_nodes
 
 def gnodes(sim, gname, mermaid_nodes, show_outputs=True):

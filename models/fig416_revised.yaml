@@ -23,11 +23,6 @@ diagram_groups:
 measure_discrepancy: true
 epr_stats: true
 
-disallow_excess_weights: false
-disappear_zeros: false
-delete_zeros: false
-skip_zeros: false
-
 variables:
    q1: &q1 'rad(45)'
    q2: &q2 'rad(45)'

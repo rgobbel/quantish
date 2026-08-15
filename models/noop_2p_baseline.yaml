@@ -8,8 +8,6 @@ title: No-op 2-particle baseline
 
 symbolic: false
 
-skip_zeros: false
-
 run_stages:
    step1: [gate1, gateA]
    step2: [gate2, gateB]

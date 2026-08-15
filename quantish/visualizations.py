@@ -65,7 +65,7 @@ def make_gnode(sim, gname, inout, wire, mermaid_nodes, show_ratios=False, ratios
         parts = position.split(SEP)
         gname, gwire = parts
         if sim.gates[gname].inputs[gwire]:
-            pos_str = sim.pos_value_str(position, 'inputs')
+            pos_str = sim.pos_value_str(position)
             # pos_str = str(sim.gates[gname].input[gwire])
             cs = f'{pos_str}'
             make1(graph_node_id, f'{gcontent}:\n{cs}')
@@ -76,7 +76,7 @@ def make_gnode(sim, gname, inout, wire, mermaid_nodes, show_ratios=False, ratios
         gname, gwire = out_pos.split(SEP)
         gate = sim.gates[gname]
         selected = gwire == gate.output_wire
-        out_value_str = sim.pos_value_str(out_pos, 'weights')
+        out_value_str = sim.pos_value_str(out_pos)
         # pos_sink = sim.sinks.get(out_pos)
         if out_value_str is None:
             cs = f'None'
@@ -92,7 +92,7 @@ def make_gnode(sim, gname, inout, wire, mermaid_nodes, show_ratios=False, ratios
             sink_nodes += [make1(sink_node_id, f'{gcontent}:\n{cs}{ratio_str}', shape='stadium-shape')]
         make1(graph_node_id, f'{gcontent}:\n{cs}', bold=selected)
     elif inout == '':
-        out_value_str = sim.pos_value_str(position, 'weights')
+        out_value_str = sim.pos_value_str(position)
         if out_value_str is None:
             cs = 'None'
         else:
@@ -100,7 +100,7 @@ def make_gnode(sim, gname, inout, wire, mermaid_nodes, show_ratios=False, ratios
         if position not in sim.links.keys():
             sink_node_id = f'{position}_sink'
             sink_nodes += [make1(sink_node_id, f'{gcontent}:\n{cs}', shape='stadium-shape')]
-        make1(graph_node_id, f'{gcontent}: {cs}', bold=sim.pos_value_str(position, 'results'))
+        make1(graph_node_id, f'{gcontent}: {cs}', bold=sim.pos_value_str(position))
     return sink_nodes
 
 def gnodes(sim, gname, mermaid_nodes):
@@ -149,19 +149,6 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
         legend = pmd.Node(id='Legend')
         legend.content = f"""**Parameters**
     **numerics**: {qn.CalcMode.mode}
-    **combine**:
-    &nbsp;&nbsp;&nbsp;&nbsp;**signs**: {f"{sim.combine_signs}".lower()}
-    &nbsp;&nbsp;&nbsp;&nbsp;**names**: {f"{sim.combine_names}".lower()}
-    **normalize**
-    &nbsp;&nbsp;&nbsp;&nbsp;**input**: {f"{sim.normalize_input}".lower()}
-    &nbsp;&nbsp;&nbsp;&nbsp;**output**: {f"{sim.normalize_output}".lower()}
-    **merge before**
-    &nbsp;&nbsp;&nbsp;&nbsp;**measure**: {f"{sim.merge_before_measure}".lower()}
-    &nbsp;&nbsp;&nbsp;&nbsp;**forward**: {f"{sim.merge_before_forward}".lower()}
-    **always forward**
-    &nbsp;&nbsp;&nbsp;&nbsp;**control weights**: {f"{sim.always_forward_control_weights}".lower()}
-    &nbsp;&nbsp;&nbsp;&nbsp;**switch weights**: {f"{sim.always_forward_switch_weights}".lower()}
-    **add with signs**: {f"{sim.add_with_signs}".lower()}
     """
         diag.add_nodes([legend])
     for particle_name, particle in sim.particles.items():

@@ -1,21 +1,5 @@
 title: Figure 4.12
 symbolic: false
-#string_precision: 2
-#merge:
-#   before_measure: false
-#   before_forwarding: false
-#   combine_signs: true
-#normalize_weights:
-#   output: false
-#   input: false
-#probability_threshold:
-#   selector: -3
-#   swap: -3
-#   presence: 0
-#   forwarding: 0
-always_forward:
-   control_weights: true
-   switch_weights: true
 
 sample: true
 n_samples: 10000
@@ -34,7 +18,7 @@ variables:
    q3: &q3 '0.8+0.6j'
    q4: &q4 'rad(15)'
 
-run_stages:
+run_groups:
    prepare: [g0]
    split: [g1]
    merge: [g2]

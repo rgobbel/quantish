@@ -1,16 +1,5 @@
 title: Figure 4.4
 symbolic: false
-merge:
-   before_measure: false
-   before_forwarding: false
-   combine_signs: true
-normalize_weights:
-   output: false
-   input: true
-probability_threshold:
-   swap: 0
-   forwarding: 0
-   presence: 0
 string_precision: 2
 
 sample: false

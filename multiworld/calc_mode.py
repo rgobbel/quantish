@@ -1,4 +1,5 @@
 import sympy as sym
+import math as m
 
 class CalcMode:
     mode = 'Float'

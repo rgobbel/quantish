@@ -1,24 +1,6 @@
 title: Figure 4.14
 symbolic: false
 
-merge:
-   before_measure: false
-   before_forwarding: false
-   combine_signs: false
-#normalize_weights:
-#   output: false
-#   input: false
-#probability_threshold:
-#   swap: 0
-#   forwarding: -3
-#   control: -3
-#   presence: 0
-always_forward:
-   switch_weights: false
-   control_weights: false
-#swap_if_selected: false
-#string_precision: 2
-
 sample: true
 n_samples: 1000
 

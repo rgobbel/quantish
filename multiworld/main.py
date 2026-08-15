@@ -1,28 +1,18 @@
 import csv
 import logging
-import math as m
-import random
 import subprocess
 import time
 from argparse import ArgumentParser, BooleanOptionalAction, SUPPRESS, ArgumentDefaultsHelpFormatter
 from collections import defaultdict
-from copy import deepcopy
 from pathlib import Path
 
-import numpy as np
-import networkx as nx
-import sympy as sym
 import yaml
-from tqdm import tqdm
 from addict import Addict
 
-from multiworld.config_space import ConfigSpacePoint, ConfigSpace #, PCoordValue,
-from multiworld.gate import FredkinGate #, DelayGate
-from multiworld.particle import Particle
 import multiworld.qnumber as qn
-from multiworld.qnumber import CalcMode, qify
+from multiworld.qnumber import CalcMode
 from multiworld.simulation import Simulation
-from multiworld.util import QLogger, max_width, flat_list, SEP, WIRES, enough, Sign, default_wires, zerop, show_points
+from multiworld.util import QLogger, flat_list, zerop, show_points
 from multiworld.visualizations import diagram, network_graph
 
 log = None
@@ -98,10 +88,6 @@ def main():
     parser.add_argument('--measure-discrepancy', action='store_true',
                         help='Measure discrepancy for EPR experiment. Assumes a network consistent with book figure 4.16')
     parser.add_argument('--full-stats', action='store_true', help='Include particle names and probabilities in results')
-    parser.add_argument('--delete-zeros', action=BooleanOptionalAction, default=SUPPRESS, help='Delete points containing zero values')
-    parser.add_argument('--disappear-zeros', action=BooleanOptionalAction, default=SUPPRESS, help='Zero-valued particles vanish altogether (dimension itself goes away)')
-    parser.add_argument('--skip-zeros', action=BooleanOptionalAction, default=SUPPRESS, help='Skip over (but not delete) zero-value results')
-    parser.add_argument('--disallow-excess-weights', action=BooleanOptionalAction, default=SUPPRESS, help='Skip over result weights that would sum to more than one')
     args = parser.parse_args()
     config_path = Path(args.configs_dir, args.config).with_suffix('.yaml')
     config_dir = args.configs_dir
@@ -135,7 +121,6 @@ def main():
     else:
         logging.basicConfig(format=' %(message)s', level=loglevel, handlers=[QLogger()])
     log = logging.getLogger('multiworld')
-    epr_stats = args.epr_stats or config.get('epr_stats')
     if args.preserve_log: log.info(' ')
     if 'symbolic' in args:
         config.symbolic = args.symbolic
@@ -144,14 +129,6 @@ def main():
     if args.sample:
         config.sample = True
         config.n_samples = args.n_samples
-    if 'delete_zeros' in args:
-        config.delete_zeros = args.delete_zeros
-    if 'skip_zeros' in args:
-        config.skip_zeros = args.skip_zeros
-    if 'disappear_zeros' in args:
-        config.disappear_zeros = args.disappear_zeros
-    if 'disallow_excess_weights' in args:
-        config.disallow_excess_weights = args.disallow_excess_weights
     log.info(f'QUANTISH PHYSICS SIMULATION STARTING: {config["title"]} at {time.asctime()}')
     if args.measure_discrepancy: config.measure_discrepancy = True
     elif 'measure_discrepancy' not in config.keys(): config.measure_discrepancy  = False
@@ -165,14 +142,12 @@ def main():
         log.debug(f'CONFIG:')
         for k, v in config_dict.items():
             log.debug(f'   {k}: {v}')
-    q1 = None
-    q2 = None
     dpath = None
     has_run = False
     save_ll = log.getEffectiveLevel()
     sim = Simulation(config)
     if args.tikz_diagram:
-        from multiworld.circuit_diagram import render_from_simulation
+        from multiworld.tikz_diagram import render_from_simulation
         tikz_path = Path(args.diagram_dir, args.tikz_diagram)
         if not tikz_path.suffix:
             tikz_path = tikz_path.with_suffix('.pdf')

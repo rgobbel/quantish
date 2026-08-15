@@ -1,22 +1,5 @@
 title: Figure 4.15
 symbolic: false
-merge:
-   before_measure: false
-#   before_forwarding: false
-#   combine_signs: true
-#normalize_weights:
-#   output: false
-#   input: false
-#probability_threshold:
-#   swap: 0
-#   forwarding: -3
-#   control: -3
-#   presence: 0
-always_forward:
-   switch_weights: true
-   control_weights: true
-#swap_if_selected: false
-#string_precision: 2
 
 sample: false
 #loglevel: warning

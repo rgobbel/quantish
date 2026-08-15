@@ -1,9 +1,3 @@
-from multiworld.gate import FredkinGate
-from multiworld.particle import Particle
-# from multiworld.sink import Sink
-from multiworld.qnumber import Real, probability
-from multiworld.util import enough
-from collections import defaultdict
 import marimo as mo
 import altair as alt
 import numpy as np
@@ -32,26 +26,12 @@ def load_selected_model(configs, selected, config_ui):
         if selected is not None and len(selected) > 0:
             sel_name = selected[0]
             config = configs[sel_name]
-            config['merge'] = {
-                'before_measure': config_ui['merge_before_measure'],
-                'before_forwarding': config_ui['merge_before_forward'],
-                'combine_signs': config_ui['combine_signs'],
-                'combine_names': config_ui['combine_names']
-            }
-            config['probability_threshold'] = {
-                'control': config_ui['control_threshold'],
-                'forwarding': config_ui['forward_threshold'],
-                'presence': config_ui['presence_threshold']
-            }
-            config['normalize_weights'] = {
-                'input': config_ui['normalize_inputs'],
-                'output': config_ui['normalize_outputs']
-            }
             # config['title'] = config_ui['title']
             config['symbolic'] = config_ui['symbolic'] == 'Symbolic'
             config['variables'] = {}
             print(f'{config=}')
             return config
+    return None
 
 def plot_weights(data, selections, title='Quantish Weights'):
     chart_size = 600
@@ -60,7 +40,6 @@ def plot_weights(data, selections, title='Quantish Weights'):
 
     sel_data = [data[comp] for comp in selections]
     sel_components = tuple(selections)
-    npoints = len(selections)
 
     limit = max(max([max(abs(x.real), x.imag) for x in data.values()]), 1) * 1.05
     limits = [-limit, limit]
@@ -87,9 +66,6 @@ def plot_weights(data, selections, title='Quantish Weights'):
     sel_leg = alt.selection_point(name='sel_leg',
         fields=["component"], bind='legend', empty=False)
     high_line = alt.selection_point(name="high_line", on="pointerover", empty=False)
-    # sel_some = sel_line | sel_leg
-    # sel_any_condition = sel_line | sel_leg | high_line
-    # sel_any = alt.when(sel_line).then(alt.value(5)).when(sel_leg).then(alt.value(4)).otherwise(alt.value(1))
     stroke_width = \
         alt.when(sel_leg).then(alt.value(5)).\
             when(sel_line).then(alt.value(4)).\

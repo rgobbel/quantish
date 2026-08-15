@@ -5,8 +5,6 @@ title: No-op baseline (1 particle, gate1(theta) -> gate2(theta))
 
 symbolic: true
 
-delete_zeros: true
-
 run_stages:
    split1: [gate1]
    split2: [gate2]

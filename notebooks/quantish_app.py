@@ -248,9 +248,9 @@ def _(mo):
     return (run_btn,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo, sim):
-    mo.accordion(sim.__dict__, multiple=True, lazy=True)
+    mo.accordion({'## Loaded Configuration': mo.accordion(sim.__dict__, multiple=True, lazy=True)})
     return
 
 
@@ -306,6 +306,29 @@ def _(
 
 
 @app.cell(hide_code=True)
+def _(FredkinGate, qn):
+    def cpair(g: FredkinGate, w:qn.Complex, twist=False):
+        """
+        From AIM-1026a: the four split components of weight w.
+        Values are precomputed for speed. twist=True gives the minus-sign
+        column (cos/sin of theta - pi/2, i.e. sin/cos of theta).
+        """
+        if not twist:
+            c2a = w * g.cos2_theta
+            c2b = w * g.cos_sin_theta
+            c3a = w * g.sin2_theta
+            c3b = w * g.mcos_sin_theta
+        else:
+            c2a = w * g.cos2_twist
+            c2b = w * g.cos_sin_twist
+            c3a = w * g.sin2_twist
+            c3b = w * g.mcos_sin_twist
+        return c2a, c2b, c3a, c3b
+
+    return (cpair,)
+
+
+@app.cell(hide_code=True)
 def _(cmath, mo, qn):
     def latex_weight(w, prec=4) -> str:
         # In Symbolic mode, render the exact sympy expression as LaTeX.
@@ -320,11 +343,12 @@ def _(cmath, mo, qn):
         parts = []
         if abs(_re) > 1e-12:
             # parts.append(f'{_re:5.{prec}g}')
-            parts.append(f'${round(_re, 2)}$')
+            sign = '-' if _re < 0 else '+'
+            parts.append(f'{sign}{abs(round(_re, 2))}')
         if abs(_im) > 1e-12:
-            sign = '-' if _im < 0 else ('+' if parts else '')
-            parts.append(f'{sign}${abs(_im):5.{prec}g}$i')
-        return ''.join(parts) if parts else '$0$'
+            sign = '-' if _im < 0 else '+'
+            parts.append(f' {sign}{abs(_im):.{prec}g}i')
+        return ''.join(parts) if parts else f'{0.00:+.2f}'
 
     def phase_deg(w) -> float:
         return cmath.phase(complex(w)) * 180.0 / cmath.pi
@@ -346,14 +370,15 @@ def _(cmath, mo, qn):
 
 
 @app.cell(hide_code=True)
-def _(latex_weight, md_table, mo, phase_deg, short_config, sim):
+def _(md_table, mo, phase_deg, short_config, sim):
+    # Worlds sorted canonically: gate (in evaluation order), then port
+    # (upper before lower), then sign (+ before −); the configuration
+    # label's coordinates are reordered to match.
     _rows = []
-    for _k, _p in sorted(sim.result_space.index.items(),
-                     key=lambda x: x[0]):
-                     # key=lambda x: -float(x.probability)):
+    for _p in sorted(sim.result_space.index.values(), key=sim.world_sort_key):
         _rows.append((
-            f'`{short_config(_p).replace("|", " ")}`',
-            f'{latex_weight(_p.weight)}',
+            f'`{short_config(_p, key=sim.coord_sort_key).replace("|", " ")}`',
+            f'{_p.weight}',
             f'${float(_p.probability):.4f}$',
             f'${phase_deg(_p.weight):+.1f}º$',
         ))
@@ -365,18 +390,31 @@ def _(latex_weight, md_table, mo, phase_deg, short_config, sim):
 
 @app.cell(hide_code=True)
 def _(md_table, mo, sim):
-    _pkey = {}
+    # Marginal in the statistics sense: each row sums |w|² over every
+    # final world containing that coordinate — the chance of finding that
+    # particle, with that sign, at that port, regardless of where the
+    # other particles ended up. Rows follow gate evaluation order (upper
+    # before lower, + before −), so a port's +/− pair sits together and
+    # sums to the port's total output probability.
+    _acc = {}
     for _p in sim.result_space.index.values():
         _prob = float(_p.probability)
         for _coord in _p.coords.values():
-            pass
-        for _name, _coord in _p.coords.items():
             _key = f'{_coord.pkey}@{_coord.position.origin}'
-            _pkey[_key] = _pkey.get(_key, 0.0) + _prob
-    _rows = [(f'`{_k}`', f'{_v:.4f}') for _k, _v in sorted(_pkey.items())]
+            _entry = _acc.setdefault(_key, [_coord, 0.0])
+            _entry[1] += _prob
+    _rows = [(f'`{_k}`', f'{_e[1]:.4f}')
+             for _k, _e in sorted(_acc.items(),
+                                  key=lambda kv: sim.coord_sort_key(kv[1][0]))]
     mo.accordion({
-        '## Marginal probabilities (particle, sign, position)':
-            mo.md(md_table(['coordinate', 'probability'], _rows))
+        '## Marginal probabilities (one coordinate at a time)':
+            mo.md(r'Each row sums $\lvert w\rvert^2$ over every final world '
+                  'in which that particle, with that sign, sits at that '
+                  'port — its probability there *regardless of where the '
+                  'other particles ended up* (the marginal over the rest '
+                  'of the configuration). The +/− rows at one port '
+                  "together give the port's total output probability.\n" +
+                  md_table(['coordinate', 'probability'], _rows))
     })
     return
 
@@ -401,7 +439,7 @@ def _(md_table, mo, sim):
 def _(mo, sim):
     # Depends on sim, so it refreshes on every Run (runs are now explicit,
     # so the pdflatex cost is paid once per Run, not per slider move).
-    from multiworld.circuit_diagram import render_diagram, spec_from_simulation
+    from multiworld.tikz_diagram import render_diagram, spec_from_simulation
     try:
         _overrides = {_g: f'{float(_gate.atheta.degrees):.1f}°'
                       for _g, _gate in sim.fredkin_gates.items()}
@@ -434,6 +472,68 @@ def _(mo, network_graph_figure, sim):
     # figures (the Figure object itself stays renderable)
     _plt.close(_fig)
     mo.vstack([mo.md('## Weight evolution (worlds × steps)'), _fig])
+    return
+
+
+@app.cell(hide_code=True)
+def _(latex_weight, md_table, mo, short_config, sim):
+    # Tabular twin of the weight-evolution graph: per stage, one row per
+    # parent→child branch — the input world and its weight, the literal
+    # per-particle factors the gate applied (cos²θ, ±i·sinθcosθ, sin²θ),
+    # the branch amplitude, and the output world's total weight. Where
+    # branch w ≠ world w, interfering branches merged into that world.
+    def _label(_p):
+        return f'`{short_config(_p, key=sim.coord_sort_key).replace("|", " ")}`'
+
+    def _wfmt(_x):
+        # latex_weight can emit a leading space (pure-imaginary values);
+        # '$ ...$' is not valid inline math in markdown, so normalize.
+        return f'${" ".join(latex_weight(_x).split())}$'
+
+    def _factor_cell(_w, _parent, _contrib):
+        # A merged world stores only its FIRST branch's per-particle
+        # factors; for other branches show just the branch's overall
+        # multiplier Π (recovered as branch w / input w).
+        _facts = {_n: _f for _n, _f in _w.factors.items() if _f is not None}
+        try:
+            _expected = complex(_parent.weight)
+            for _f in _facts.values():
+                _expected *= complex(_f)
+            _stored_ok = abs(_expected - complex(_contrib)) < 1e-9
+        except (TypeError, ValueError):
+            _stored_ok = True  # symbolic with free symbols: trust the stored factors
+        if _stored_ok:
+            return '<br>'.join(f'{_n}: {_wfmt(_f)}'
+                               for _n, _f in _facts.items()) or '—'
+        try:
+            return f'Π: {_wfmt(complex(_contrib) / complex(_parent.weight))}'
+        except (TypeError, ValueError, ZeroDivisionError):
+            return 'Π: ?'
+
+    _by_step = {}
+    for _pt in sim.all_points.index.values():
+        _by_step.setdefault(_pt.step, []).append(_pt)
+    _sections = {}
+    for _step in sorted(_by_step):
+        _worlds = sorted(_by_step[_step], key=sim.world_sort_key)
+        if _step == 0:
+            _sections['Step 0 — initial world'] = mo.md(md_table(
+                ['world', 'weight $w$'],
+                [(_label(_w), _wfmt(_w.weight)) for _w in _worlds]))
+            continue
+        _rows = []
+        for _w in _worlds:
+            for _parent, _contrib in sorted(_w.contributions.items(),
+                                            key=lambda kv: sim.world_sort_key(kv[0])):
+                _rows.append((_label(_parent), _wfmt(_parent.weight),
+                              _factor_cell(_w, _parent, _contrib),
+                              _wfmt(_contrib), _label(_w), _wfmt(_w.weight)))
+        _gates = ', '.join(sim.run_stages[_step - 1])
+        _sections[f'Step {_step} — {_gates}'] = mo.md(md_table(
+            ['input world', '$w_{in}$', 'factors', 'branch $w$',
+             'output world', '$w_{out}$'], _rows))
+    mo.accordion({'## Weight evolution table':
+                  mo.accordion(_sections, multiple=True, lazy=True)})
     return
 
 
@@ -626,6 +726,7 @@ def _(
     FredkinGate,
     alt,
     cmath,
+    cpair,
     latex_weight,
     math,
     mo,
@@ -641,7 +742,7 @@ def _(
     _gate = FredkinGate('ws', qn.qify(math.radians(ws_theta.value)))
     _w = ws_wmag.value * cmath.exp(1j * math.radians(ws_wphase.value))
     _c2a, _c2b, _c3a, _c3b = (complex(_x) for _x in
-        _gate.cpair(qn.Complex(_w), twist=not ws_sign.value))
+        cpair(_gate, qn.Complex(_w), twist=not ws_sign.value))
     _data = {'c2': _c2a + _c2b, 'c3': _c3a + _c3b,
             'c2a': _c2a, 'c2b': _c2b, 'c3a': _c3a, 'c3b': _c3b}
     _order = ['c2', 'c3', 'c2a', 'c2b', 'c3a', 'c3b']
@@ -670,17 +771,18 @@ def _(
     _sign_str = '+' if ws_sign.value else '−'
     _chart = (_vectors + _labels).properties(
         title=f'θ = {ws_theta.value}º, sign = {_sign_str}',
-        width=300, height=300)
+        width=400, height=400)
     _lines = []
     for _label in _sel:
         _val = _data[_label]
         _lines.append(
             rf"{_label} &= {latex_weight(_val, prec=2)}"
-            rf" &\quad \texttt{{Pr}} &= {abs(_val)**2:.2f} & \phi &= {phase_deg(_val):.1f}\\")
+            rf" &\quad \texttt{{Pr}} &= {abs(_val)**2:.2f} & \phi &= {phase_deg(_val):.1f}\degree\\")
+    _lj = '\n'.join(_lines)
     _latex = rf"""
     $$
     \begin{{aligned}}
-    {'\n'.join(_lines)}
+    {_lj}
     \end{{aligned}}
     $$
     """

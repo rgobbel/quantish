@@ -1,5 +1,5 @@
 """
-circuit_diagram.py — TikZ topology renderer for Quantish circuits.
+tikz_diagram.py — TikZ topology renderer for Quantish circuits.
 
 Ported from quantish_gld/circuits_diagram.py; the layout, routing, TikZ
 emission, and compile pipeline are kept close to the original so future
@@ -83,33 +83,33 @@ def spec_from_simulation(sim, fig: str = None) -> DiagramSpec:
     delay_in = {d: f'{d}_in' for d in delay_names}
     delay_out = {d: f'{d}_out' for d in delay_names}
 
-    def out_wire(src: str) -> str | None:
-        if SEP in src:
-            g, port = src.split(SEP, 1)
+    def out_wire(source: str) -> str | None:
+        if SEP in source:
+            g, port = source.split(SEP, 1)
             if g in delay_out:  # 'd1.control' — the delay's single output
                 return delay_out[g]
             return gate_outputs[g][port]
-        if src in delay_out:
-            return delay_out[src]
+        if source in delay_out:
+            return delay_out[source]
         return None
 
-    def set_in_wire(dst: str, wire: str) -> None:
-        if SEP in dst:
-            g, port = dst.split(SEP, 1)
+    def set_in_wire(dest: str, wire_name: str) -> None:
+        if SEP in dest:
+            g, port = dest.split(SEP, 1)
             if g in delay_in:
-                delay_in[g] = wire
+                delay_in[g] = wire_name
             else:
-                gate_inputs[g][port] = wire
-        elif dst in delay_in:
-            delay_in[dst] = wire
+                gate_inputs[g][port] = wire_name
+        elif dest in delay_in:
+            delay_in[dest] = wire_name
 
-    def in_wire(dst: str) -> str:
-        if SEP in dst:
-            g, port = dst.split(SEP, 1)
+    def in_wire(dest: str) -> str:
+        if SEP in dest:
+            g, port = dest.split(SEP, 1)
             if g in delay_in:
                 return delay_in[g]
             return gate_inputs[g][port]
-        return delay_in.get(dst, dst)
+        return delay_in.get(dest, dest)
 
     particle_starts = {}
     for src, dst in links.items():
@@ -236,7 +236,6 @@ def compute_layout(circuit: Circuit) -> Layout:
     depends on g3). Stage labels span the columns their gates occupy.
     """
     parsed = circuit.topology['parsed']
-    topo = circuit.topology['topo']
     engine_steps = circuit.topology['engine_steps']
     delays = set(parsed.delay_gates)
     L = Layout()
@@ -256,7 +255,6 @@ def compute_layout(circuit: Circuit) -> Layout:
     row_stride = GATE_HEIGHT + GATE_VSPACE
     delay_stride = DELAY_HEIGHT + DELAY_VSPACE
     row_ys0 = []
-    # total_h = max_rows * GATE_HEIGHT + (max_rows - 1) * GATE_VSPACE
     total_h = total_height(circuit)
     top = total_h / 2.0
     for r in range(max_rows):
@@ -266,8 +264,6 @@ def compute_layout(circuit: Circuit) -> Layout:
         x = col * STAGE_WIDTH
         row_ys = stage_ys(parsed, names, top, row_stride, delay_stride)
         for row_y, name in zip(row_ys, names):
-            iy = stage_row(parsed, name)
-            y0 = row_ys0[iy] if iy < len(row_ys0) else row_ys0[-1]
             h = height(parsed, name)
             if name in delays:
                 L.delay_xy[name] = (x + GATE_WIDTH/2, row_y - h / 2)
@@ -424,7 +420,7 @@ def port_xy(L: Layout, gate_name: str, port: str, side: str) -> tuple[float, flo
         edge_x = cx - CONTROL_HALF_W if side == 'in' else cx + CONTROL_HALF_W
     else:
         edge_x = x + PORT_IN_DX if side == 'in' else x + PORT_OUT_DX
-    return (edge_x, y + dy)
+    return edge_x, y + dy
 
 def wire_endpoint(circuit: Circuit, L: Layout, wire_name: str, side: str) -> tuple[float, float] | None:
     """Find the (x, y) where a wire enters or exits its node."""
@@ -484,7 +480,6 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
     routes: list[Route] = []
     particles = set(parsed.particles)
     delays = set(parsed.delay_gates)
-    n_cols = len(circuit.topology['engine_steps'])
     boxes_geom = group_boxes(parsed, L)
 
     # Build the obstacle list: name → (x_left, y_top, x_right, y_bottom).
@@ -548,7 +543,7 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
             return (PARTICLE_OFFSET_X + 0.55, -_GAP_MARGIN)
         gate_right = gap * STAGE_WIDTH + GATE_WIDTH
         next_left = (gap + 1) * STAGE_WIDTH
-        return (gate_right + _GAP_MARGIN, next_left - _GAP_MARGIN)
+        return gate_right + _GAP_MARGIN, next_left - _GAP_MARGIN
 
     # Track per-gap channel (vertical-segment) allocations: list of
     # (x, y_low, y_high). When picking a new channel, we prefer one that
@@ -574,7 +569,7 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
                 continue
             if sx_hi < lo + 0.05 or sx_lo > hi - 0.05:
                 continue
-            return (sx_lo, sx_hi)
+            return sx_lo, sx_hi
         return None
 
     # Minimum visual separation between two channels in the same gap.
@@ -680,7 +675,7 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
     # before flexible ones grab the same x-band for their endpoint stubs.
     def flexibility_key(link):
         src, dst = link
-        s_xy = src_xy(circuit, L, src, particles, delays)
+        s_xy = src_xy(L, src, particles, delays)
         d_xy, d_col = dst_xy_col(circuit, L, dst, delays)
         s_col = col_of_src(L, src, particles, delays)
         if s_xy is None or d_xy is None or s_col is None or d_col is None:
@@ -690,7 +685,7 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
     sorted_links = sorted(parsed.links.items(), key=flexibility_key)
 
     for src, dst in sorted_links:
-        s_xy = src_xy(circuit, L, src, particles, delays)
+        s_xy = src_xy(L, src, particles, delays)
         d_xy, d_col = dst_xy_col(circuit, L, dst, delays)
         if s_xy is None or d_xy is None:
             continue
@@ -925,13 +920,13 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
         add_horizontal(dy, d_cx, dx)
     return routes
 
-def src_xy(circuit: Circuit, L: Layout, src: str, particles: set, delays: set):
+def src_xy(L: Layout, src: str, particles: set, delays: set):
     if '.' in src:
         gname, port = src.split('.', 1)
         return port_xy(L, gname, port, 'out')
     if src in particles:
         cx, cy = L.particle_xy[src]
-        return (cx + 0.4, cy)
+        return cx + 0.4, cy
     if src in delays:
         return port_xy(L, src, '_delay', 'out')
     return None

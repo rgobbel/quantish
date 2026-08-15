@@ -55,18 +55,9 @@ def _(mo):
         'symbolic': mo.ui.multiselect(label='Calculation mode',
                                       max_selections=1, value=['Float'],
                                       options=['Symbolic', 'Float']),
-        'merge_before_measure': mo.ui.checkbox(label='Before measure'),
-        'merge_before_forward': mo.ui.checkbox(label='Before forwarding'),
         'combine_names': mo.ui.checkbox(label='Combine names'),
-        'normalize_inputs': mo.ui.checkbox(label='Inputs'),
-        'normalize_outputs': mo.ui.checkbox(label='Outputs'),
         'combine_signs': mo.ui.checkbox(label='Combine signs'),
         'selector': mo.ui.number(label='Selector:', start=-2, stop=1.0),
-        'control_threshold': mo.ui.number(label='Control:', start=0, stop=0.9),
-        'forward_threshold': mo.ui.number(label='Forwarding:', start=0, stop=0.9),
-        'presence_threshold': mo.ui.number(label='Presence:', start=0, stop=0.9),
-        'always_forward_switch_weights': mo.ui.checkbox(label='Switch weights'),
-        'always_forward_control_weights': mo.ui.checkbox(label='Control weights')
     })
     return (config_ui,)
 
@@ -167,36 +158,6 @@ def _(config_ui, md):
     - {config_ui['title']}
 
     - {config_ui['symbolic']}
-
-    - Merge:
-
-        -  {config_ui['merge_before_measure']}
-
-        -  {config_ui['merge_before_forward']}
-
-        -  {config_ui['combine_signs']}
-
-        -  {config_ui['combine_names']}
-
-    - Normalize:
-
-        - {config_ui['normalize_inputs']}
-
-        - {config_ui['normalize_outputs']}
-
-    - Thresholds
-
-        - {config_ui['selector']}
-
-        - {config_ui['control_threshold']}
-
-        -  {config_ui['forward_threshold']}
-
-        -  {config_ui['presence_threshold']}
-    - Always forward:
-        - {config_ui['always_forward_switch_weights']}
-
-        - {config_ui['always_forward_control_weights']}
     """)
     return
 
@@ -220,24 +181,24 @@ def _(config_ui, gates, links, md, mo, particles, phases):
         'gates': gates,
         'symbolic': config_ui['symbolic'].value[0] == 'Symbolic',
         'combine_names': config_ui['combine_names'].value,
-         'merge': {
-             'before_measure': config_ui['merge_before_measure'].value,
-             'before_forwarding': config_ui['merge_before_forward'].value,
-             'combine_signs': config_ui['combine_signs'].value,
-         },
-        'normalize_weights': {
-            'input': config_ui['normalize_inputs'].value,
-            'output': config_ui['normalize_outputs'].value, 
-        },
-        'probability_threshold': {
-            'control': config_ui['control_threshold'].value, 
-            'forwarding': config_ui['forward_threshold'].value, 
-            'presence': config_ui['presence_threshold'].value,
-        },
-        'always_forward': {
-            'control_weights': config_ui['always_forward_control_weights'].value,
-            'switch_weights': config_ui['always_forward_switch_weights'].value
-        }
+        #  'merge': {
+        #      'before_measure': config_ui['merge_before_measure'].value,
+        #      'before_forwarding': config_ui['merge_before_forward'].value,
+        #      'combine_signs': config_ui['combine_signs'].value,
+        #  },
+        # 'normalize_weights': {
+        #     'input': config_ui['normalize_inputs'].value,
+        #     'output': config_ui['normalize_outputs'].value,
+        # },
+        # 'probability_threshold': {
+        #     'control': config_ui['control_threshold'].value,
+        #     'forwarding': config_ui['forward_threshold'].value,
+        #     'presence': config_ui['presence_threshold'].value,
+        # },
+        # 'always_forward': {
+        #     'control_weights': config_ui['always_forward_control_weights'].value,
+        #     'switch_weights': config_ui['always_forward_switch_weights'].value
+        # }
     }
     md(rf"""
     {mo.accordion(qconfig)}

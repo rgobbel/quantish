@@ -7,6 +7,7 @@ curve, exactly as in *Good and Real* figs. 4.12/4.13.
 
 Run with:  marimo run notebooks/double_slit_app.py
 """
+
 import marimo
 
 __generated_with = "0.23.16"
@@ -39,6 +40,7 @@ def _():
     logging.getLogger('multiworld').setLevel(logging.WARNING)
 
     from multiworld.double_slit import sample_hits, screen_curve
+
     return alt, mo, pd, random, sample_hits, screen_curve
 
 
@@ -104,8 +106,19 @@ def _(envelope, fringes, mo, n_points, screen_curve):
 
 
 @app.cell(hide_code=True)
-def _(both_curve, fire_btn, hits_get, hits_set, mo, random, sample_hits,
-      shots, slit1_curve, slit2_curve, xs):
+def _(
+    both_curve,
+    fire_btn,
+    hits_get,
+    hits_set,
+    mo,
+    random,
+    sample_hits,
+    shots,
+    slit1_curve,
+    slit2_curve,
+    xs,
+):
     mo.stop(not fire_btn.value)
     _rng = random.Random()
     _cur = hits_get()
@@ -144,7 +157,7 @@ def _(alt, both_curve, hits_get, mo, pd, slit1_curve, slit2_curve, xs):
             y=alt.Y('P:Q', scale=alt.Scale(domain=[0, 1]),
                     axis=alt.Axis(title='P(hit)')),
         ).properties(width=width, height=100)
-        return mo.vstack([_screen, _line])
+        return mo.vstack([_screen, _line], align='end')
 
     _hits = hits_get()
     mo.hstack([

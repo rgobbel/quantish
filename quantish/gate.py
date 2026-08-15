@@ -32,25 +32,25 @@ class FredkinGate:
         else:
             self.atheta = Angle(self.theta, unit='radians')
             self.theta = self.atheta.radians
-        self.twist = self.theta - qn.PI/2
+        self.twist = self.theta - qn.PI_fn()/2
 
         self.cos_theta = self.theta.cos
         self.sin_theta = self.theta.sin
         self.cos2_theta = Complex(self.cos_theta**2)
-        self.cos_sin_theta = self.cos_theta * self.sin_theta * qn.I
-        self.mcos_sin_theta = self.cos_theta * self.sin_theta * -qn.I
+        self.cos_sin_theta = self.cos_theta * self.sin_theta * qn.PI_fn()
+        self.mcos_sin_theta = self.cos_theta * self.sin_theta * -qn.PI_fn()
         self.sin2_theta = Complex(self.sin_theta**2)
-        self.wplusf = self.cos_theta * (qn.I * self.theta).exp
-        self.wminusf = self.sin_theta * (qn.I * self.twist).exp
+        self.wplusf = self.cos_theta * (qn.PI_fn() * self.theta).exp
+        self.wminusf = self.sin_theta * (qn.PI_fn() * self.twist).exp
 
         self.cos_twist = self.twist.cos
         self.sin_twist = self.twist.sin
         self.cos2_twist = Complex(self.cos_twist**2)
-        self.cos_sin_twist = qn.I * self.cos_twist * self.sin_twist
-        self.mcos_sin_twist = -qn.I * self.cos_twist * self.sin_twist
+        self.cos_sin_twist = qn.PI_fn() * self.cos_twist * self.sin_twist
+        self.mcos_sin_twist = -qn.PI_fn() * self.cos_twist * self.sin_twist
         self.sin2_twist = Complex(self.sin_twist**2)
-        self.wplusf_twist = self.cos_twist * (qn.I * self.twist).exp
-        self.wminusf_twist = self.sin_twist * (qn.I * self.twist).exp
+        self.wplusf_twist = self.cos_twist * (qn.PI_fn() * self.twist).exp
+        self.wminusf_twist = self.sin_twist * (qn.PI_fn() * self.twist).exp
 
     def report_type(self): ## HACK TO AVOID A DEPENDENCY LOOP
         return 'FredkinGate'
@@ -92,10 +92,10 @@ class FredkinGate:
             This version computes rotation in the complex plane
             in the most straightforward but not fastest way
         """
-        twist = theta - qn.PI/2
-        wplus = w * theta.cos * (qn.I * theta).exp
-        wminus = w * theta.sin * (qn.I * twist).exp
-        return Complex(wplus.real), qn.I*wplus.imag, Complex(wminus.real), qn.I*wminus.imag
+        twist = theta - qn.PI_fn()/2
+        wplus = w * theta.cos * (qn.PI_fn() * theta).exp
+        wminus = w * theta.sin * (qn.PI_fn() * twist).exp
+        return Complex(wplus.real), qn.PI_fn()*wplus.imag, Complex(wminus.real), qn.PI_fn()*wminus.imag
 
     def relative_angle(self, p:ConfigSpacePoint):
         return self.theta - p.weight.phase
@@ -199,7 +199,7 @@ class FredkinGate:
                 self.outputs['control'] = []
         assert isinstance(self.swapping, bool)
 
-    def _fetch_source(self, port, source_type:SourceType='outputs'):
+    def _fetch_source(self, port, source_type='outputs'):
         # source is either a particle or gate and wire (or [])
         port_source = self.sim.sources.get(f'{self.name}{SEP}{port}')
         if not port_source:
@@ -237,20 +237,18 @@ class FredkinGate:
                     if weight_source:
                         if isinstance(weight_source, Particle):
                             measurements = self.process_particle(weight_source)
-                            if self.sim.merge_before_forward:
-                                measurements = [Particle.merge(measurements[:2]), Particle.merge(measurements[2:])]
-                                split_outs = [switch, OTHER[switch]]
+                            # if self.sim.merge_before_forward:
+                            #     measurements = [Particle.merge(measurements[:2]), Particle.merge(measurements[2:])]
+                            #     split_outs = [switch, OTHER[switch]]
                             for p, sw in zip(measurements, split_outs):
                                 unswapped_weights[sw].append(p)
                         elif isinstance(weight_source, list):
-                            if self.sim.merge_before_measure:
-                                weight_source = [Particle.merge(weight_source)]
                             for particle in weight_source:
                                 if not particle: continue
                                 measurements = self.process_particle(particle)
-                                if self.sim.merge_before_forward:
-                                    measurements = [Particle.merge(measurements[:2]), Particle.merge(measurements[2:])]
-                                    split_outs = [switch, OTHER[switch]]
+                                # if self.sim.merge_before_forward:
+                                #     measurements = [Particle.merge(measurements[:2]), Particle.merge(measurements[2:])]
+                                #     split_outs = [switch, OTHER[switch]]
                                 for p, sw in zip(measurements, split_outs):
                                     unswapped_weights[sw].append(p)
                 if self.swapping:
@@ -263,9 +261,9 @@ class FredkinGate:
     def port_weights(self, port):
         if self.swapping is None: self.set_control()
         if port == 'control':
-            if self.sim.always_forward_control_weights:
-                return self.weights['control']
-            elif self.swapping:
+            # if self.sim.always_forward_control_weights:
+            #     return self.weights['control']
+            if self.swapping:
                 return self.weights['control']
             else:
                 return []
@@ -376,7 +374,7 @@ class DelayGate(FredkinGate):
     def theta(self):
         return qify(0)
 
-    def _fetch_source(self, port, source_type:SourceType='outputs'):
+    def _fetch_source(self, port, source_type='outputs'):
         source = self.sim.sources[f'{self.name}{SEP}inputs']
         source_gate, source_wire = source.split(SEP)
         result = getattr(self.sim.gates[source_gate], source_type, {}).get(source_wire, [])

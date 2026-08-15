@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.23.11"
+__generated_with = "0.23.14"
 app = marimo.App(width="full")
 
 with app.setup:
@@ -36,9 +36,9 @@ with app.setup:
 @app.cell
 def _():
     import importlib.util
-    spec = importlib.util.spec_from_file_location('qn', '/Users/gobbel/src/quantish/multiworld/qnumber.py')
-    qn = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(qn)
+    qn_spec = importlib.util.spec_from_file_location('qn', '/Users/gobbel/src/quantish/multiworld/qnumber.py')
+    qn = importlib.util.module_from_spec(qn_spec)
+    qn_spec.loader.exec_module(qn)
     return (qn,)
 
 
@@ -93,14 +93,14 @@ def show_config():
 def config_file_browser():
     config_file = mo.ui.file_browser(label='config file', 
                                      multiple=False, filetypes=['.yaml', '.yml'],
-                                    initial_path=Path('models'))
+                                    initial_path=Path('../models'))
     config_file
     return
 
 
 @app.cell
 def _(sccb):
-    with open(Path('models/fig45.yaml')) as f:
+    with open(Path('../models/fig45_multi.yaml')) as f:
         cf = yaml.safe_load(f)
     # print(f'LOADED {config_file.value[0].path}')
     if sccb.value:
@@ -172,7 +172,7 @@ def _(sym_sim):
     return
 
 
-@app.cell(hide_code=True)
+@app.cell(disabled=True, hide_code=True)
 def _(sym_sim):
     sym_result = sym_sim.run()
     md('sym_result = sym_sim.run')
@@ -249,7 +249,7 @@ def _():
     return
 
 
-@app.cell(hide_code=True)
+@app.cell(disabled=True, hide_code=True)
 def _(
     SEP,
     SymGate,
@@ -499,7 +499,7 @@ def _():
     return
 
 
-@app.cell(hide_code=True)
+@app.cell(disabled=True, hide_code=True)
 def _(Sink):
     class SymSink(Sink):
         """For storing final output values. Obsolete?"""
@@ -569,7 +569,7 @@ def angle_class(qn):
                 self.theta = theta.radians
             else:
                 self.theta = theta
-            self.theta %= 2 * qn.PI
+            self.theta %= 2 * qn.PI_fn()
         def __hash__(self):
             return hash(self.theta)
         def __call__(self):
@@ -606,7 +606,7 @@ def _():
     return
 
 
-@app.cell(hide_code=True)
+@app.cell(disabled=True, hide_code=True)
 def symparticle(sym_prob):
     class SymParticle:
         def __init__(self, name, weight, sign, trace=''):
@@ -1002,10 +1002,10 @@ def _():
 
 
 @app.cell
-def _():
+def _(qn):
     ttsr = sym.acos(sympify(4)/sympify(5))
     tts = sym.deg(ttsr)
-    tt = float(tts)
+    tt = qn.to_native(tts)
     ttr = m.radians(tt)
     mo.left(md(rf"""
     $$
@@ -1286,7 +1286,7 @@ def measure(cpair, qn, w):
     return (cquad,)
 
 
-@app.cell
+@app.cell(disabled=True, hide_code=True)
 def sym_measure(cpair_sym):
     def sym_cquad(weight, theta, sign):
         """measure a particle through a gate, using symbolic math
@@ -1426,7 +1426,7 @@ def component_select(comp_select):
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def plot_input_ui(sign_check, theta_slide, wi_slide, wr_slide):
     md(f"""
     {wr_slide}
@@ -1598,7 +1598,7 @@ def cpair_sym(cpair_alg):
     return (cpair_sym,)
 
 
-@app.cell(hide_code=True)
+@app.cell
 def num_vs_sym_results(SymAngle, cpair_sym):
     cpsyms = r"$\sqrt{3} * \exp{\i * \pi / 6}/4$"
     mo.left(md(rf"""
@@ -1618,12 +1618,12 @@ def angstr(x):
     return f'{m.degrees(cm.phase(x)):.1f}º'
 
 
-@app.function
+@app.function(disabled=True, hide_code=True)
 def angstr_sym(x):
     return f'{sym.deg(sym.arg(x)):.1f}º'
 
 
-@app.cell
+@app.cell(disabled=True, hide_code=True)
 def sym_measurement(SymAngle, sign, sym_cquad):
     sym_measurement = sym_cquad(1, SymAngle(30).radians, sign)
     return (sym_measurement,)
@@ -1691,7 +1691,7 @@ def plot_weights_fun():
     return (plot_weights,)
 
 
-@app.cell
+@app.cell(disabled=True, hide_code=True)
 def _():
     def sym_prob(cw):
         """probability of a complex-valued weight"""

@@ -32,27 +32,6 @@ def load_selected_model(configs, selected, config_ui):
         if selected is not None and len(selected) > 0:
             sel_name = selected[0]
             config = configs[sel_name]
-            config['merge_option'] = {
-                'before_measure': config_ui['merge_before_measure'],
-                'before_forwarding': config_ui['merge_before_forward'],
-                'combine_signs': config_ui['combine_signs'],
-                'combine_names': config_ui['combine_names']
-            }
-            config['probability_threshold'] = {
-                'selector': config_ui['selector'],
-                'control': config_ui['swap_threshold'],
-                'forwarding': config_ui['forward_threshold'],
-                'presence': config_ui['presence_threshold']
-            }
-            config['normalize_weights'] = {
-                'input': config_ui['normalize_inputs'],
-                'output': config_ui['normalize_outputs']
-            }
-            config['always_forward'] = {
-                'control_weights': config_ui['always_forward_control_weights'],
-                'switch_weights': config_ui['always_forward_switch_weights']
-            }
-            # config['title'] = config_ui['title']
             config['symbolic'] = config_ui['symbolic'] == 'Symbolic'
             config['variables'] = {}
             print(f'{config=}')

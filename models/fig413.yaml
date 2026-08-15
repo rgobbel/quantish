@@ -1,24 +1,8 @@
 title: Figure 4.13
 symbolic: false
 
-#merge:
-#   before_measure: false
-#   before_forwarding: false
-#   combine_signs: true
-#normalize_weights:
-#   output: false
-#   input: false
-#probability_threshold:
-#   swap: 0
-#   forwarding: 0
-#   presence: 0
-always_forward:
-   control_weights: false
-   switch_weights: false
-#string_precision: 2
-
 sample: true
-n_samples: 1000
+n_samples: 10000
 
 variables:
    zero: &zero '0j'
@@ -34,26 +18,20 @@ variables:
    q10: &q10 'rad(10)'
    q120: &q120 'rad(120)'
 
-run_stages:
+run_groups:
    prepare: [g0]
    split: [g1]
    unsplit: [g2]
    test: [g3]
 
 particles:
-   p1:
-      sign: 1
-      weight: *one
+   p1: {weight: *one, sign: 1}
 
 gates:
-   g0:
-      angle: *q15
-   g1:
-      angle: *q60
-   g2:
-      angle: *q60
-   g3:
-      angle: *q15
+   g0: {angle: *q15}
+   g1: {angle: *q60}
+   g2: {angle: *q60}
+   g3: {angle: *q15}
 
 links:
    p1: g0.upper

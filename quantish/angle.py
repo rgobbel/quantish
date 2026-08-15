@@ -17,7 +17,7 @@ class Angle:
                 value = sym.rad(value)
             else:
                 value = m.radians(qify(value))
-        twopi = 2 * qn.PI
+        twopi = 2 * qn.PI_fn()
         modded = value % twopi
         self.value = modded
 

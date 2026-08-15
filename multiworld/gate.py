@@ -45,24 +45,6 @@ class FredkinGate:
     def __repr__(self):
         return f'{self.name}({self.atheta.degrees:.2f}º)'
 
-    def cpair(self, w:Complex, twist=False):
-        """
-        From AIM-1026a: the four split components of weight w.
-        Values are precomputed for speed. twist=True gives the minus-sign
-        column (cos/sin of theta - pi/2, i.e. sin/cos of theta).
-        """
-        if not twist:
-            c2a = w * self.cos2_theta
-            c2b = w * self.cos_sin_theta
-            c3a = w * self.sin2_theta
-            c3b = w * self.mcos_sin_theta
-        else:
-            c2a = w * self.cos2_twist
-            c2b = w * self.cos_sin_twist
-            c3a = w * self.sin2_twist
-            c3b = w * self.mcos_sin_twist
-        return c2a, c2b, c3a, c3b
-
     def switch_factors(self, port:str, sign:Sign, control_present:bool):
         """
         The four-way split for a particle entering switch wire *port* with

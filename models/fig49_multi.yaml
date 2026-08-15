@@ -17,22 +17,12 @@ variables:
 
 run_groups:
    stage1: [g1]
-   stage2: [g2]
-   stage3: [g3]
+   stage2: [g2, g3]
 
 particles:
-#   c:
-#      sign: 1
-#      weight: *zero
-   p1:
-      sign: 1
-      weight: *one
-   p2:
-      sign: 1
-      weight: *one
-   p3:
-      sign: 1
-      weight: *one
+   p1: {weight: 1, sign: 1}
+   p2: {weight: 1, sign: 1}
+   p3: {weight: 1, sign: 1}
 
 gates:
    g1: {angle: *q30}

@@ -244,7 +244,32 @@ class Simulation:
                                  'output': leaving or '—'})
         return rows
 
-    def pos_value_str(self, pos, val_type='results'):
+    # display ordering of a gate's ports: the switch wires the book's
+    # figures read top-down, then the pass-through control
+    PORT_DISPLAY_ORDER = {'upper': 0, 'lower': 1, 'control': 2}
+
+    def coord_sort_key(self, coord):
+        """Canonical display order for one particle coordinate: gate (in
+        logical evaluation order), then port (upper, lower, control), then
+        particle name, then sign (+ before −). Yields e.g.
+        p3+@g4.upper, p3+@g4.lower, p1+@g7.upper, p1-@g7.upper, ..."""
+        where = coord.position.origin or coord.position.endpoint
+        gate = where.gate if where is not None else None
+        port = where.port if where is not None else None
+        return (self.gate_step.get(gate, len(self.run_stages) + 1),
+                self.run_order.index(gate) if gate in self.run_order
+                else len(self.run_order),
+                self.PORT_DISPLAY_ORDER.get(port, len(self.PORT_DISPLAY_ORDER)),
+                coord.name,
+                -int(coord.sign))
+
+    def world_sort_key(self, point):
+        """Canonical display order for a whole world: compare worlds by
+        their coordinates taken in coord_sort_key order, so rows group by
+        gate, then port (upper first), then sign (+ first)."""
+        return tuple(sorted(self.coord_sort_key(c) for c in point.coords.values()))
+
+    def pos_value_str(self, pos):
         """Display string for a gate output port after a run (see
         port_summary). Returns None when nothing exited there."""
         parts = pos.split(SEP)

@@ -16,9 +16,10 @@ parent world's weight times the product of the chosen branch factors.
 import logging
 import itertools
 from dataclasses import dataclass
-from typing import Final, Iterable, Optional, Self, Union
+from typing import Final, Iterable, Optional, Self, Union, Dict
 
 import multiworld.qnumber as qn
+from multiworld.gate import FredkinGate
 from multiworld.qnumber import Complex, probability
 from multiworld.particle import PKey
 from multiworld.util import SEP, Sign, wstr
@@ -226,11 +227,11 @@ class ConfigSpaceRunner:
         parts = dest_str.split(SEP)
         return GatePort(*parts) if len(parts) == 2 else GatePort(parts[0], None)
 
-    def particle_alternatives(self, world: ConfigSpacePoint, pname: str,
-                              stage_gates: dict) -> list[tuple[PCoordinate, Optional[Complex]]]:
-        """The alternatives for one particle of one world in the current stage,
+    def particle_factors(self, world: ConfigSpacePoint, pname: str,
+                         stage_gates: Dict[str, FredkinGate]) -> list[tuple[PCoordinate, Optional[Complex]]]:
+        """Factors generated for one particle of one world in the current stage,
         as (new coordinate, weight factor) pairs. A factor of None means the
-        weight is unchanged (pass-through)."""
+        weight is unchanged (passthrough)."""
         coord = world.coords[pname]
         endpoint = coord.position.endpoint
         if endpoint is None or endpoint == NOWHERE or endpoint.gate not in stage_gates:
@@ -279,24 +280,26 @@ class ConfigSpaceRunner:
             log.debug(f'BEGIN STEP {step}: {", ".join(str(g) for g in stage_gates.values())}')
             Q_next = ConfigSpace()
             for world in Q.index.values():
-                per_particle = [self.particle_alternatives(world, pname, stage_gates)
+                per_particle = [self.particle_factors(world, pname, stage_gates)
                                 for pname in world.coords]
                 successor_count = 0
-                for combo in itertools.product(*per_particle):
-                    weight = world.weight
-                    for _, factor in combo:
-                        if factor is not None:
-                            weight = weight * factor
-                    successor = ConfigSpacePoint(step + 1, [coord for coord, _ in combo],
+                for successor_tuple in itertools.product(*per_particle):
+                    weight = world.weight * qn.prod(x[1] or 1 for x in successor_tuple)
+                    # for _, factor in successor_tuple:
+                    #     if factor is not None:
+                    #         weight = weight * factor
+                    #     else:
+                    #         print(f'factor was None in {successor_tuple}')
+                    successor = ConfigSpacePoint(step + 1, [coord for coord, _ in successor_tuple],
                                                  weight, predecessors={world})
                     successor.contributions = {world: successor.weight}
-                    successor.factors = {coord.name: factor for coord, factor in combo}
+                    successor.factors = {coord.name: factor for coord, factor in successor_tuple}
                     merged = Q_next.add_point(successor)
                     world.successors.add(merged)
                     successor_count += 1
                 if log.isEnabledFor(logging.DEBUG):
                     log.debug(f'   {world} -> {successor_count} successor world(s)')
-            # interference may have cancelled a world's weight to zero
+            # interference may have canceled a world's weight to zero
             for point in list(Q_next.index.values()):
                 point.weight = qn.simplify(point.weight)
                 if _weight_is_zero(point.weight):

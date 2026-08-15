@@ -113,18 +113,18 @@ def set_config():
         # config.probability_threshold.forwarding = random.random
         # config.probability_threshold.swap = random.random
         # config.probability_threshold.selector = random.random
-    if 'forward_threshold' in args: config.probability_threshold.fowarding = args.forward_threshold
-    if 'swap_threshold' in args: config.probability_threshold.swap = args.swap_threshold
-    # if 'presence_threshold' in args: config.probability_threshold.presence = args.presence_threshold
-    if args.normalize_input: config.normalize_weights.input = True
-    if args.normalize_output in args: config.normalize_weights.output = True
-    if args.merge_before_measure: config.merge_option.before_measure = True
-    if args.merge_before_forward: config.merge_option.before_forwarding = True
-    if args.add_with_signs: config.merge_option.add_with_signs = True
+    # if 'forward_threshold' in args: config.probability_threshold.fowarding = args.forward_threshold
+    # if 'swap_threshold' in args: config.probability_threshold.swap = args.swap_threshold
+    # # if 'presence_threshold' in args: config.probability_threshold.presence = args.presence_threshold
+    # if args.normalize_input: config.normalize_weights.input = True
+    # if args.normalize_output in args: config.normalize_weights.output = True
+    # if args.merge_before_measure: config.merge_option.before_measure = True
+    # if args.merge_before_forward: config.merge_option.before_forwarding = True
+    # if args.add_with_signs: config.merge_option.add_with_signs = True
     if args.measure_discrepancy: config.measure_discrepancy = True
     elif 'measure_discrepancy' not in config.keys(): config.measure_discrepancy  = False
-    if args.always_forward_switch_weights: config.always_forward.switch_weights = True
-    if args.always_forward_control_weights: config.always_forward.control_weights = True
+    # if args.always_forward_switch_weights: config.always_forward.switch_weights = True
+    # if args.always_forward_control_weights: config.always_forward.control_weights = True
     log.info(f"{'SYMBOLIC' if symbolic else 'FLOATING POINT'} MODE")
     return args, config
 

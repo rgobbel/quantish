@@ -30,19 +30,6 @@ N_ITER = 10000
 config = {
     'title': 'EPR Test 2',
     'variables': {},
-    'merge': {
-        'combine_signs': True,
-        'before_measure': True,
-        'before_forwarding': False
-    },
-    'probability_threshold': {
-        'control': 0,
-        'forwarding': 0,
-        'selector': -1
-    },
-    'normalize_weights': {
-        'output': True
-    },
     'particles': {
         'p1': {'weight': W_ONE, 'sign': 1},
         'p2': {'weight': W_ONE, 'sign': 1},
