@@ -5,6 +5,7 @@ import math as m
 
 from multiworld.config_space import ConfigSpace, ConfigSpacePoint
 from multiworld.simulation import Simulation
+from multiworld.qnumber import probability, to_float, ZERO_THRESHOLD, to_native
 
 
 class NetworkGraph:
@@ -25,14 +26,13 @@ class NetworkGraph:
     def figure(self):
         """Weight-evolution trace of the simulation, as a matplotlib Figure.
 
-        One column per step, one node per world — including worlds whose
-        weight interference canceled to zero (dashed red outline). A node is
+        One column per step, one node per world. A node is
         a stack of bands: one per particle showing the branch factor the
         stage applied to it (hue = particle; black = −1, mid-gray = 0,
-        white = +1; hatched = untouched this stage), then a bottom monochrome
+        white = +1; hatched = not active in this stage), then a bottom monochrome
         band showing the combined world weight on the same scale. Complex
         values display as magnitude signed by the dominant axis, so ±i·sinθcosθ
-        branches are distinguishable. Bands acted on this step get a heavy
+        branches are distinguishable. Bands active on this step get a heavy
         outline. Edge width tracks the amplitude each parent world contributed
         — a merged world shows one incoming edge per interfering contribution.
         """
@@ -59,8 +59,8 @@ class NetworkGraph:
             if w.step != steps[0]:
                 for pname in sorted(w.coords.keys()):
                     coord = w.coords[pname]
-                    acted = w.factors.get(pname) is not None or _moved(w, pname)
-                    if not acted:
+                    active = w.factors.get(pname) is not None or _moved(w, pname)
+                    if not active:
                         continue
                     origin = coord.position.origin
                     ranks.append((origin.gate if origin else '',
@@ -73,19 +73,20 @@ class NetworkGraph:
 
         def signed_amp(value):
             try:
-                c = complex(value)
+                c = to_native(value)
             except (TypeError, ValueError):
                 return 0.0
             mag = abs(c)
-            if mag < 1e-12:
+            if mag < ZERO_THRESHOLD:
                 return 0.0
             ref = c.real if abs(c.real) >= abs(c.imag) else c.imag
             return max(-1.0, min(1.0, mag if ref >= 0 else -mag))
 
         def band_color(value, hue=None):
-            light = (signed_amp(value) + 1.0) / 2.0
             if hue is None:  # monochrome (the combined-weight column)
+                light = to_float(value)
                 return light, light, light
+            light = (signed_amp(value) + 1.0) / 2.0
             return colorsys.hls_to_rgb(hue, light, 0.85)
 
         def band_y(point: ConfigSpacePoint, pname):
@@ -105,7 +106,7 @@ class NetworkGraph:
         steps = sorted(layers.keys())
         layer_max = max(len(v) for v in layers.values())
 
-        # Vertical order within a column: per acted-on particle, by gate, then
+        # Vertical order within a column: per active-on particle, by gate, then
         # port in the book's order (control, upper, lower), then sign (+ first).
         port_rank = {'control': 0, 'upper': 1, 'lower': 2}
 
@@ -158,7 +159,7 @@ class NetworkGraph:
                          if p.factors.get(pname) is not None
                          or (pname in parent.coords
                              and parent.coords[pname].key != p.coords[pname].key)]
-                if not moved:  # nothing acted this stage: neutral world line
+                if not moved:  # nothing active this stage: neutral world line
                     ax.plot([px + node_w / 2, x - node_w / 2], [py, y],
                             color='black', lw=0.5,
                             zorder=1, solid_capstyle='round')
@@ -177,7 +178,7 @@ class NetworkGraph:
             x_left = x - node_w / 2
             for i, pname in enumerate(sorted(p.coords.keys())):
                 factor = p.factors.get(pname)
-                acted = (p.step != steps[0]
+                active = (p.step != steps[0]
                          and (factor is not None or _moved(p, pname)))
                 y0 = y + node_h / 2 - (i + 1) * band_h
                 if factor is None and p.step != steps[0]:
@@ -193,12 +194,12 @@ class NetworkGraph:
                                        facecolor=band_color(
                                            factor if factor is not None else 1.0,
                                            hues[i % len(hues)]),
-                                       edgecolor='black' if acted else '0.55',
-                                       linewidth=1.0 if acted else 0.35,
+                                       edgecolor='black' if active else '0.55',
+                                       linewidth=1.0 if active else 0.35,
                                        zorder=3))
             ax.add_patch(Rectangle((x_left + fact_w, y - node_h / 2),
                                    comb_w, node_h,
-                                   facecolor=band_color(p.weight),
+                                   facecolor=band_color(to_float(probability(p.weight))),
                                    edgecolor='black', linewidth=0.6, zorder=3))
             if p.cancelled:
                 ax.add_patch(Rectangle((x_left, y - node_h / 2),
@@ -273,7 +274,7 @@ class NetworkGraph:
                         textcoords='offset points', ha='center', va='bottom',
                         fontsize=tick_fs, color='0.45', style='italic', zorder=4)
 
-        tick_labels = ['initial'] + [f'stage {s}' for s in steps[1:]]
+        tick_labels = ['initial'] + [f'{k} ' for k in self.sim.config['run_groups'].keys()]
         ax.set_xticks([float(s) for s in steps], tick_labels, fontsize=tick_fs)
         ax.set_yticks([])
         for spine in ('top', 'right', 'left'):
@@ -281,13 +282,12 @@ class NetworkGraph:
         ax.set_xlim(steps[0] - 0.6, steps[-1] + 0.6)
         ax.set_ylim(-(layer_max + 1) / 2.0 - 0.5, (layer_max + 1) / 2.0 + 0.7)
         ax.set_title(f'{self.sim.title} — weight evolution', fontsize=max(11, tick_fs + 2))
-        fig.text(0.01, 0.01,
-                 'left bands: hue = particle factor this stage; right column = '
-                 'combined world weight (black = −1, mid-gray = 0, white = +1; '
-                 'complex → magnitude signed by dominant axis); hatched = '
-                 'untouched; heavy outline = acted on; dashed red = cancelled '
-                 'by interference; lines: one per moved particle in its hue, '
-                 'band to band, width = |contributed amplitude|',
-                 fontsize=max(7, tick_fs - 1), color='0.4')
+        fig.text(0.25, 0.01,
+                 'left column: hue = particle factor this stage; right column = '
+                 'marginal probability (black = 0, white = 1)\nhatched = '
+                 'untouched; heavy outline = control present; '
+                 'lines: one per moved particle',
+                 fontsize=max(7, tick_fs - 1), color='0.4', horizontalalignment='left')
+        fig.subplots_adjust(bottom=0.2)
         return fig
 

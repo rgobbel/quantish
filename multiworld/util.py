@@ -109,7 +109,7 @@ def show_points(points, indent='', loglevel=logging.INFO):
     for point in points:
         logstr = '|'.join([f'{f"{coord.key}":<{pad_len[i]}}' for i, coord in
                                enumerate(point.coords.values())])
-        log.log(loglevel, f'{indent}{logstr}:{wstr(point.weight, precision=2)}')
+        log.log(loglevel, f'{indent}{logstr}:{wstr(point.weight)}')
 
 
 def enough(x, threshold):
@@ -150,7 +150,7 @@ def angstr(theta, precision=0):
     except ZeroDivisionError:
         return 'θ0º'
 
-def wstr(xc, precision=1):
+def wstr(xc, precision:int=2, show_angle:bool=False):
     if isq(xc):
         xc = xc.v
     if issym(xc):
@@ -159,7 +159,7 @@ def wstr(xc, precision=1):
     else:
         frep = xc.real
         fimp = xc.imag
-    return f'{frep:.{precision}f}{fimp:+.{precision}f}j{wangle(xc)}'
+    return f'{frep:.{precision}f}{fimp:+.{precision}f}j{wangle(xc) if show_angle else ""}'
 
 def sstr(sign:Sign):
     return str(sign)

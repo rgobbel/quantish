@@ -13,7 +13,8 @@ import multiworld.qnumber as qn
 from multiworld.qnumber import CalcMode
 from multiworld.simulation import Simulation
 from multiworld.util import QLogger, flat_list, zerop, show_points
-from multiworld.visualizations import diagram, network_graph
+from multiworld.mermaid_diagram import diagram
+from multiworld.network_graph import NetworkGraph
 
 log = None
 
@@ -207,7 +208,7 @@ def main():
             show_points(final_points, indent='   ')
             log.info(' ')
             nonzeros = final_points  # zero-weight worlds were already dropped by the runner
-            # marginal probabilities: each world contributes its |weight|^2 to
+            # marginal probabilities: each config space point contributes its |weight|^2 to
             # every coordinate it assigns
             try:
                 pkey_summary = defaultdict(float)
@@ -222,17 +223,17 @@ def main():
                         if origin is not None and origin.gate is not None:
                             gate_summary[origin.gate][origin.port] += prob
                 log.info(' ')
-                log.info('gate summary (marginal probability by output port):')
+                log.info('gate summary (probability by output port):')
                 for gate_name in sorted(gate_summary.keys()):
                     ports = gate_summary[gate_name]
                     portstr = ', '.join(f'{port}: {ports[port]:.4f}' for port in sorted(ports.keys()))
                     log.info(f'   {sim.gates[gate_name]}: {portstr}')
                 log.info(' ')
-                log.info('particle summary (marginal probability by position):')
+                log.info('particle summary (probability by position):')
                 for pname in sorted(pname_summary.keys()):
                     log.info(f'   {pname}: {pname_summary[pname]:.4f}')
                 log.info(' ')
-                log.info('pkey summary (marginal probability by position and sign):')
+                log.info('pkey summary (probability by position and sign):')
                 for pkey in sorted(pkey_summary.keys()):
                     log.info(f'   {pkey}: {pkey_summary[pkey]:.4f}')
             except (TypeError, ValueError):
@@ -280,7 +281,7 @@ def main():
             if args.network_graph:
                 if dpath is None:  # diagrams disabled; still need a stem for the graph PDF
                     dpath = Path(args.diagram_dir, args.config).with_suffix('.mmd')
-                network_graph(all_points, dpath, sim, show=args.show_graph)
+                NetworkGraph(all_points, sim, dpath, show=args.show_graph)
 
     if 'no_diagram' not in args:
         if args.diagram_when in ('after', 'both'):

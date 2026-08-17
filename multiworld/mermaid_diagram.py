@@ -2,6 +2,7 @@ import logging
 
 
 from multiworld.simulation import Simulation
+from multiworld.config_space import GatePort
 from multiworld.util import SEP, parse_position, sstr, wstr
 import multiworld.qnumber as qn
 import python_mermaid.diagram as pmd
@@ -46,7 +47,7 @@ gate_fields = {'upper': DiagramFields(field='upper', label='UPPER'),
 #     return final_chart
 
 def short_config(point, key=None):
-    """Compact one-line label for a world's coordinates: sign, gate, and the
+    """Compact one-line label for a (classical) world's coordinates: sign, gate, and the
     port initial for each particle, e.g. '+g2c|+g2l|+g3u'. Coordinates
     appear in particle-name order unless a sort key (e.g.
     sim.coord_sort_key) is supplied."""
@@ -63,253 +64,235 @@ def short_config(point, key=None):
     return '|'.join(parts)
 
 
-def network_graph(result_space, diagram_path, sim, show=True):
-    """Render the weight-evolution trace, save it as a PDF next to
-    diagram_path, and optionally show it on screen."""
-    from matplotlib import pyplot as plt
-    fig = network_graph_figure(result_space, sim)
-    out_path = diagram_path.with_stem(diagram_path.stem + '_graph').with_suffix('.pdf')
-    fig.savefig(out_path, orientation='landscape', bbox_inches='tight')
-    if show:
-        plt.show()
-    plt.close(fig)
+def circuit_value_figure(sim):
+    """PROTOTYPE — the circuit diagram (as in the Mermaid rendering: gates
+    with control/upper/lower ports, wires from the model's links, dashed
+    group boxes, gate angles) with the quantities shown as colors instead
+    of numbers.
 
-
-def network_graph_figure(result_space, sim):
-    """Weight-evolution trace of the simulation, as a matplotlib Figure.
-
-    One column per step, one node per world. A node is a stack of bands,
-    one per particle: hue identifies the particle; each band is split into
-    a left (input) and right (output) half whose brightness encodes the
-    particle's cumulative amplitude factor before and after the step
-    (light = strong, dark = weak). Bands acted on this step get a heavy
-    outline. Edge width tracks the amplitude each parent world contributed
-    — a merged world shows one incoming edge per interfering contribution.
+    Every port has an in-cell (left edge) and an out-cell (right edge)
+    holding one chip per particle±sign present there — hue = particle,
+    lightness = signed amplitude (black = −1, mid-gray = 0, white = +1;
+    complex → magnitude signed by dominant axis) — plus a monochrome Σ
+    chip for the aggregate. Dotted interior wires are the gate's
+    straight/cross switch paths; solid wires follow the model's links,
+    tinted by the particle that traverses them.
     """
-    logging.getLogger('multiworld').setLevel(logging.WARN)
+    import colorsys
     from matplotlib import pyplot as plt
-    from matplotlib import colormaps
-    plt.set_loglevel("warning")
+    from matplotlib.patches import Rectangle, FancyBboxPatch
 
-    layers = defaultdict(list)
-    for p in result_space.index.values():
-        layers[p.step].append(p)
-    steps = sorted(layers.keys())
-    layer_max = max(len(v) for v in layers.values())
+    hues = [0.00, 0.33, 0.62, 0.78, 0.09, 0.50]
+    pnames = list(sim.particles.keys())
+    hue_of = {pname: hues[i % len(hues)] for i, pname in enumerate(pnames)}
 
-    def primary_parent(w):
-        best, best_mag = None, -1.0
-        for parent, contrib in w.contributions.items():
-            try:
-                mag = abs(complex(contrib))
-            except (TypeError, ValueError):
-                mag = 0.0
-            if mag > best_mag:
-                best, best_mag = parent, mag
-        return best
-
-    # Cumulative per-particle display amplitude: the product of the branch
-    # factors the particle has taken along its (primary-parent) lineage.
-    # This is what the band brightness shows — the particle's share of the
-    # world's weight, not just the latest step's factor.
-    display_val = {}
-    for step in steps:
-        for w in layers[step]:
-            parent = primary_parent(w)
-            for pname in w.coords:
-                factor = w.factors.get(pname)
-                if parent is None:  # initial world: factors are the weights
-                    value = factor if factor is not None else 1.0
-                else:
-                    value = display_val.get((id(parent), pname), 1.0)
-                    if factor is not None:
-                        try:
-                            value = complex(value) * complex(factor)
-                        except (TypeError, ValueError):
-                            pass
-                display_val[(id(w), pname)] = value
-
-    def _moved(w, pname):
-        parent = primary_parent(w)
-        return (parent is not None
-                and pname in parent.coords
-                and parent.coords[pname].key != w.coords[pname].key)
-
-    # Vertical order within a column: per acted-on particle, by gate, then
-    # port in the book's order (control, upper, lower), then sign (+ first).
-    port_rank = {'control': 0, 'upper': 1, 'lower': 2}
-
-    def world_ranks(w):
-        ranks = []
-        if w.step != steps[0]:
-            for pname in sorted(w.coords.keys()):
-                coord = w.coords[pname]
-                acted = w.factors.get(pname) is not None or _moved(w, pname)
-                if not acted:
-                    continue
-                origin = coord.position.origin
-                ranks.append((origin.gate if origin else '',
-                              port_rank.get(origin.port if origin else None, 3),
-                              0 if int(coord.sign) >= 0 else 1))
-        return ranks
-
-    def sort_key(w):
-        return (tuple(world_ranks(w)), w.key)
-
-    pos = {}
-    for step in steps:
-        layer = layers[step]
-        layer.sort(key=sort_key)
-        n = len(layer)
-        for i, p in enumerate(layer):
-            pos[p] = (float(p.step), (n - 1) / 2.0 - i)
-
-    fig_w = min(2.0 + 2.2 * len(steps), 24)
-    fig_h = min(1.2 + 0.72 * layer_max, 22)
-    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
-    tick_fs = max(7.0, min(11.0, 38.0 / m.sqrt(layer_max)))
-
-    # Edges: parent -> child, one per recorded contribution.
-    for p, (x, y) in pos.items():
-        for parent, contrib in p.contributions.items():
-            if parent not in pos:
-                continue
-            px, py = pos[parent]
-            try:
-                mag = abs(complex(contrib))
-            except (TypeError, ValueError):
-                mag = 0.5
-            ax.plot([px, x], [py, y], color='0.55',
-                    lw=0.4 + 2.6 * mag, alpha=0.75, zorder=1,
-                    solid_capstyle='round')
-
-    # Nodes: per-particle bands, each split into input (left) and output
-    # (right) halves.
-    from matplotlib.patches import Rectangle
-    band_cmaps = [colormaps[name] for name in ('Reds', 'Greens', 'Blues',
-                                               'Purples', 'Oranges', 'Greys')]
-    n_particles = max(len(p.coords) for p in pos)
-    # Size the node in *screen* inches (the data aspect is far from square),
-    # so the stack renders taller than it is wide.
-    _x_range = (steps[-1] - steps[0]) + 1.2
-    _y_range = (layer_max + 1) + 1.2
-    node_w = 0.34 * _x_range / fig_w
-    band_h = min(0.20 * _y_range / fig_h, 0.78 / max(1, n_particles))
-    node_h = band_h * n_particles
-
-    def shade(cmap, value):
+    def signed_amp(value):
         try:
-            v = min(1.0, abs(complex(value)))
+            c = complex(value)
         except (TypeError, ValueError):
-            v = 0.5
-        return cmap(0.2 + 0.7 * (1.0 - v))
+            return 0.0
+        mag = abs(c)
+        if mag < 1e-12:
+            return 0.0
+        ref = c.real if abs(c.real) >= abs(c.imag) else c.imag
+        return max(-1.0, min(1.0, mag if ref >= 0 else -mag))
 
-    for p, (x, y) in pos.items():
-        parent = primary_parent(p)
-        for i, pname in enumerate(sorted(p.coords.keys())):
-            cmap = band_cmaps[i % len(band_cmaps)]
-            out_v = display_val.get((id(p), pname), 1.0)
-            in_v = (display_val.get((id(parent), pname), out_v)
-                    if parent is not None else out_v)
-            acted = (p.step != steps[0]
-                     and (p.factors.get(pname) is not None or _moved(p, pname)))
-            y0 = y + node_h / 2 - (i + 1) * band_h
-            ax.add_patch(Rectangle((x - node_w / 2, y0), node_w / 2, band_h,
-                                   facecolor=shade(cmap, in_v),
-                                   edgecolor='none', zorder=3))
-            ax.add_patch(Rectangle((x, y0), node_w / 2, band_h,
-                                   facecolor=shade(cmap, out_v),
-                                   edgecolor='none', zorder=3))
-            ax.add_patch(Rectangle((x - node_w / 2, y0), node_w, band_h,
-                                   fill=False,
-                                   edgecolor='black' if acted else '0.55',
-                                   linewidth=1.0 if acted else 0.35,
-                                   zorder=3.5))
+    def chip_color(value, hue=None):
+        light = (signed_amp(value) + 1.0) / 2.0
+        if hue is None:
+            return (light, light, light)
+        return colorsys.hls_to_rgb(hue, light, 0.85)
 
-    # Boxes marking gate boundaries: one per step column (labeled with the
-    # gate that fired), plus a dashed outer box per multi-gate diagram
-    # group, plus (experimental) thin boxes around the upper/lower halves
-    # of each gate's outcomes.
-    from matplotlib.patches import FancyBboxPatch
-    label_space = 0.12
-    col_extent = {}
-    for p, (x, y) in pos.items():
-        y_lo, y_hi = col_extent.get(p.step, (y, y))
-        col_extent[p.step] = (min(y_lo, y), max(y_hi, y))
-    box_y = {}
-    for step, (y_lo, y_hi) in col_extent.items():
-        # extra headroom at the top of each column for the gate label
-        box_y[step] = (y_lo - node_h / 2 - label_space, y_hi + node_h / 2 + 0.55)
+    def port_amps(step, port, end):
+        """[(label, value, hue)] for the particles at `port`: one chip per
+        particle±sign plus a monochrome Σ chip per particle."""
+        if sim.all_points is None:
+            return []
+        per_sign, per_particle = {}, {}
+        for point in sim.all_points.index.values():
+            if point.step != step or point.cancelled:
+                continue
+            for pname, coord in point.coords.items():
+                where = (coord.position.origin if end == 'origin'
+                         else coord.position.endpoint)
+                if where != port:
+                    continue
+                try:
+                    w = complex(point.weight)
+                except (TypeError, ValueError):
+                    return []  # symbolic with free symbols: no chips
+                key = (pname, str(coord.sign))
+                per_sign[key] = per_sign.get(key, 0j) + w
+                per_particle[pname] = per_particle.get(pname, 0j) + w
+        chips = []
+        for pname in sorted(per_particle):
+            for sign in ('+', '-'):
+                if (pname, sign) in per_sign:
+                    chips.append((f'{pname}{sign}', per_sign[(pname, sign)],
+                                  hue_of.get(pname, 0.0)))
+            chips.append(('Σ', per_particle[pname], None))
+        return chips
 
-    # experimental cluster boxes: group each column's worlds by the first
-    # (gate, port) coordinate that differs between them
-    _port_names = {0: 'control', 1: 'upper', 2: 'lower'}
-    for step in steps[1:]:
-        ranked = [(w, world_ranks(w)) for w in layers[step]]
-        ranked = [(w, r) for w, r in ranked if r]
-        if len(ranked) < 2:
-            continue
-        _depth = min(len(r) for _, r in ranked)
-        _vary = next((idx for idx in range(_depth)
-                      if len({r[idx][:2] for _, r in ranked}) > 1), None)
-        if _vary is None:
-            continue
-        clusters = {}
-        for w, r in ranked:
-            clusters.setdefault(r[_vary][:2], []).append(pos[w][1])
-        if len(clusters) < 2:
-            continue
-        for (_gate, _prank), ys in clusters.items():
-            ax.add_patch(Rectangle((step - node_w / 2 - 0.05,
-                                    min(ys) - node_h / 2 - 0.05),
-                                   node_w + 0.10,
-                                   max(ys) - min(ys) + node_h + 0.10,
-                                   fill=False, edgecolor='0.65',
-                                   linewidth=0.6, linestyle=':', zorder=2.5))
-            ax.annotate(f'{_gate} {_port_names.get(_prank, "?")}',
-                        (step - node_w / 2 - 0.08, (min(ys) + max(ys)) / 2),
-                        ha='right', va='center', fontsize=max(5, tick_fs - 3),
-                        color='0.5', rotation=90, zorder=2.6)
-    for i in range(1, len(steps)):
-        step = steps[i]
-        gates = sim.run_stages[i - 1] if i - 1 < len(sim.run_stages) else []
-        y_lo, y_hi = box_y[step]
-        ax.add_patch(FancyBboxPatch((step - 0.38, y_lo), 0.76, y_hi - y_lo,
+    # ---- layout ---------------------------------------------------------
+    GW, RH = 0.66, 0.30          # gate box width, port row height
+    CW, CH = 0.26, 0.22          # port cell width/height
+    rows = ('control', 'upper', 'lower')
+    stage_of = {g: i for i, stage in enumerate(sim.run_stages) for g in stage}
+    n_cols = len(sim.run_stages)
+    stack_h = max(len(stage) for stage in sim.run_stages)
+    gate_h = len(rows) * RH + 0.14
+
+    gate_xy = {}
+    for i, stage in enumerate(sim.run_stages):
+        n = len(stage)
+        for j, g in enumerate(stage):
+            gate_xy[g] = (1.0 + 1.55 * i, ((n - 1) / 2.0 - j) * (gate_h + 0.5))
+
+    def cell_xy(gname, port, end):
+        gx, gy = gate_xy[gname]
+        row_i = rows.index(port) if port in rows else 0
+        y = gy + gate_h / 2 - 0.14 - (row_i + 0.5) * RH
+        x = gx - GW / 2 + CW / 2 + 0.02 if end == 'in' else gx + GW / 2 - CW / 2 - 0.02
+        return x, y
+
+    fig_w = min(3.0 + 2.6 * (n_cols + 1), 26)
+    fig_h = min(2.0 + 1.9 * stack_h * (gate_h + 0.5), 20)
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+
+    def draw_chips(cx, cy, chips):
+        if not chips:
+            return
+        n = len(chips)
+        w = min(CW / n, 0.11)
+        x0 = cx - n * w / 2
+        for k, (label, value, hue) in enumerate(chips):
+            ax.add_patch(Rectangle((x0 + k * w, cy - CH / 2), w, CH,
+                                   facecolor=chip_color(value, hue),
+                                   edgecolor='0.3', linewidth=0.4, zorder=4))
+            ax.annotate(label, (x0 + (k + 0.5) * w, cy - CH / 2), xytext=(0, -2),
+                        textcoords='offset points', ha='center', va='top',
+                        fontsize=4.5, color='0.35', zorder=4)
+
+    # gates: box, header (name + angle), port rows with in/out cells
+    for gname, (gx, gy) in gate_xy.items():
+        gate = sim.gates[gname]
+        simple = (gate.report_type() == 'DelayGate'
+                  or gname in getattr(sim, 'pass_through_gates', set()))
+        ax.add_patch(FancyBboxPatch((gx - GW / 2, gy - gate_h / 2), GW, gate_h,
                                     boxstyle='round,pad=0.02',
-                                    facecolor='0.97', edgecolor='0.75',
-                                    linewidth=0.8, zorder=0.5))
-        ax.annotate(', '.join(gates), (step, y_hi), xytext=(0, -3),
-                    textcoords='offset points', ha='center', va='top',
-                    fontsize=tick_fs, color='0.35', zorder=4)
-    # dashed stage boxes for diagram groups spanning several gates
-    for group_name, group in sim.diagram_groups.items():
-        cols = sorted(sim.gate_step[g] for g in group if g in sim.gate_step)
-        if len(cols) < 2:
-            continue
-        y_lo = min(box_y[c][0] for c in cols if c in box_y) - 0.12
-        y_hi = max(box_y[c][1] for c in cols if c in box_y) + 0.35
-        ax.add_patch(FancyBboxPatch((cols[0] - 0.45, y_lo),
-                                    cols[-1] - cols[0] + 0.9, y_hi - y_lo,
-                                    boxstyle='round,pad=0.02', fill=False,
-                                    edgecolor='0.6', linewidth=0.9,
-                                    linestyle='--', zorder=0.4))
-        ax.annotate(group_name, ((cols[0] + cols[-1]) / 2, y_hi), xytext=(0, 3),
-                    textcoords='offset points', ha='center', va='bottom',
-                    fontsize=tick_fs, color='0.45', style='italic', zorder=4)
+                                    facecolor='#ffffde', edgecolor='#aaaa33',
+                                    linewidth=1.0, zorder=2))
+        try:
+            header = f'{gname}: {float(gate.theta.degrees):.1f}º'
+        except (AttributeError, TypeError):
+            header = gname
+        ax.annotate(header if not simple else gname,
+                    (gx, gy + gate_h / 2 - 0.02), ha='center', va='top',
+                    fontsize=7, color='0.25', zorder=4)
+        step = sim.gate_step.get(gname)
+        ports = ('control',) if simple else rows
+        for port in ports:
+            x_in, y_row = cell_xy(gname, port, 'in')
+            x_out, _ = cell_xy(gname, port, 'out')
+            ax.annotate(port[0], (gx, y_row), ha='center', va='center',
+                        fontsize=5, color='0.6', zorder=3)
+            for x, end, s in ((x_in, 'endpoint', step - 1),
+                              (x_out, 'origin', step)):
+                ax.add_patch(Rectangle((x - CW / 2, y_row - CH / 2), CW, CH,
+                                       facecolor='#ececec', edgecolor='#999999',
+                                       linewidth=0.5, zorder=3))
+                draw_chips(x, y_row, port_amps(s, GatePort(gname, port), end))
+        if not simple:  # interior straight/cross switch wires, dotted
+            for p_in in ('upper', 'lower'):
+                for p_out in ('upper', 'lower'):
+                    (x1, y1), (x2, y2) = (cell_xy(gname, p_in, 'in'),
+                                          cell_xy(gname, p_out, 'out'))
+                    ax.plot([x1 + CW / 2, x2 - CW / 2], [y1, y2],
+                            color='0.65', lw=0.6, linestyle=':', zorder=2.5)
 
-    tick_labels = ['initial'] + [f'stage {s}' for s in steps[1:]]
-    ax.set_xticks([float(s) for s in steps], tick_labels, fontsize=tick_fs)
-    ax.set_yticks([])
-    for spine in ('top', 'right', 'left'):
-        ax.spines[spine].set_visible(False)
-    ax.set_xlim(steps[0] - 0.6, steps[-1] + 0.6)
-    ax.set_ylim(-(layer_max + 1) / 2.0 - 0.5, (layer_max + 1) / 2.0 + 0.7)
-    ax.set_title(f'{sim.title} — weight evolution', fontsize=max(11, tick_fs + 2))
+    # particle sources
+    part_xy = {}
+    for i, pname in enumerate(pnames):
+        y = ((len(pnames) - 1) / 2.0 - i) * 0.8
+        part_xy[pname] = (0.0, y)
+        ax.add_patch(FancyBboxPatch((-0.18, y - 0.14), 0.36, 0.28,
+                                    boxstyle='round,pad=0.02,rounding_size=0.12',
+                                    facecolor='#ececec', edgecolor='#999999',
+                                    linewidth=0.8, zorder=3))
+        ax.annotate(pname, (0.0, y + 0.05), ha='center', va='center',
+                    fontsize=7, color='0.25', zorder=4)
+        chip = [(str(sim.particles[pname].sign),
+                 sim.particles[pname].weight, hue_of[pname])]
+        draw_chips(0.0, y - 0.06, chip)
+
+    # wires from the model's links, tinted by the traversing particle
+    def wire_carrier(src):
+        gname, port = (src.split(SEP) + [None])[:2]
+        step = sim.gate_step.get(gname)
+        if step is None or sim.all_points is None:
+            return None
+        carriers = set()
+        for point in sim.all_points.index.values():
+            if point.step != step or point.cancelled:
+                continue
+            for pname, coord in point.coords.items():
+                if coord.position.origin == GatePort(gname, port):
+                    carriers.add(pname)
+        return carriers.pop() if len(carriers) == 1 else None
+
+    for src, dst in sim.links.items():
+        dst_g, dst_p = dst.split(SEP)
+        if dst_g not in gate_xy:
+            continue
+        dst_p = dst_p if dst_p in rows else 'control'
+        x2, y2 = cell_xy(dst_g, dst_p, 'in')
+        if SEP in src:
+            src_g, src_p = src.split(SEP)
+            if src_g not in gate_xy:
+                continue
+            x1, y1 = cell_xy(src_g, src_p if src_p in rows else 'control', 'out')
+            x1 += CW / 2
+            carrier = wire_carrier(src)
+        else:
+            x1, y1 = part_xy[src]
+            x1 += 0.20
+            carrier = src
+        color = (colorsys.hls_to_rgb(hue_of[carrier], 0.45, 0.7)
+                 if carrier in hue_of else '0.45')
+        ax.annotate('', (x2 - CW / 2, y2), (x1, y1),
+                    arrowprops=dict(arrowstyle='-|>', color=color,
+                                    lw=1.1, alpha=0.8), zorder=1)
+
+    # dashed group boxes, as in the Mermaid subgraphs
+    for group_name, group in sim.diagram_groups.items():
+        members = [g for g in group if g in gate_xy]
+        if not members:
+            continue
+        xs = [gate_xy[g][0] for g in members]
+        ys = [gate_xy[g][1] for g in members]
+        ax.add_patch(FancyBboxPatch(
+            (min(xs) - GW / 2 - 0.10, min(ys) - gate_h / 2 - 0.10),
+            max(xs) - min(xs) + GW + 0.20,
+            max(ys) - min(ys) + gate_h + 0.34,
+            boxstyle='round,pad=0.02', fill=False, edgecolor='0.6',
+            linewidth=0.9, linestyle='--', zorder=0.5))
+        ax.annotate(group_name, ((min(xs) + max(xs)) / 2,
+                                 max(ys) + gate_h / 2 + 0.22),
+                    ha='center', va='bottom', fontsize=8, color='0.45',
+                    style='italic', zorder=4)
+
+    ax.set_xlim(-0.6, 1.0 + 1.55 * (n_cols - 1) + 1.0)
+    all_y = [y for _, y in gate_xy.values()] + [y for _, y in part_xy.values()]
+    ax.set_ylim(min(all_y) - gate_h, max(all_y) + gate_h + 0.4)
+    ax.set_aspect('equal')
+    ax.axis('off')
+    ax.set_title(f'{sim.title} — circuit values', fontsize=11)
     fig.text(0.01, 0.01,
-             'bands: hue = particle; halves: left = in, right = out, '
-             'light↔dark = strong↔weak amplitude; heavy outline = particle '
-             'acted on this stage; edge width = |contributed amplitude|',
-             fontsize=max(7, tick_fs - 1), color='0.4')
+             'cells: left = arriving, right = leaving; chips: hue = particle '
+             '(± split), gray chip = Σ per particle; black = −1, mid-gray = 0, '
+             'white = +1 (complex → magnitude signed by dominant axis); '
+             'dotted = switch paths, arrows = links tinted by particle',
+             fontsize=7, color='0.4')
     return fig
 
 def make_gate_node(sim, gname, inout, wire, mermaid_nodes, show_outputs=True):

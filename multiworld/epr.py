@@ -13,8 +13,8 @@ position⊕sign — what a final sorting stage would turn into pure position.
 The second stage of fig 4.17 plays exactly that role, which is why plain
 position is the outcome there.
 
-The Bell/CHSH experiment sweeps measurement angles (θ1, θ2) over the three
-"magic" angles {Qa=0, Qb=π/8, Qc=π/4} (or the model's qa/qb/qc variables).
+The Bell/CHSH experiment sweeps measurement angles (θ1, θ2) over three
+sweep angles {qa=0, qb=π/8, qc=π/4} (or the model's qa/qb/qc variables).
 "Measuring p1 at θ1 and p2 at θ2" means overriding
 
     two-stage:  g7 = θ1,  g8 = (Q5+Q6) − θ2   (Q5/Q6 keep base values)
@@ -32,7 +32,7 @@ from multiworld.qnumber import qify
 
 log = logging.getLogger('multiworld')
 
-# Canonical magic angles, used when the model doesn't define qa/qb/qc.
+# Canonical sweep angles, used when the model doesn't define qa/qb/qc.
 DEFAULT_VALUES = {'qa': '0', 'qb': 'pi/8', 'qc': 'pi/4'}
 
 
@@ -89,7 +89,7 @@ def classify(point, two_stage: bool) -> str:
 
 
 # --------------------------------------------------------------------------
-# The Bell/CHSH experiment: a 3×3 sweep over the magic angles.
+# The Bell/CHSH experiment: a 3×3 sweep over the three sweep angles.
 # --------------------------------------------------------------------------
 
 def supports_epr(sim) -> bool:
@@ -98,7 +98,7 @@ def supports_epr(sim) -> bool:
     return {'g4', 'g5', 'g6'} <= set(sim.gates.keys())
 
 
-def magic_angles(sim) -> dict:
+def sweep_angles(sim) -> dict:
     """The three labeled sweep angles: the model's qa/qb/qc variables when
     all three are defined and distinct, else the canonical {0, pi/8, pi/4}."""
     found = {name: qify(value) for name, value in sim.qvars.items()
@@ -106,7 +106,7 @@ def magic_angles(sim) -> dict:
     if len(found) == 3:
         if len({float(v) for v in found.values()}) == 3:
             return found
-        log.warning(f'   model magic angles are not distinct '
+        log.warning(f'   model sweep angles are not distinct '
                     f'({", ".join(f"{k}={float(v):.4f}" for k, v in found.items())}); '
                     f'using canonical set instead')
     return {name: qify(value) for name, value in DEFAULT_VALUES.items()}
@@ -212,15 +212,18 @@ def bell_max(grid: dict, rate=observed_rate) -> tuple[float, tuple]:
     return best_excess, best_triple
 
 
-def run_epr_experiment(sim, n_trials: int = 0, seed=None) -> dict:
+def run_epr_experiment(sim, n_trials: int = 0, seed=None, values=None) -> dict:
     """The full Bell/CHSH experiment: sweep (θ1, θ2) over the 3×3 grid of
-    magic angles, tabulate discrepancy rates, and test both inequalities.
+    sweep angles, tabulate discrepancy rates, and test both inequalities.
+    `values` overrides the angle set ({label: angle-in-radians}, any qify
+    form); default is the model's qa/qb/qc or the canonical set.
     Logs a report; returns {'grid', 'bell', 'chsh', 'values'}.
     """
     if not supports_epr(sim):
         log.info('model lacks the EPR structure (g4/g5/g6); skipping experiment')
         return None
-    values = magic_angles(sim)
+    values = ({name: qify(value) for name, value in values.items()}
+              if values is not None else sweep_angles(sim))
     labels = list(values.keys())
     rng = random.Random(seed)
     two_stage = is_two_stage(sim)
@@ -240,7 +243,7 @@ def run_epr_experiment(sim, n_trials: int = 0, seed=None) -> dict:
              f'{n_trials or "no"} trials per cell'
              f'{f", seed={seed}" if seed is not None else ""})')
     angle_strs = [f'{label}={float(values[label].degrees):.1f}º' for label in labels]
-    log.info(f'   magic angles: {", ".join(angle_strs)}')
+    log.info(f'   sweep angles: {", ".join(angle_strs)}')
     log.info(' ')
 
     def table(title, getter, fmt='{:.4f}'):

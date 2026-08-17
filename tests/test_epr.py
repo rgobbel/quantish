@@ -81,7 +81,7 @@ class TestEPRConventions(unittest.TestCase):
     def test_bell_chsh_sweep(self):
         # Exact 3x3 sweep on fig417: every cell must match sin²(θ1−θ2),
         # Bell's three-angle inequality is violated by 1/2 − 2·sin²(π/8),
-        # and CHSH reaches 1 + √2 on the magic set {0, π/8, π/4}.
+        # and CHSH reaches 1 + √2 on the canonical set {0, π/8, π/4}.
         import math
         from multiworld.epr import run_epr_experiment
         sim = run_sim('fig417')

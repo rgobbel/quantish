@@ -34,7 +34,7 @@ class Simulation:
         self.declared_groups = self.resolve_groups(config)
         self.run_stages = self.grouped_run_stages(self.declared_groups)
         self.run_order = flat_list(self.run_stages)
-        # the step whose worlds show a gate's just-produced outputs
+        # the step whose classical worlds show a gate's just-produced outputs
         self.gate_step = {g: i + 1 for i, stage in enumerate(self.run_stages) for g in stage}
         self.particles = Addict()
         self.fredkin_gates = Addict()
@@ -163,7 +163,7 @@ class Simulation:
                 self.initial_coords[source] = pcoord
                 log.debug(f'PARTICLE {particle}, INITIAL POSITION: {pcoord}')
         log.debug(' ')
-        # the initial world's weight is the product of the configured particle weights
+        # the initial config space point's weight is the product of the configured particle weights
         initial_weight = qn.prod([p.weight for p in self.particles.values()])
         self.initial_point = ConfigSpacePoint(0, list(self.initial_coords.values()), initial_weight)
         # display data: the initial "factor" of each particle is its
@@ -198,7 +198,7 @@ class Simulation:
         amps = defaultdict(complex)                       # pname -> Σ of world weights
         try:
             for point in self.all_points.index.values():
-                if point.step != step:
+                if point.step != step or point.cancelled:
                     continue
                 for pname, coord in point.coords.items():
                     where = (coord.position.origin if end == 'origin'
@@ -217,7 +217,7 @@ class Simulation:
                 for sign, prob in sorted(probs[pname].items(), reverse=True))
             agg = amps[pname]
             phase_deg = math.degrees(cmath.phase(agg)) if abs(agg) > 1e-12 else 0.0
-            lines.append(f'{sign_parts} | Σ: {abs(agg) ** 2:.{self.precision}f} '
+            lines.append(f'{sign_parts}\nΣ: {abs(agg) ** 2:.{self.precision}f} '
                          f'∠{phase_deg:+.0f}º')
         return '\n'.join(lines)
 
@@ -264,7 +264,7 @@ class Simulation:
                 -int(coord.sign))
 
     def world_sort_key(self, point):
-        """Canonical display order for a whole world: compare worlds by
+        """Canonical display order for a whole classical world: compare worlds by
         their coordinates taken in coord_sort_key order, so rows group by
         gate, then port (upper first), then sign (+ first)."""
         return tuple(sorted(self.coord_sort_key(c) for c in point.coords.values()))

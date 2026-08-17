@@ -10,7 +10,7 @@ log = logging.getLogger('multiworld')
 class FredkinGate:
     """A quantish Fredkin gate: an angle plus the four precomputed weight
     factors of the switch-wire split. Gates are stateless — the runner in
-    config_space.py asks for factors per world via switch_factors()."""
+    config_space.py asks for factors per config space point via switch_factors()."""
 
     def __init__(self, name:str, theta:Real=0):
         self.name = name

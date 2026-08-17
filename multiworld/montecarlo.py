@@ -2,24 +2,25 @@
 
 Replaces the old spacewalk module. Each trial produces one observed outcome,
 as a real-world run of the experiment would; tabulating many trials
-approximates the exact world probabilities.
+approximates the exact classical world probabilities.
 
 Two sampling modes:
 
 terminal
-    Draw a final world with probability |weight|^2 (renormalized). The
+    Draw a final classical world with probability |weight|^2 (renormalized). The
     superposition evolves undisturbed until the end, so interference is
     fully preserved and observed frequencies converge on point.probability.
     This is the faithful simulation of a real experiment.
 
 path
-    Walk the world DAG one stage at a time: from the current world, choose
-    a successor with probability proportional to |the amplitude this world
-    contributed to it|^2. Each trial yields a full world-line (a story of
-    the run), but choosing per stage amounts to collapsing at every stage:
-    on circuits where worlds interfere, path statistics legitimately
-    diverge from the exact probabilities. The divergence itself is
-    informative — it measures how much interference matters downstream.
+    Walk the full quantish world DAG one stage at a time: from the current
+    classical world, choose a successor with probability proportional to
+    |the amplitude this world contributed to it|^2. Each trial yields a
+    full world-line (a story of the run), but choosing per stage amounts to
+    collapsing at every stage: on circuits where worlds interfere, path
+    statistics legitimately diverge from the exact probabilities.
+    The divergence itself is informative — it measures how much
+    interference matters downstream.
 """
 import logging
 import random

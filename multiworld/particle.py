@@ -1,6 +1,6 @@
 """Particles, post-refactor: a particle is a named thing with a sign and an
 initial weight. During simulation, weights belong to configuration-space
-worlds (see config_space.py) — a Particle only supplies the initial
+points (see config_space.py) — a Particle only supplies the initial
 conditions parsed from the model YAML, and labels for diagrams.
 """
 from collections import namedtuple

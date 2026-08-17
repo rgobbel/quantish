@@ -146,7 +146,7 @@ Configuration options (usually in common.yaml):
   - `config_space.py`: Gate state and wire definitions
   - `angle.py`: Angle representation and conversion
   - `util.py`: Utilities (topological sort, logging, etc.)
-  - `visualizations.py`: Mermaid diagram generation
+  - `mermaid_diagram.py`: Mermaid diagram generation
 - `models/`: YAML configuration files for experiments
   - `common.yaml`: Default configuration
   - `fig4*.yaml`: Experiments from the book

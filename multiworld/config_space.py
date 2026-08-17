@@ -1,14 +1,14 @@
 """Configuration space for the quantish simulation.
 
-The quantish state is a superposition of *worlds* (ConfigSpacePoints). Each
-world assigns every particle a coordinate — a position and a sign — and
-carries ONE complex weight for the whole world. Weights belong to worlds, not
-to particles: interference happens between worlds, so when two worlds arrive
+The quantish state is a superposition of *classical worlds* (ConfigSpacePoints). Each
+classical world assigns every particle a coordinate — a position and a sign — and
+carries ONE complex weight for the whole world. Weights belong to classical worlds, not
+to particles: interference happens between classical worlds, so when two worlds arrive
 at identical coordinates their weights simply add.
 
 The runner advances the state one stage at a time. Within a stage, each
 particle in a world contributes a list of alternatives (a single pass-through,
-or the four-way split of a switch wire); the successor worlds are the
+or the four-way split of a switch wire); the successors are the
 cartesian product of those per-particle alternatives, each weighted by the
 parent world's weight times the product of the chosen branch factors.
 """
@@ -96,7 +96,7 @@ class PCoordinate:
 
 
 class ConfigSpacePoint:
-    """One world: a full assignment of a PCoordinate to every particle, plus
+    """One classical world: a full assignment of a PCoordinate to every particle, plus
     the single complex weight of that world."""
 
     def __init__(self, step: int, coords: Union[dict, Iterable[PCoordinate]], weight,
@@ -115,6 +115,10 @@ class ConfigSpacePoint:
         # world (None = passed through untouched); display data for the
         # per-particle bands of the weight-evolution graph
         self.factors: dict[str, Optional[Complex]] = {}
+        # True when interference cancelled this world's weight to zero: it
+        # was dropped from the live set but stays in the all-points history
+        # so the weight-evolution graph/table can show the cancellation
+        self.cancelled = False
 
     @property
     def key(self):
@@ -125,7 +129,7 @@ class ConfigSpacePoint:
         return probability(self.weight)
 
     def __repr__(self):
-        return f'{self.key}:{wstr(self.weight, precision=2)}'
+        return f'{self.key}:{wstr(self.weight)}'
 
     def __hash__(self):
         return self.key.__hash__()
@@ -142,7 +146,7 @@ class ConfigSpace:
             self.max_step = initial_point.step
 
     def add_point(self, point: ConfigSpacePoint) -> ConfigSpacePoint:
-        """Merge a successor world into this space. Worlds with identical
+        """Merge a successor into this space. Classical worlds with identical
         coordinates interfere: their weights simply add. Returns the point now
         holding the combined weight."""
         self.max_step = max(self.max_step, point.step)
@@ -150,12 +154,10 @@ class ConfigSpace:
         if existing is None:
             self.index[point.key] = point
             return point
-        if log.isEnabledFor(logging.DEBUG):
-            # guarded: the f-string formats symbolic weights via evalf, an
-            # expensive no-op when debug logging is off
-            log.debug(f'      MERGE at {point.key}: '
-                      f'{wstr(existing.weight, precision=2)} + {wstr(point.weight, precision=2)}')
+        original_weight =  existing.weight
         existing.weight = existing.weight + point.weight
+        log.debug(f'      MERGE {point.key}: '
+                  f'{wstr(original_weight, precision=2)} + {wstr(point.weight, precision=2)} -> {wstr(existing.weight, precision=2)}')
         existing.predecessors |= point.predecessors
         for pred, contrib in point.contributions.items():
             if pred in existing.contributions:
@@ -227,12 +229,12 @@ class ConfigSpaceRunner:
         parts = dest_str.split(SEP)
         return GatePort(*parts) if len(parts) == 2 else GatePort(parts[0], None)
 
-    def particle_factors(self, world: ConfigSpacePoint, pname: str,
+    def particle_factors(self, cs_point: ConfigSpacePoint, pname: str,
                          stage_gates: Dict[str, FredkinGate]) -> list[tuple[PCoordinate, Optional[Complex]]]:
         """Factors generated for one particle of one world in the current stage,
         as (new coordinate, weight factor) pairs. A factor of None means the
         weight is unchanged (passthrough)."""
-        coord = world.coords[pname]
+        coord = cs_point.coords[pname]
         endpoint = coord.position.endpoint
         if endpoint is None or endpoint == NOWHERE or endpoint.gate not in stage_gates:
             # finished, or still en route to a later stage: carried through unchanged
@@ -250,7 +252,7 @@ class ConfigSpaceRunner:
         control_port = GatePort(gate.name, 'control')
         control_present = any(
             other.position.endpoint == control_port
-            for other_name, other in world.coords.items() if other_name != pname)
+            for other_name, other in cs_point.coords.items() if other_name != pname)
         alternatives = []
         for out_port, out_sign, factor in gate.switch_factors(endpoint.port, coord.sign,
                                                               control_present):
@@ -265,8 +267,8 @@ class ConfigSpaceRunner:
     def run(self, initial_point: ConfigSpacePoint) -> tuple[ConfigSpace, ConfigSpace]:
         """Advance the quantish state through every stage.
 
-        For each stage, every world in Q expands to the cartesian product of
-        its particles' alternatives; each successor world's weight is the
+        For each stage, every classical world in Q expands to the cartesian product of
+        its particles' alternatives; each successor's weight is the
         parent's weight times the product of the chosen branch factors.
         Successors with identical coordinates merge by adding weights
         (interference), and worlds whose weights cancel to zero are dropped.
@@ -297,13 +299,20 @@ class ConfigSpaceRunner:
                     merged = Q_next.add_point(successor)
                     world.successors.add(merged)
                     successor_count += 1
+                log.debug(f'   {world} -> {successor_count} successor{"" if successor_count == 1 else "s"}{" CONTROL PRESENT" if False else ""}')
                 if log.isEnabledFor(logging.DEBUG):
-                    log.debug(f'   {world} -> {successor_count} successor world(s)')
+                    for successor in world.successors:
+                        log.debug(f'      factors: {" | ".join([f"{k}: {wstr(v)}" for k, v in successor.factors.items() if v is not None])}, weight: {wstr(successor.weight)}')
             # interference may have canceled a world's weight to zero
             for point in list(Q_next.index.values()):
                 point.weight = qn.simplify(point.weight)
-                if _weight_is_zero(point.weight):
-                    log.debug(f'   dropping cancelled world {point.key}')
+                if qn.zerop(point.weight):
+                    log.debug(f'   dropping zero-weight point {point.key}')
+                    # record it first: the weight-evolution graph/table
+                    # show every output of a stage, including the ones
+                    # interference zeroed out
+                    point.cancelled = True
+                    # all_points.record(point)
                     Q_next.remove(point)
             self.check_total_probability(Q_next, step)
             for point in Q_next.index.values():
