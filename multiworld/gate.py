@@ -48,18 +48,23 @@ class FredkinGate:
     def switch_factors(self, port:str, sign:Sign, control_present:bool):
         """
         The four-way split for a particle entering switch wire *port* with
-        *sign* (from §4.2.3 of Good and Real): a list of
-        (output port, output sign, weight factor) triples.
-        The first two stay on the straight-through wire, the last two cross
-        over; control presence (or a minus sign, but not both) swaps the
-        factor columns.
+        *sign*, in the book's component order c2a, c2b, c3a, c3b
+        (§4.2.3 of Good and Real): a list of
+        (output port, output sign, weight component) triples.
+        The component values are fixed by the measurement angle —
+        (cos²θ, i·sinθcosθ, sin²θ, −i·sinθcosθ) — and only their
+        DESTINATIONS move: the measurement-parallel pair (c2a, c2b)
+        passes straight through and the perpendicular pair (c3a, c3b)
+        crosses over, unless control presence, or a minus sign (but not
+        both), swaps the two destinations.
         """
-        column = int((not control_present) ^ (sign == Sign.plus))
-        rows = ((port, sign, (self.cos2_theta, self.sin2_theta)),
-                (port, -sign, (self.cos_sin_theta, self.mcos_sin_theta)),
-                (OTHER[port], sign, (self.sin2_theta, self.cos2_theta)),
-                (OTHER[port], -sign, (self.mcos_sin_theta, self.cos_sin_theta)))
-        return [(out_port, out_sign, factors[column]) for out_port, out_sign, factors in rows]
+        swapped = (not control_present) ^ (sign == Sign.plus)
+        straight, cross = port, OTHER[port]
+        c2_dest, c3_dest = (cross, straight) if swapped else (straight, cross)
+        return [(c2_dest, sign, self.cos2_theta),
+                (c2_dest, -sign, self.cos_sin_theta),
+                (c3_dest, sign, self.sin2_theta),
+                (c3_dest, -sign, self.mcos_sin_theta)]
 
 
 class DelayGate(FredkinGate):

@@ -1,21 +1,5 @@
-title: Figure 4.12
+title: A Single Gate
 symbolic: false
-#string_precision: 2
-#merge:
-#   before_measure: false
-#   before_forwarding: false
-#   combine_signs: true
-#normalize_weights:
-#   output: false
-#   input: false
-#probability_threshold:
-#   selector: -3
-#   swap: -3
-#   presence: 0
-#   forwarding: 0
-always_forward:
-   control_weights: true
-   switch_weights: true
 
 sample: true
 n_samples: 10000

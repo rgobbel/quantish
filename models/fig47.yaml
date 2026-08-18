@@ -1,43 +1,30 @@
 title: Figure 4.7
+
+symbolic: false
+
 variables:
-   zero: &zero "0j"
+   zero: &zero "0+0j"
    one: &one "1+0j"
    eye: &eye "1j"
    r60: &r60 "0.5+0.87j"
-   q0: &q0 "acos(4/5)"
+   q345: &q345 "acos(4/5)"
    q30: &q30 "rad(30)"
    q45: &q45 "rad(45)"
-   q2: &q2 "acos(5/6)"
-   qx: &qx '0.64+0j'
-   qy: &qy '0+0.48j'
-
-sample: true
-n_samples: 1000
-
-#loglevel: debug
-
-#normalize_weights:          # whether or not to normalize weights so that their sum is one
-#   input: false             # normalize values of input particles before measurement
-#   output: false            # normalize values of output particles before returning from measurement
 
 run_stages: &rs
-   split: [g1]
-   unsplit: [g2]
+   split1: [g1]
+   split2: [g2]
 
 diagram_groups: *rs
 
 particles:
-#   control:
-#      sign: 1
-#      weight: *zero
-   p1:
-      sign: 1
-      weight: *one
+   p1: {weight: *one, sign: 1}
+
 gates:
    g1: {angle: *q30}
    g2: {angle: *q30}
+
 links:
-#   control: g1.control
    p1: g1.upper
    g1.control: g2.control
    g1.upper: g2.upper

@@ -1,7 +1,7 @@
 """Quantish Physics — marimo front-end.
 
 Pick a model, adjust gate angles with sliders, and everything downstream
-reacts: exact final worlds (LaTeX weights), marginal summaries, circuit
+reacts: exact final CS points (LaTeX weights), marginal summaries, circuit
 diagrams (TikZ + Mermaid), the weight-evolution graph, Monte Carlo
 sampling, the Bell/CHSH experiment, and the four-way weight-split
 explorer.
@@ -51,6 +51,7 @@ def _():
     logging.basicConfig(level=logging.WARNING)
     logging.getLogger('multiworld').setLevel(logging.WARNING)
 
+    from multiworld.config_space import GatePort
     from multiworld.epr import run_epr_experiment, supports_epr
     from multiworld.gate import FredkinGate
     from multiworld.montecarlo import run_monte_carlo
@@ -64,6 +65,7 @@ def _():
         Addict,
         CalcMode,
         FredkinGate,
+        GatePort,
         MODELS_DIR,
         Simulation,
         alt,
@@ -88,7 +90,7 @@ def _(mo):
     # Quantish Physics
     A simulation of the quantish universe from Chapter 4 of
     *Good and Real* (Drescher, 2006): Fredkin gates, complex-weighted
-    worlds, and EPR experiments.
+    CS points, and EPR experiments.
     """)
     return
 
@@ -323,7 +325,7 @@ def _(
         return mo.md(
             f"Ran **{sim.title}** ({mode_pick.value} mode) — {angles}; "
             f"{len(sim.run_stages)} steps, "
-            f"{len(sim.result_space.index)} final world(s), "
+            f"{len(sim.result_space.index)} final CS point(s), "
             f"total probability "
             f"{sum(float(p.probability) for p in sim.result_space.index.values()):.6f}")
 
@@ -386,7 +388,7 @@ def _(cmath, mo, qn):
 
     def md_table(headers, rows) -> str:
         # NB: markdown needs a blank line before a table, and literal '|'
-        # inside cells (world keys use it as a separator) must be escaped
+        # inside cells (CS-point keys use it as a separator) must be escaped
         # or they read as column breaks.
         def cell(c):
             return str(c).replace('|', r'\|')
@@ -397,7 +399,29 @@ def _(cmath, mo, qn):
         return '\n'.join(lines)
 
     _ = mo.md('')  # helpers only
-    return latex_weight, math_weight, md_table, phase_deg
+    def inline_png(png_bytes):
+        # a data-URI <img> instead of marimo's shared-memory virtual
+        # files: re-running a cell disposes the old virtual file while the
+        # browser still holds its URL, producing FileNotFoundError noise
+        # in the server log (same reason the Altair data is inlined)
+        import base64
+        b64 = base64.b64encode(png_bytes).decode()
+        return mo.Html(f'<img src="data:image/png;base64,{b64}">')
+
+    def zoomable(obj, factor):
+        # Width-based zoom: widen an inner container and make the media
+        # fill it. CSS zoom fails here because mo.image and Mermaid SVGs
+        # are max-width-clamped to the container — the clamp scales along
+        # with the zoom, so only the caption text grew.
+        return mo.Html(
+            f'<div style="overflow:auto; max-height:85vh">'
+            f'<div class="qzoom" style="width:{factor * 100:.0f}%">'
+            f'<style>.qzoom img, .qzoom svg '
+            f'{{ width:100% !important; max-width:none !important; '
+            f'height:auto !important; }}</style>'
+            f'{mo.as_html(obj).text}</div></div>')
+
+    return inline_png, latex_weight, math_weight, md_table, phase_deg, zoomable
 
 
 @app.cell(hide_code=True)
@@ -412,8 +436,8 @@ def _(math_weight, md_table, mo, phase_deg, short_config, sim):
             f'${float(p.probability):.4f}$',
             f'${phase_deg(p.weight):+.1f}º$',
         ) for p in sorted(sim.result_space.index.values(),
-                          key=sim.world_sort_key)]
-        return mo.accordion({'## Final worlds\n': mo.md(md_table(
+                          key=sim.cs_point_sort_key)]
+        return mo.accordion({'## Final CS points\n': mo.md(md_table(
             ['configuration', 'weight $w$', r'$\lvert w\rvert^2$', 'phase'],
             rows))})
 
@@ -424,7 +448,7 @@ def _(math_weight, md_table, mo, phase_deg, short_config, sim):
 @app.cell(hide_code=True)
 def _(md_table, mo, sim):
     # Marginal in the statistics sense: each row sums |w|² over every
-    # final world containing that coordinate — the chance of finding that
+    # final CS point containing that coordinate — the chance of finding that
     # particle, with that sign, at that port, regardless of where the
     # other particles ended up. Rows follow gate evaluation order (upper
     # before lower, + before −), so a port's +/− pair sits together and
@@ -442,7 +466,7 @@ def _(md_table, mo, sim):
                                          key=lambda kv: sim.coord_sort_key(kv[1][0]))]
         return mo.accordion({
             '## Marginal probabilities (one coordinate at a time)':
-                mo.md(r'Each row sums $\lvert w\rvert^2$ over every final world '
+                mo.md(r'Each row sums $\lvert w\rvert^2$ over every final CS point '
                       'in which that particle, with that sign, sits at that '
                       'port — its probability there *regardless of where the '
                       'other particles ended up* (the marginal over the rest '
@@ -475,10 +499,25 @@ def _(md_table, mo, sim):
 
 
 @app.cell(hide_code=True)
-def _(mo, sim):
+def _(mo):
+    # One zoom slider per diagram, defined together so a zoom change
+    # re-runs only the cell that displays that diagram.
+    def _():
+        def zslider():
+            return mo.ui.slider(0.5, 3.0, step=0.25, value=1.0,
+                                label='zoom', show_value=True)
+        return zslider(), zslider(), zslider()
+
+    tikz_zoom, mermaid_zoom, graph_zoom = _()
+    return graph_zoom, mermaid_zoom, tikz_zoom
+
+
+@app.cell(hide_code=True)
+def _(inline_png, mo, sim, tikz_zoom, zoomable):
     # Depends on sim, so it refreshes on every Run (runs are now explicit,
     # so the pdflatex cost is paid once per Run, not per slider move).
     def _():
+        import io
         from multiworld.tikz_diagram import render_diagram, spec_from_simulation
         try:
             overrides = {g: f'{float(gate.atheta.degrees):.1f}°'
@@ -487,16 +526,19 @@ def _(mo, sim):
                                  angle_overrides=overrides)
             if img is None:
                 return mo.md('_TikZ render unavailable (needs pdflatex + imagemagick)_')
-            return mo.image(img, caption='circuit (TikZ)')
+            buf = io.BytesIO()
+            img.save(buf, format='PNG')
+            return inline_png(buf.getvalue())
         except Exception as exc:  # noqa: BLE001 — show, don't crash the app
             return mo.md(f'_TikZ diagram failed: {exc}_')
 
-    mo.vstack([mo.md('## Circuit diagram (TikZ)'), _()])
+    mo.vstack([mo.md('## Circuit diagram (TikZ)'), tikz_zoom,
+               zoomable(_(), tikz_zoom.value)])
     return
 
 
 @app.cell(hide_code=True)
-def _(diagram, mo, sim):
+def _(diagram, mermaid_zoom, mo, sim, zoomable):
     def _():
         # The generated source carries no theme, and mo.mermaid's own
         # theme choice is unreadable on nested subgraphs — so pin the
@@ -522,47 +564,50 @@ def _(diagram, mo, sim):
         except Exception as exc:  # noqa: BLE001
             return mo.md(f'_Mermaid diagram failed: {exc}_')
 
-    mo.vstack([mo.md('## Gate network with port values (Mermaid)'), _()])
+    mo.vstack([mo.md('## Gate network with port values (Mermaid)'),
+               mermaid_zoom, zoomable(_(), mermaid_zoom.value)])
     return
 
 
 @app.cell(hide_code=True)
-def _(mo, NetworkGraph, sim):
+def _(graph_zoom, inline_png, mo, NetworkGraph, sim, zoomable):
     def _():
+        import io
         from matplotlib import pyplot as plt
         fig = NetworkGraph(sim.all_points, sim).figure()
-        # deregister from pyplot so slider-driven reruns don't accumulate
-        # open figures (the Figure object itself stays renderable)
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png', dpi=150, bbox_inches='tight')
         plt.close(fig)
-        return fig
+        return inline_png(buf.getvalue())
 
-    mo.vstack([mo.md('## Weight evolution (worlds × steps)'), _()])
+    mo.vstack([mo.md('## Weight evolution (CS points × stages)'),
+               graph_zoom, zoomable(_(), graph_zoom.value)])
     return
 
 
 @app.cell(hide_code=True)
-def _(math_weight, md_table, mo, short_config, sim):
+def _(GatePort, math_weight, md_table, mo, qn, short_config, sim):
     # Tabular twin of the weight-evolution graph: per stage, one row per
-    # parent→child branch — the input world and its weight, the literal
-    # per-particle factors the gate applied (cos²θ, ±i·sinθcosθ, sin²θ),
-    # the branch amplitude, and the output world's total weight. Where
-    # branch w ≠ world w, interfering branches merged into that world.
+    # parent→child branch — the input CS point and its weight, the
+    # per-particle components the gate applied (cos²θ, ±i·sinθcosθ, sin²θ),
+    # the branch amplitude, and the output CS point's total weight. Where
+    # branch w ≠ point w, interfering branches merged into that CS point.
     def _():
         def label(p):
             return f'`{short_config(p, key=sim.coord_sort_key).replace("|", " ")}`'
 
-        def factor_cell(w, parent, contrib):
-            # A merged world stores only its FIRST branch's per-particle
-            # factors; for other branches show just the branch's overall
+        def particle_cell(w, parent, contrib):
+            # A merged CS point stores only its FIRST branch's per-particle
+            # components; for other branches show just the branch's overall
             # multiplier Π (recovered as branch w / input w).
-            facts = {name: f for name, f in w.factors.items() if f is not None}
+            facts = {name: f for name, f in w.particles.items() if f is not None}
             try:
                 expected = complex(parent.weight)
                 for f in facts.values():
                     expected *= complex(f)
                 stored_ok = abs(expected - complex(contrib)) < 1e-9
             except (TypeError, ValueError):
-                stored_ok = True  # symbolic with free symbols: trust the stored factors
+                stored_ok = True  # symbolic with free symbols: trust the stored components
             if stored_ok:
                 return '<br>'.join(f'{name}: {math_weight(f)}'
                                    for name, f in facts.items()) or '—'
@@ -571,31 +616,62 @@ def _(math_weight, md_table, mo, short_config, sim):
             except (TypeError, ValueError, ZeroDivisionError):
                 return 'Π: ?'
 
+        def controlled_gates(cs_point, stage):
+            # per-CS-point positional check, as in the engine
+            return [g for g in stage
+                    if any(c.position.endpoint == GatePort(g, 'control')
+                           for c in cs_point.coords.values())]
+
+        def control_header(stage, parents):
+            # per-gate control occupancy: source port and merged Pr, the
+            # same summary the debug log's CONTROL suffix shows
+            parts = []
+            for g in stage:
+                amp, source = None, None
+                for w in parents:
+                    for c in w.coords.values():
+                        if c.position.endpoint == GatePort(g, 'control'):
+                            amp = w.weight if amp is None else amp + w.weight
+                            source = c.position.origin or c.name
+                if amp is not None:
+                    pr = qn.to_float(qn.probability(amp))
+                    parts.append(f'`{source}` → {g}, Pr {pr:.2f}')
+            return 'control: ' + (', '.join(parts) if parts else 'empty')
+
         by_step = {}
         for pt in sim.all_points.index.values():
             by_step.setdefault(pt.step, []).append(pt)
         sections = {}
         for step in sorted(by_step):
-            worlds = sorted(by_step[step], key=sim.world_sort_key)
+            points = sorted(by_step[step], key=sim.cs_point_sort_key)
             if step == 0:
-                sections['Step 0 — initial world'] = mo.md(md_table(
-                    ['world', 'weight $w$'],
-                    [(label(w), math_weight(w.weight)) for w in worlds]))
+                sections['Step 0 — initial CS point'] = mo.md(md_table(
+                    ['CS point', 'weight $w$'],
+                    [(label(w), math_weight(w.weight)) for w in points]))
                 continue
+            stage = sim.run_stages[step - 1]
+            parents = by_step.get(step - 1, [])
             rows = []
-            for w in worlds:
+            for w in points:
                 out_label = label(w) + (' _(cancelled)_' if w.cancelled else '')
                 for parent, contrib in sorted(w.contributions.items(),
-                                              key=lambda kv: sim.world_sort_key(kv[0])):
-                    rows.append((label(parent), math_weight(parent.weight),
-                                 factor_cell(w, parent, contrib),
+                                              key=lambda kv: sim.cs_point_sort_key(kv[0])):
+                    rows.append((label(parent),
+                                 ', '.join(controlled_gates(parent, stage)) or '—',
+                                 math_weight(parent.weight),
+                                 particle_cell(w, parent, contrib),
                                  math_weight(contrib), out_label,
                                  math_weight(w.weight)))
-            gates = ', '.join(sim.run_stages[step - 1])
-            sections[f'Step {step} — {gates}'] = mo.md(md_table(
-                ['input world', '$w_{in}$', 'factors', 'branch $w$',
-                 'output world', '$w_{out}$'], rows))
-        return mo.accordion({'## Weight evolution table':
+            total = qn.to_float(sum(w.probability for w in points
+                                    if not w.cancelled))
+            # md_table needs a blank line before it; its output starts
+            # with one newline, so add the other after the header text
+            sections[f'Step {step} — {", ".join(stage)}'] = mo.md(
+                control_header(stage, parents) + '\n' +
+                md_table(['input CS point', 'control', '$w_{in}$', 'particles',
+                          'branch $w$', 'output CS point', '$w_{out}$'], rows) +
+                f'\n\ntotal probability after step: {total:.6f}')
+        return mo.accordion({'## Weight evolution table (CS points)':
                              mo.accordion(sections, multiple=True, lazy=True)})
 
     _()
@@ -606,11 +682,20 @@ def _(math_weight, md_table, mo, short_config, sim):
 def _(mo):
     mo.md(r"""
     ## Monte Carlo sampling
-    Optional sampled trials on top of the exact run above: each trial
-    draws one final world from the evolved superposition with
-    probability $\lvert w\rvert^2$. This is the faithful simulation of a
-    real experiment — interference stays intact until observation, and
-    frequencies converge on the exact values as trials grow.
+    Optional sampled trials on top of the exact run above. Two modes:
+
+    - **terminal** — each trial draws one final CS point from the
+      evolved superposition with probability $\lvert w\rvert^2$. This is
+      the faithful simulation of a real experiment: interference stays
+      intact until observation, and frequencies converge on the exact
+      values as trials grow.
+    - **path** — each trial walks the CS-point graph one stage at a
+      time, picking a successor in proportion to the amplitude it
+      received. That yields a world-line story per trial, but choosing
+      per stage amounts to *collapsing at every stage*: where CS points
+      interfere, path statistics legitimately diverge from the
+      exact values — the divergence measures how much interference
+      matters.
     """)
     return
 
@@ -622,16 +707,19 @@ def _(mo):
                100000, 200000, 500000, 1000000],
         value=20000, label='trials', show_value=True)
     mc_trials_text = mo.ui.text(value='', placeholder='custom trial count')
+    mc_mode = mo.ui.dropdown(options=['terminal', 'path', 'both'],
+                             value='both', label='mode')
     mc_seed = mo.ui.number(value=42, label='seed')
     mc_button = mo.ui.run_button(label='Run Monte Carlo')
-    mo.hstack([mc_trials, mc_trials_text, mc_seed, mc_button],
+    mo.hstack([mc_trials, mc_trials_text, mc_mode, mc_seed, mc_button],
               wrap=True)
-    return mc_button, mc_seed, mc_trials, mc_trials_text
+    return mc_button, mc_mode, mc_seed, mc_trials, mc_trials_text
 
 
 @app.cell(hide_code=True)
 def _(
     mc_button,
+    mc_mode,
     mc_seed,
     mc_trials,
     mc_trials_text,
@@ -647,21 +735,31 @@ def _(
             n_trials = max(1, int(mc_trials_text.value.strip()))
         except ValueError:
             n_trials = int(mc_trials.value)
-        results = run_monte_carlo(sim, n_trials, mode='terminal',
+        results = run_monte_carlo(sim, n_trials, mode=mc_mode.value,
                                   seed=int(mc_seed.value))
-        tally = results['terminal']
         pred = results['predicted']
-        rows = []
-        tvd = 0.0
-        for key in sorted(set(tally) | set(pred), key=lambda k: -pred.get(k, 0)):
-            freq = tally.get(key, 0) / n_trials
-            tvd += abs(freq - pred.get(key, 0.0))
-            rows.append((f'`{key.split(":")[0][:60].replace("|", " ")}`',
-                         tally.get(key, 0),
-                         f'{freq:.4f}', f'{pred.get(key, 0.0):.4f}'))
-        return mo.md(f'{n_trials} draws from the final superposition; '
-                     f'total variation distance {tvd / 2:.4f}\n\n' +
-                     md_table(['world', 'count', 'freq', 'exact'], rows))
+        sections = []
+        # terminal first: it is the faithful baseline the path mode's
+        # per-stage collapse is measured against
+        for label, note in (
+                ('terminal', 'one draw from the final superposition per trial'),
+                ('path', 'one world-line per trial — collapses at every stage')):
+            if label not in results:
+                continue
+            tally = results[label]
+            rows = []
+            tvd = 0.0
+            for key in sorted(set(tally) | set(pred), key=lambda k: -pred.get(k, 0)):
+                freq = tally.get(key, 0) / n_trials
+                tvd += abs(freq - pred.get(key, 0.0))
+                rows.append((f'`{key.split(":")[0][:60].replace("|", " ")}`',
+                             tally.get(key, 0),
+                             f'{freq:.4f}', f'{pred.get(key, 0.0):.4f}'))
+            sections.append(f'**{label}** — {note}; '
+                            f'total variation distance {tvd / 2:.4f}\n\n' +
+                            md_table(['CS point', 'count', 'freq', 'exact'],
+                                     rows))
+        return mo.md('\n\n'.join(sections))
 
     _()
     return
@@ -781,7 +879,7 @@ def _(epr_angle_elems, epr_button, epr_trials, mo, sim, supports_epr):
     else is read as a symbolic radian expression (`pi/8`, `rad(30)`).
 
     With trials = 0 (the default) each cell uses only the exact final
-    worlds — fast. Setting trials adds per-cell Monte Carlo sampling on
+    CS points — fast. Setting trials adds per-cell Monte Carlo sampling on
     top. **Symbolic mode multiplies the cost**: nine exact symbolic runs
     with non-special angles may take several seconds even at 0 trials.
     """),

@@ -48,7 +48,7 @@ WEIGHT_TOLERANCE = 1e-9
 # sequential splits whose products recombine, i.e. real interference).
 PARITY_MODELS = [
     'fig45_multi',
-    'fig47_multi',
+    'zero_control',
     'fig47plus_multi',
     'fig49_multi',
     'fig411',

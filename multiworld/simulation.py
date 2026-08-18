@@ -34,7 +34,7 @@ class Simulation:
         self.declared_groups = self.resolve_groups(config)
         self.run_stages = self.grouped_run_stages(self.declared_groups)
         self.run_order = flat_list(self.run_stages)
-        # the step whose classical worlds show a gate's just-produced outputs
+        # the step whose CS points show a gate's just-produced outputs
         self.gate_step = {g: i + 1 for i, stage in enumerate(self.run_stages) for g in stage}
         self.particles = Addict()
         self.fredkin_gates = Addict()
@@ -158,17 +158,33 @@ class Simulation:
             dest_wire = GatePort(dest_gate_name, dest_port)
             dest_pos = Position(endpoint=dest_wire)
             if len(source_parts) == 1:
-                particle = self.particles[source]
+                # .get, not [..]: Addict would silently auto-create a
+                # phantom for an undeclared name (e.g. a stale link after
+                # renaming a particle) and crash much later
+                particle = self.particles.get(source)
+                if particle is None:
+                    raise ValueError(
+                        f"link source '{source}' is neither a gate port nor "
+                        f"a declared particle ({sorted(self.particles.keys())})")
+                if qn.zerop(particle.weight):
+                    # a zero-weight particle marks an ABSENT occupant (e.g.
+                    # fig 4.4's control): no coordinate, so control-presence
+                    # checks read False and no weight branches from it
+                    log.debug(f'PARTICLE {particle} has zero weight: absent')
+                    continue
                 pcoord = PCoordinate(particle.name, particle.sign, dest_pos)
                 self.initial_coords[source] = pcoord
                 log.debug(f'PARTICLE {particle}, INITIAL POSITION: {pcoord}')
         log.debug(' ')
         # the initial config space point's weight is the product of the configured particle weights
-        initial_weight = qn.prod([p.weight for p in self.particles.values()])
+        # absent (zero-weight) particles route gates by their absence but
+        # must not zero the initial CS point's weight, so they stay out of the product
+        initial_weight = qn.prod([p.weight for p in self.particles.values()
+                                  if not qn.zerop(p.weight)])
         self.initial_point = ConfigSpacePoint(0, list(self.initial_coords.values()), initial_weight)
-        # display data: the initial "factor" of each particle is its
+        # display data: each particle's initial "component" is its
         # configured weight (see the weight-evolution graph's band glyphs)
-        self.initial_point.factors = {p.name: p.weight for p in self.particles.values()}
+        self.initial_point.particles = {p.name: p.weight for p in self.particles.values()}
         log_seq('particles', particles, logging.DEBUG)
         log_seq('gates', gates, logging.DEBUG)
 
@@ -182,7 +198,7 @@ class Simulation:
 
     def port_summary(self, step, port, end='origin'):
         """Formatted per-particle summary of the amplitudes at `port` over
-        the worlds at `step`, one line per particle:
+        the CS points at `step`, one line per particle:
 
             p1+: 0.56, p1-: 0.19 | Σ: 0.75 ∠+30º
 
@@ -195,7 +211,7 @@ class Simulation:
         if self.all_points is None:
             return None
         probs = defaultdict(lambda: defaultdict(float))   # pname -> sign -> Σ|w|²
-        amps = defaultdict(complex)                       # pname -> Σ of world weights
+        amps = defaultdict(complex)                       # pname -> Σ of CS-point weights
         try:
             for point in self.all_points.index.values():
                 if point.step != step or point.cancelled:
@@ -224,7 +240,7 @@ class Simulation:
     def gate_io(self):
         """Per-step gate traffic: a list of rows {step, gate, port, input,
         output} for every gate port that saw a particle — inputs are what
-        was arriving at the port in the previous step's worlds (coordinate
+        was arriving at the port in the previous step's CS points (coordinate
         endpoints), outputs what exited it when the gate fired (coordinate
         origins), both in port_summary format."""
         rows = []
@@ -263,15 +279,57 @@ class Simulation:
                 coord.name,
                 -int(coord.sign))
 
-    def world_sort_key(self, point):
-        """Canonical display order for a whole classical world: compare worlds by
+    def cs_point_sort_key(self, point):
+        """Canonical display order for a whole CS point: compare CS points by
         their coordinates taken in coord_sort_key order, so rows group by
         gate, then port (upper first), then sign (+ first)."""
         return tuple(sorted(self.coord_sort_key(c) for c in point.coords.values()))
 
+    def port_particle_amps(self, step, port, end='origin'):
+        """Per-particle summed amplitude (qnumber Complex) at `port` over
+        the CS points at `step`. end='origin' sums what exited the
+        port, end='endpoint' what is arriving at it. Empty dict when
+        nothing matches."""
+        amps = {}
+        if self.all_points is None:
+            return amps
+        for point in self.all_points.index.values():
+            if point.step != step or point.cancelled:
+                continue
+            for pname, coord in point.coords.items():
+                where = (coord.position.origin if end == 'origin'
+                         else coord.position.endpoint)
+                if where == port:
+                    amps[pname] = (amps[pname] + point.weight
+                                   if pname in amps else point.weight)
+        return amps
+
+    def amp_value_str(self, pname, amp):
+        """Display block for one particle's summed amplitude at a port:
+
+            p1 +0.75,+0.43i
+            Pr: 0.75 (0.56+0.19) ∠+30º
+
+        Line 1: the amplitude as a signed (real, imaginary) pair, the
+        imaginary part suffixed i. Line 2: the combined probability, its
+        decomposition into real- and imaginary-part contributions, and
+        the phase in degrees. (In this circuit family the real part is
+        the plus-sign component and the imaginary part the minus-sign
+        component.)"""
+        prec = self.precision
+        re_v = qn.to_float(amp.real)
+        im_v = qn.to_float(amp.imag)
+        pr = qn.to_float(qn.probability(amp))
+        pr_re = qn.to_float(qn.probability(amp.real))
+        pr_im = qn.to_float(qn.probability(amp.imag))
+        deg = qn.to_float(amp.phase.degrees)
+        return (f'{pname} {re_v:+.{prec}f},{im_v:+.{prec}f}i\n'
+                f'Pr: {pr:.{prec}f} ({pr_re:.{prec}f}+{pr_im:.{prec}f}) ∠{deg:+.0f}º')
+
     def pos_value_str(self, pos):
-        """Display string for a gate output port after a run (see
-        port_summary). Returns None when nothing exited there."""
+        """Display string for a gate output port after a run: one
+        amp_value_str block per particle present. Returns None when
+        nothing exited there."""
         parts = pos.split(SEP)
         if len(parts) != 2:
             return None
@@ -279,4 +337,7 @@ class Simulation:
         step = self.gate_step.get(gname)
         if step is None:
             return None
-        return self.port_summary(step, GatePort(gname, gport), end='origin')
+        amps = self.port_particle_amps(step, GatePort(gname, gport))
+        if not amps:
+            return None
+        return '\n'.join(self.amp_value_str(p, amps[p]) for p in sorted(amps))

@@ -1,6 +1,6 @@
 title: Quantish EPR Experiment
 
-symbolic: false
+symbolic: true
 
 loglevel: info
 
@@ -17,8 +17,8 @@ diagram_groups:
    observe1: [g5, g6]
    observe2: [g7, g8]
 
-#sample: false
-#n_samples: 100
+sample: false
+n_samples: 100
 measure_discrepancy: true
 epr_stats: true
 
@@ -35,8 +35,8 @@ particles:
    p3: {weight: 1, sign: 1}
 
 gates:
-   g1: {angle: 'pi/4'}
-   g2: {angle: 'pi/4+pi/2'}
+   g1: {angle: 'pi/6'}
+   g2: {angle: 'pi/6+pi/2'}
    g3: {angle: 0}
    g4: {angle: 0}
    g5: {angle: *qa}
@@ -65,9 +65,8 @@ links:
    g2.lower: g6.lower
 
    #phase 3 - observe
-   g5.control: g7.control
+   # (no g5/g6 control links: nothing ever arrives at those ports)
    g5.upper: g7.upper
    g5.lower: g7.lower
-   g6.control: g8.control
    g6.upper: g8.upper
    g6.lower: g8.lower

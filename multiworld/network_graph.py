@@ -10,13 +10,14 @@ from multiworld.qnumber import probability, to_float, ZERO_THRESHOLD, to_native
 
 class NetworkGraph:
     def __init__(self, result_space: ConfigSpace, sim: Simulation, diagram_path: Path=None, show=True):
-        """Render the weight-evolution trace, save it as a PDF next to
-        diagram_path, and optionally show it on screen."""
-        from matplotlib import pyplot as plt
+        """With diagram_path: render the weight-evolution trace, save it
+        as a PDF next to diagram_path, and optionally show it on screen.
+        Without: just hold the inputs — call figure() to render."""
         self.result_space = result_space
         self.sim = sim
-        fig = self.figure()
         if diagram_path is not None:
+            from matplotlib import pyplot as plt
+            fig = self.figure()
             out_path = diagram_path.with_stem(diagram_path.stem + '_graph').with_suffix('.pdf')
             fig.savefig(out_path, orientation='landscape', bbox_inches='tight')
             if show:
@@ -26,15 +27,15 @@ class NetworkGraph:
     def figure(self):
         """Weight-evolution trace of the simulation, as a matplotlib Figure.
 
-        One column per step, one node per world. A node is
-        a stack of bands: one per particle showing the branch factor the
+        One column per step, one node per CS point. A node is
+        a stack of bands: one per particle showing the split component the
         stage applied to it (hue = particle; black = −1, mid-gray = 0,
         white = +1; hatched = not active in this stage), then a bottom monochrome
-        band showing the combined world weight on the same scale. Complex
+        band showing the combined CS-point weight on the same scale. Complex
         values display as magnitude signed by the dominant axis, so ±i·sinθcosθ
         branches are distinguishable. Bands active on this step get a heavy
-        outline. Edge width tracks the amplitude each parent world contributed
-        — a merged world shows one incoming edge per interfering contribution.
+        outline. Edge width tracks the amplitude each parent CS point contributed
+        — a merged CS point shows one incoming edge per interfering contribution.
         """
 
         def primary_parent(w: ConfigSpacePoint):
@@ -54,12 +55,12 @@ class NetworkGraph:
                     and pname in parent.coords
                     and parent.coords[pname].key != w.coords[pname].key)
 
-        def world_ranks(w: ConfigSpacePoint):
+        def point_ranks(w: ConfigSpacePoint):
             ranks = []
             if w.step != steps[0]:
                 for pname in sorted(w.coords.keys()):
                     coord = w.coords[pname]
-                    active = w.factors.get(pname) is not None or _moved(w, pname)
+                    active = w.particles.get(pname) is not None or _moved(w, pname)
                     if not active:
                         continue
                     origin = coord.position.origin
@@ -69,7 +70,7 @@ class NetworkGraph:
             return ranks
 
         def sort_key(w: ConfigSpacePoint):
-            return tuple(world_ranks(w)), w.key
+            return tuple(point_ranks(w)), w.key
 
         def signed_amp(value):
             try:
@@ -138,13 +139,13 @@ class NetworkGraph:
         band_h = min(0.20 * _y_range / fig_h, 0.78 / max(1, n_particles))
         node_h = band_h * n_particles
         comb_w = 0.32 * node_w   # right-side combined-weight column
-        fact_w = node_w - comb_w  # left-side stack of per-particle factor bands
+        fact_w = node_w - comb_w  # left-side stack of per-particle component bands
 
         # Edges: one line per moved particle per contribution, tinted with the
-        # particle's hue, running from the particle's band in the parent world
+        # particle's hue, running from the particle's band in the parent CS point
         # to its band in the child — the port routing is in the geometry, like
         # the Mermaid diagram's links. Width still tracks |contributed
-        # amplitude|; a merged world shows one bundle per interfering branch.
+        # amplitude|; a merged CS point shows one bundle per interfering branch.
         for p, (x, y) in pos.items():
             for parent, contrib in p.contributions.items():
                 if parent not in pos:
@@ -156,10 +157,10 @@ class NetworkGraph:
                     mag = 0.5
                 moved = [(i, pname)
                          for i, pname in enumerate(sorted(p.coords.keys()))
-                         if p.factors.get(pname) is not None
+                         if p.particles.get(pname) is not None
                          or (pname in parent.coords
                              and parent.coords[pname].key != p.coords[pname].key)]
-                if not moved:  # nothing active this stage: neutral world line
+                if not moved:  # nothing active this stage: neutral gray line
                     ax.plot([px + node_w / 2, x - node_w / 2], [py, y],
                             color='black', lw=0.5,
                             zorder=1, solid_capstyle='round')
@@ -171,17 +172,17 @@ class NetworkGraph:
                             color='black', lw=0.5,
                             zorder=1, solid_capstyle='round')
 
-        # Nodes: a stack of hued factor bands (one per particle, the factor
+        # Nodes: a stack of hued component bands (one per particle, the component
         # this stage applied) with a full-height monochrome column on the
         # right showing the combined world weight, on the shared value scale.
         for p, (x, y) in pos.items():
             x_left = x - node_w / 2
             for i, pname in enumerate(sorted(p.coords.keys())):
-                factor = p.factors.get(pname)
+                component = p.particles.get(pname)
                 active = (p.step != steps[0]
-                         and (factor is not None or _moved(p, pname)))
+                         and (component is not None or _moved(p, pname)))
                 y0 = y + node_h / 2 - (i + 1) * band_h
-                if factor is None and p.step != steps[0]:
+                if component is None and p.step != steps[0]:
                     # untouched this stage: hatched placeholder keeps the
                     # particle's row position without asserting a value
                     ax.add_patch(Rectangle((x_left, y0), fact_w, band_h,
@@ -192,7 +193,7 @@ class NetworkGraph:
                 # step 0 stores the configured particle weights as "factors"
                 ax.add_patch(Rectangle((x_left, y0), fact_w, band_h,
                                        facecolor=band_color(
-                                           factor if factor is not None else 1.0,
+                                           component if component is not None else 1.0,
                                            hues[i % len(hues)]),
                                        edgecolor='black' if active else '0.55',
                                        linewidth=1.0 if active else 0.35,
@@ -226,7 +227,7 @@ class NetworkGraph:
         # coordinate that differs between them — unlabeled, since the hued
         # band-to-band lines carry the port routing
         for step in steps[1:]:
-            ranked = [(w, world_ranks(w)) for w in layers[step]]
+            ranked = [(w, point_ranks(w)) for w in layers[step]]
             ranked = [(w, r) for w, r in ranked if r]
             if len(ranked) < 2:
                 continue
@@ -274,7 +275,18 @@ class NetworkGraph:
                         textcoords='offset points', ha='center', va='bottom',
                         fontsize=tick_fs, color='0.45', style='italic', zorder=4)
 
-        tick_labels = ['initial'] + [f'{k} ' for k in self.sim.config['run_groups'].keys()]
+        # Per-stage tick labels: the declared group name when the stage's
+        # gates all belong to one group, else the gate names — models may
+        # declare diagram_groups/run_groups/run_stages or nothing at all,
+        # so this must not key on any one raw config key.
+        def stage_tick(i):
+            gates = self.sim.run_stages[i] if i < len(self.sim.run_stages) else []
+            for name, members in (self.sim.declared_groups or {}).items():
+                if gates and set(gates) <= set(members):
+                    return name
+            return ', '.join(gates)
+
+        tick_labels = ['initial'] + [stage_tick(i) for i in range(len(steps) - 1)]
         ax.set_xticks([float(s) for s in steps], tick_labels, fontsize=tick_fs)
         ax.set_yticks([])
         for spine in ('top', 'right', 'left'):
@@ -283,9 +295,9 @@ class NetworkGraph:
         ax.set_ylim(-(layer_max + 1) / 2.0 - 0.5, (layer_max + 1) / 2.0 + 0.7)
         ax.set_title(f'{self.sim.title} — weight evolution', fontsize=max(11, tick_fs + 2))
         fig.text(0.25, 0.01,
-                 'left column: hue = particle factor this stage; right column = '
+                 'left column: hue = particle split component this stage; right column = '
                  'marginal probability (black = 0, white = 1)\nhatched = '
-                 'untouched; heavy outline = control present; '
+                 'not active in this stage; heavy outline = active; '
                  'lines: one per moved particle',
                  fontsize=max(7, tick_fs - 1), color='0.4', horizontalalignment='left')
         fig.subplots_adjust(bottom=0.2)

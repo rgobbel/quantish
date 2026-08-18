@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Quantish Physics is a simulation of "quantish" physics from Chapter 4 of *Good and Real: Demystifying Paradoxes from Physics to Ethics* (Gary L. Drescher, 2006). The system simulates quantum-like behavior using Fredkin gates, particles with complex-valued weights, and EPR-style experiments.
 
+### Terminology
+
+Follow the book's terms. A **CS point** (configuration-space point, `ConfigSpacePoint`, `cs_point` in code — the book calls it a *classical state*) is a full assignment of a position and sign to every particle, with one complex weight. The **quantum state** (the full quantish world) is the weighted superposition of CS points. Avoid the bare word "world" for either. The squared magnitudes of the CS points' weights always sum to 1 (the `check_total_probability` invariant), and a CS point's |weight|² is its probability of being the successor to its immediate predecessor. The four split values a gate applies to a switch-wire particle are its **components** — c2a, c2b, c3a, c3b in the book's order (cos²θ, i·sinθcosθ, sin²θ, −i·sinθcosθ); per-particle displays label them by particle, not "factor".
+
 ## Development Commands
 
 ### Running the Simulation
