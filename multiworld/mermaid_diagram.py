@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 
 
 from multiworld.simulation import Simulation
@@ -293,6 +294,7 @@ elk:
 title:
 """
         styled_diag = re.sub("title:", graph_config, str(diag))
+        Path(output_file).parent.mkdir(parents=True, exist_ok=True)
         with open(output_file, 'w') as f:
             f.write(styled_diag)
     return diag

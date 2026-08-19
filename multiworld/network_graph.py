@@ -277,11 +277,11 @@ class NetworkGraph:
 
         # Per-stage tick labels: the declared group name when the stage's
         # gates all belong to one group, else the gate names — models may
-        # declare diagram_groups/run_groups/run_stages or nothing at all,
+        # declare diagram_groups/run_stages or nothing at all,
         # so this must not key on any one raw config key.
         def stage_tick(i):
             gates = self.sim.run_stages[i] if i < len(self.sim.run_stages) else []
-            for name, members in (self.sim.declared_groups or {}).items():
+            for name, members in (self.sim.declared_run_stages or {}).items():
                 if gates and set(gates) <= set(members):
                     return name
             return ', '.join(gates)

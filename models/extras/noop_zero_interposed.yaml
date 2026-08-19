@@ -1,0 +1,26 @@
+title: No-op with zero-angle gate interposed (1 particle)
+
+# 1 particle through gate1(theta) -> gate0(0) -> gate2(theta).
+# If gate0 truly is a no-op, output should match noop_baseline.
+
+symbolic: false
+
+run_stages:
+   split1: [gate1]
+   pass:   [gate0]
+   split2: [gate2]
+
+particles:
+   part1: {sign: 1, weight: 1}
+
+gates:
+   gate1: {angle: 'pi/6'}
+   gate0: {angle: 0}
+   gate2: {angle: 'pi/6'}
+
+links:
+   part1: gate1.upper
+   gate1.upper: gate0.upper
+   gate1.lower: gate0.lower
+   gate0.upper: gate2.upper
+   gate0.lower: gate2.lower

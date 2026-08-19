@@ -100,7 +100,7 @@ def config_file_browser():
 
 @app.cell
 def _(sccb):
-    with open(Path('../models/fig45_multi.yaml')) as f:
+    with open(Path('../models/fig45.yaml')) as f:
         cf = yaml.safe_load(f)
     # print(f'LOADED {config_file.value[0].path}')
     if sccb.value:

@@ -601,9 +601,11 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
         """
         x_lo, x_hi = gap_x_range(gap)
         used = gap_channels_used.setdefault(gap, [])
+        # spans that merely touch at an endpoint (one channel ends where the
+        # other begins) are NOT conflicts — only genuine overlap is
         conflicts = [
             ux for ux, uy_lo, uy_hi in used
-            if not (y_high < uy_lo - 0.05 or y_low > uy_hi + 0.05)
+            if not (y_high < uy_lo + 0.10 or y_low > uy_hi - 0.10)
         ]
         # When spreading, every prior x acts as a soft-conflict for proximity.
         proximity_xs = [ux for ux, _, _ in used] if spread else conflicts
@@ -616,12 +618,32 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
         # headed farthest right — get larger x's, so their long horizontal
         # runs start to the right of every earlier-routed vertical and
         # never cross one.
+        if not spread and stub_to is not None:
+            # Otherwise, hug the stub's far end: a channel near the port its
+            # stub runs to keeps that stub short, so wires sharing a y take
+            # naturally disjoint spans — an exit stub (running left to its
+            # source port) gets a left-side channel, an entry stub (running
+            # right into its destination) a right-side one.
+            candidates.sort(key=lambda c: abs(c - stub_to))
 
         def stub_ok(cx: float) -> bool:
             if stub_y is None or stub_to is None:
                 return True
-            blk = horizontal_blocked(stub_y, cx, stub_to)
-            return blk is None
+            if horizontal_blocked(stub_y, cx, stub_to) is not None:
+                return False
+            # the stub must not cross another channel's corner: a vertical
+            # (in any gap) whose x lies inside the stub's span and whose
+            # y-span reaches the stub's y would visually fuse the wires
+            lo, hi = min(cx, stub_to), max(cx, stub_to)
+            for chans in gap_channels_used.values():
+                for ux, uy_lo, uy_hi in chans:
+                    # only a vertical that TERMINATES at the stub's y fuses
+                    # with it (T-junction); a pass-through crossing is fine
+                    if (lo + 0.02 < ux < hi - 0.02
+                            and (abs(stub_y - uy_lo) <= 0.1
+                                 or abs(stub_y - uy_hi) <= 0.1)):
+                        return False
+            return True
 
         for cx in candidates:
             if not all(abs(cx - cf) >= _CHANNEL_MIN_GAP for cf in proximity_xs):
@@ -885,27 +907,72 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
                 continue
             valid.append(ly)
 
-        if not valid:
-            # Fall back to a fresh lane (alloc_lane bumps to a new y if needed).
+        # Rank lanes by total vertical travel, strongly penalizing lanes
+        # outside the content bounds: a wire arcing over (or under) the
+        # whole diagram expands the canvas and reads as unbalanced when an
+        # in-bounds corridor (e.g. an empty row) would serve.
+        y_content_hi = max((gb['y_top'] for gb in boxes_geom),
+                           default=L.bounds[3])
+        y_content_lo = min((gb['y_bot'] for gb in boxes_geom),
+                           default=L.bounds[1])
+
+        def lane_cost(ly: float) -> float:
+            cost = abs(sy - ly) + abs(dy - ly)
+            if ly > y_content_hi or ly < y_content_lo:
+                cost += 4.0
+            return cost
+
+        valid.sort(key=lane_cost)
+
+        def stubs_clean(ly: float, cx_: float, d_cx_: float) -> bool:
+            # both port stubs must be free of recorded horizontals AND of
+            # other channels' corners (else the wires visually fuse)
+            for yy, xa, xb in ((sy, sx, cx_), (dy, d_cx_, dx)):
+                lo, hi = min(xa, xb), max(xa, xb)
+                if horizontal_blocked(yy, lo, hi) is not None:
+                    return False
+                for chans in gap_channels_used.values():
+                    for ux, uy_lo, uy_hi in chans:
+                        if ux in (cx_, d_cx_):
+                            continue  # this route's own channels
+                        # only a vertical TERMINATING at this y fuses with
+                        # the stub; a pass-through crossing is fine
+                        if (lo + 0.02 < ux < hi - 0.02
+                                and (abs(yy - uy_lo) <= 0.1
+                                     or abs(yy - uy_hi) <= 0.1)):
+                            return False
+            return True
+
+        # Try lane candidates nearest-first; keep the first whose channel
+        # allocations leave both stubs clean. Roll back failed allocations.
+        lane_y = cx = d_cx = None
+        for ly in valid:
+            cx_try = alloc_channel(src_gap, min(sy, ly), max(sy, ly),
+                                   stub_y=sy, stub_to=sx,
+                                   spread=(src_gap == -1))
+            d_cx_try = alloc_channel(dst_gap, min(dy, ly), max(dy, ly),
+                                     stub_y=dy, stub_to=dx,
+                                     spread=(dst_gap == -1))
+            if stubs_clean(ly, cx_try, d_cx_try):
+                lane_y, cx, d_cx = ly, cx_try, d_cx_try
+                below = lane_y < min(sy, dy)
+                (lanes_below if below else lanes_above).append(
+                    (lane_y, x_span_lo, x_span_hi))
+                break
+            # roll the failed channel allocations back
+            gap_channels_used[dst_gap].pop()
+            gap_channels_used[src_gap].pop()
+        if lane_y is None:
+            # Fall back to a fresh lane (alloc_lane bumps to a new y if
+            # needed), accepting best-effort stubs as before.
             prefer_below = (sy + dy) / 2 < 0
             lane_y = alloc_lane(prefer_below, x_span_lo, x_span_hi)
-        else:
-            target = (sy + dy) / 2
-            valid.sort(key=lambda y: abs(y - target))
-            lane_y = valid[0]
-            below = lane_y < min(sy, dy)
-            (lanes_below if below else lanes_above).append((lane_y, x_span_lo, x_span_hi))
-
-        # Now allocate channels with the *actual* y-spans the wire will use.
-        # Pass the destination-side stub info so the channel x avoids
-        # shadowing an existing horizontal at y=dy. In the particle corridor
-        # use spread mode so successive particle wires cascade leftward.
-        cx = alloc_channel(src_gap, min(sy, lane_y), max(sy, lane_y),
-                           stub_y=sy, stub_to=sx,
-                           spread=(src_gap == -1))
-        d_cx = alloc_channel(dst_gap, min(dy, lane_y), max(dy, lane_y),
-                             stub_y=dy, stub_to=dx,
-                             spread=(dst_gap == -1))
+            cx = alloc_channel(src_gap, min(sy, lane_y), max(sy, lane_y),
+                               stub_y=sy, stub_to=sx,
+                               spread=(src_gap == -1))
+            d_cx = alloc_channel(dst_gap, min(dy, lane_y), max(dy, lane_y),
+                                 stub_y=dy, stub_to=dx,
+                                 spread=(dst_gap == -1))
         routes.append(Route([
             (sx, sy),
             (cx, sy),
@@ -1260,17 +1327,22 @@ def render_diagram(circuit: Circuit, dpi: int = 150,
     if circuit.topology is None:
         return None
 
+    # Layout and routing are cheap; only pdflatex is worth caching. Keying
+    # on the emitted TeX (not just the inputs) means a change to the layout
+    # or wire-router code invalidates stale images automatically.
+    layout = compute_layout(circuit)
+    routes = route_wires(circuit, layout)
+    tex = emit_tex(circuit, layout, routes, angle_overrides=angle_overrides)
+
     cache_key_val = cache_key(circuit, angle_overrides)
-    cached = CACHE_DIR / f"{cache_key_val}_{dpi}.png"
+    tex_hash = hashlib.sha1(tex.encode()).hexdigest()[:10]
+    cached = CACHE_DIR / f"{cache_key_val}_{tex_hash}_{dpi}.png"
     if cached.exists():
         try:
             return Image.open(cached).copy()
         except Exception:
             cached.unlink(missing_ok=True)
 
-    layout = compute_layout(circuit)
-    routes = route_wires(circuit, layout)
-    tex = emit_tex(circuit, layout, routes, angle_overrides=angle_overrides)
     img = compile_tex(tex, dpi=dpi)
     if img is None:
         return None

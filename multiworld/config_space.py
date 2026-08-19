@@ -337,7 +337,7 @@ class ConfigSpaceRunner:
             Q_next = ConfigSpace()
             for cs_point in Q.index.values():
                 # particles ordered by their gate's position in the stage
-                # (run_groups order), so the cartesian product enumerates
+                # (run_stages order), so the cartesian product enumerates
                 # successors gate by gate, each gate's four components in
                 # the book's order c2a, c2b, c3a, c3b
                 def stage_rank(pname):

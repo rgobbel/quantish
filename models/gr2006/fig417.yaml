@@ -1,0 +1,79 @@
+title: Quantish EPR Experiment
+
+loglevel: info
+
+run_stages:
+   prep: [g1, g2]
+   couple1: [g3]
+   couple2: [g4]
+   observe1: [g5, g6]
+   observe2: [g7, g8]
+
+diagram_groups:
+   prepare: [g1, g2]
+   couple: [g3, g4]
+   observe1: [g5, g6]
+   observe2: [g7, g8]
+
+sample: false
+n_samples: 100
+measure_discrepancy: true
+epr_stats: true
+
+variables:
+   theta1: '0'
+   theta2: '0'
+
+   qa: 'pi/4'
+   qb: 'pi/8'
+   qc: '3 * pi/8'
+
+   q1: 'pi/6'
+   q2: 'pi/6'
+
+   q5: '0'
+   q6: 'pi/4'
+   q7: 'qa'
+   q8: 'qb'
+
+particles:
+   p1: {sign: 1, weight: 1}
+   p2: {sign: 1, weight: 1}
+   p3: {sign: 1, weight: 1}
+
+gates:
+   g1: {angle: q1}
+   g2: {angle: q1}
+   g3: {angle: 0}
+   g4: {angle: 0}
+   g5: {angle: q5}
+   g6: {angle: q6}
+   g7: {angle: theta1}
+   g8: {angle: '(q5 + q6) - theta2'}
+
+links:
+   # particles
+   p1: g1.upper
+   p2: g2.lower
+   p3: g3.upper
+
+   # phase 1 - split
+   g1.upper: g3.control
+   g1.lower: g5.lower
+
+   # phase 2a - couple from g1
+   g3.control: g5.upper
+   g3.upper: g4.upper
+   g3.lower: g4.lower
+
+   # phase 2b - couple from g2
+   g2.upper: g4.control
+   g4.control: g6.upper
+   g2.lower: g6.lower
+
+   #phase 3 - observe
+   # (no g5/g6 control links: nothing ever arrives at those ports)
+   g5.upper: g7.upper
+   g5.lower: g7.lower
+   g6.upper: g8.upper
+   g6.lower: g8.lower

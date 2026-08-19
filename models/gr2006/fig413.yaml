@@ -1,0 +1,43 @@
+title: Figure 4.13
+
+variables:
+   zero: &zero '0j'
+   one: &one '1+0j'
+   r60: &r60 '0.5+0.87j'
+   q1: &q1 'rad(20)'
+   q2: &q2 'rad(30)'
+   q40: &q40 'rad(40)'
+   q15: &q15 'rad(15)'
+   q45: &q45 'rad(45)'
+   q30: &q30 'rad(30)'
+   q60: &q60 'rad(60)'
+   q10: &q10 'rad(10)'
+   q120: &q120 'rad(120)'
+
+run_stages:
+   prepare: [g0]
+   split: [g1]
+   unsplit: [g2]
+   test: [g3]
+
+particles:
+   p1: {weight: *one, sign: 1}
+
+gates:
+   g0: {angle: *q15}
+   g1: {angle: *q60}
+   g2: {angle: *q60}
+   g3: {angle: *q15}
+
+links:
+   p1: g0.upper
+
+   g0.control: g1.control
+   g0.upper: g1.upper
+
+   g1.control: g2.control
+   g1.upper: g2.upper
+
+   g2.control: g3.control
+   g2.upper: g3.upper
+   g2.lower: g3.lower

@@ -115,15 +115,44 @@ def to_native(x):
 # accepted at runtime but rejected by the type stubs, hence this typed alias.
 _sympify = cast(Callable[..., sym.Expr], sym.sympify)
 
-def qify(x) -> 'Complex':
+def qify(x, env: dict | None = None) -> 'Complex':
+    """Parse x into a Q number. `env` is an optional {name: value} table
+    of model variables usable in string expressions ('(q5 + q6) - theta2');
+    values may be Q numbers or sympy expressions. An expression that still
+    contains unknown names raises — every quantity must be concrete."""
     if isq(x): return x
     elif iscplx(x): return Complex(x)
-    xval = _sympify(x, rational=True)
+    local_env = ({name: (val.v if isq(val) else val)
+                  for name, val in env.items()} if env else None)
+    xval = _sympify(x, rational=True, locals=local_env)
+    free = getattr(xval, 'free_symbols', None)
+    if free:
+        unknown = ', '.join(sorted(str(sy) for sy in free))
+        known = (f" (known variables: {', '.join(sorted(env))})"
+                 if env else '')
+        raise ValueError(f'unknown name(s) {unknown} in {x!r}{known}')
     try:
         _ = float(xval)
         return Real(xval)
     except TypeError:
         return Complex(xval)
+
+
+# The constants and functions advertised for model expressions; a model
+# variable with one of these names would silently change the meaning of
+# every expression using the builtin. (Other sympy bindings — eye, beta,
+# ... — are fair game: sympify's locals take precedence, so the model's
+# meaning wins consistently.)
+RESERVED_NAMES = frozenset({
+    'pi', 'E', 'I', 'oo', 'zoo', 'nan',
+    'rad', 'deg', 'sqrt', 'exp', 'log',
+    'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'atan2',
+})
+
+
+def reserved_name(name: str) -> bool:
+    """True when `name` is one of the builtins usable in expressions."""
+    return name in RESERVED_NAMES
 
 def exact(x) -> 'Real':
     """Parse/wrap x into the exact representation, independent of the

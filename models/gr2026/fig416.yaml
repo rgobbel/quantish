@@ -1,0 +1,60 @@
+title: Figure 4.16
+
+variables:
+   zero: &zero '0j'
+   one: &one '1+0j'
+   r60: &r60 '0.5+0.87j'
+   q1: &q1 'rad(30)'
+   q2: &q2 'rad(20)'
+   q15: &q15 'rad(15)'
+   q30: &q30 'rad(30)'
+   q60: &q60 'rad(60)'
+
+run_stages:
+   prepare: [g0]
+   split: [g1]
+   observe: [g4]
+   unobserve: [g5]
+   merge: [g2]
+   test: [g3]
+
+diagram_groups:
+   prep_split: [g0, g1]
+   observe_unobserve: [g4, g5]
+   merge_test: [g2, g3]
+
+particles:
+   p1: {sign: 1, weight: *one}
+   p2: {sign: 1, weight: *one}
+
+gates:
+   g0: {angle: 'rad(30)'}
+   g1: {angle: 'rad(15)'}
+   g2: {angle: 'rad(15)'}
+   g3: {angle: 'rad(30)'}
+   g4: {angle: 0}
+   g5: {angle: 0}
+
+# ordered by destination arrival
+links:
+# --- origin --> g0
+   p1:         g0.upper
+   p2:         g4.upper
+# --- g0 --> g1
+   g0.control: g1.control
+   g0.upper:   g1.upper
+#   g0.lower: g1.lower
+# --- g1, origin --> g4, origin --> g4
+   g1.control: g2.control
+   g1.upper: g2.upper
+   g1.lower:   g4.control
+# --- g4 --> g5
+   g4.control: g5.control
+   g4.upper:   g5.upper
+   g4.lower:   g5.lower
+# --- g1, g5 --> g2
+   g5.control: g2.lower
+# --- g2 --> g3
+   g2.control: g3.control
+   g2.upper:   g3.upper
+   g2.lower:   g3.lower

@@ -1,0 +1,14 @@
+title: Single Gate
+symbolic: false
+
+run_stages:
+   gate_only: [g0]
+
+particles:
+   p1: {sign: 1, weight: 1}
+
+gates:
+   g0: {angle: 0}
+
+links:
+   p1: g0.upper

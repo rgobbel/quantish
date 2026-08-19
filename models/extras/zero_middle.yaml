@@ -1,0 +1,27 @@
+title: Zero-angle gate between two others with the same angle
+
+symbolic: false
+
+run_stages:
+   angle1a: [g0]
+   zero: [g1]
+   angle1b: [g2]
+
+particles:
+   p1: {sign: 1, weight: 1}
+
+gates:
+   g0: {angle: 'rad(15)'}
+   g1: {angle: 'rad(0)'}
+   g2: {angle: 'rad(15)'}
+
+links:
+   p1: g0.upper
+
+   g0.control: g1.control
+   g0.upper: g1.upper
+   g0.lower: g1.lower
+
+   g1.control: g2.control
+   g1.upper: g2.upper
+   g1.lower: g2.lower

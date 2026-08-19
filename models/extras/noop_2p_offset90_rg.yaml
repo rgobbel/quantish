@@ -1,0 +1,30 @@
+title: No-op 2-particle with gate2 angle offset by +90 degrees
+
+# Same as noop_2p_baseline but gate2 angle = pi/6 + pi/2.
+# Tests the original author's hint: adding 90 degrees to one of the same-angle
+# gates may be necessary for the no-op behavior.
+# pi/6 + pi/2 = 2*pi/3.
+
+symbolic: false
+
+run_stages:
+   step1: [gate1, gateA]
+   step2: [gate2, gateB]
+
+particles:
+   part1: {sign: 1, weight: 1}
+   part2: {sign: 1, weight: 1}
+
+gates:
+   gate1: {angle: 'pi/6'}
+   gate2: {angle: 'rad(120)'}
+   gateA: {angle: 'pi/6'}
+   gateB: {angle: 'pi/6'}
+
+links:
+   part1: gate1.upper
+   part2: gateA.upper
+   gate1.upper: gate2.upper
+   gate1.lower: gate2.lower
+   gateA.upper: gateB.upper
+   gateA.lower: gateB.lower

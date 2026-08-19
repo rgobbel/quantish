@@ -67,13 +67,13 @@ def _():
         FredkinGate,
         GatePort,
         MODELS_DIR,
+        NetworkGraph,
         Simulation,
         alt,
         cmath,
         diagram,
         math,
         mo,
-        NetworkGraph,
         pd,
         qn,
         run_epr_experiment,
@@ -90,7 +90,7 @@ def _(mo):
     # Quantish Physics
     A simulation of the quantish universe from Chapter 4 of
     *Good and Real* (Drescher, 2006): Fredkin gates, complex-weighted
-    CS points, and EPR experiments.
+    Configuration Space points, and EPR experiments.
     """)
     return
 
@@ -99,7 +99,7 @@ def _(mo):
 def _(mo):
     model_rescan = mo.ui.run_button(label='↻ rescan models')
     # remembers the selection across rescans (see the dropdown's on_change)
-    last_model_get, last_model_set = mo.state('fig417')
+    last_model_get, last_model_set = mo.state('gr2026/fig417')
     return last_model_get, last_model_set, model_rescan
 
 
@@ -108,15 +108,18 @@ def _(MODELS_DIR, last_model_get, last_model_set, mo, model_rescan):
     model_rescan  # dependency: pressing the button re-globs the directory
 
     def _():
-        options = {p.stem: p for p in sorted(MODELS_DIR.glob('*.yaml'))
-                   if p.stem != 'defaults'}
+        def key(p):
+            return p.relative_to(MODELS_DIR).with_suffix('').as_posix()
+
+        options = {key(p): p for p in sorted(MODELS_DIR.rglob('*.yaml'))
+                   if p.stem != 'defaults' and 'HIDEME' not in p.parts}
         default = last_model_get() if last_model_get() in options \
             else next(iter(options))
         return mo.ui.dropdown(
             options=options,
             value=default,
             label='model',
-            on_change=lambda p: last_model_set(p.stem) if p is not None else None,
+            on_change=lambda p: last_model_set(key(p)) if p is not None else None,
         )
 
     model_pick = _()
@@ -158,13 +161,15 @@ def _(Addict, MODELS_DIR, Simulation, mo, model_pick, yaml):
             g: {'deg': round(centered(float(gate.atheta.degrees)) * 2) / 2,
                 'expr': str(base_config.gates[g].angle)}
             for g, gate in base_sim.fredkin_gates.items()})
-        return names, angles
+        # the model's variables, so typed expressions can use them by name
+        return names, angles, dict(base_sim.qvars)
 
-    gate_names, (angles_get, angles_set) = _()
+    gate_names, (angles_get, angles_set), base_env = _()
     return (
         angles_get,
         angles_set,
         base_config,
+        base_env,
         gate_names,
         load_config,
         mode_pick,
@@ -199,7 +204,7 @@ def _(angles_get, angles_set, gate_names, mo):
 
 
 @app.cell(hide_code=True)
-def _(angles_get, angles_set, gate_names, math, mo, mode_pick, qn, units_pick):
+def _(angles_get, angles_set, base_env, gate_names, math, mo, mode_pick, qn, units_pick):
     def _():
         def text_cb(g):
             def cb(raw):
@@ -214,7 +219,7 @@ def _(angles_get, angles_set, gate_names, math, mo, mode_pick, qn, units_pick):
                 except ValueError:
                     pass
                 try:
-                    rad = float(qn.qify(txt))  # symbolic expression, radians
+                    rad = float(qn.qify(txt, base_env))  # symbolic expression (may use model variables), radians
                     angles_set({**angles_get(),
                                 g: {'deg': math.degrees(rad), 'expr': txt}})
                 except Exception:  # noqa: BLE001 — unparseable: keep previous value
@@ -281,6 +286,7 @@ def _(
     CalcMode,
     Simulation,
     angles_get,
+    base_env,
     gate_names,
     load_config,
     math,
@@ -300,7 +306,8 @@ def _(
         def angle_for(g):
             cur = angles_get()[g]
             if cur['expr']:
-                return qn.qify(cur['expr'])  # symbolic expression, in radians
+                # symbolic expression, in radians; may use model variables
+                return qn.qify(cur['expr'], base_env)
             return math.radians(cur['deg'])
 
         try:
@@ -570,7 +577,7 @@ def _(diagram, mermaid_zoom, mo, sim, zoomable):
 
 
 @app.cell(hide_code=True)
-def _(graph_zoom, inline_png, mo, NetworkGraph, sim, zoomable):
+def _(NetworkGraph, graph_zoom, inline_png, mo, sim, zoomable):
     def _():
         import io
         from matplotlib import pyplot as plt
@@ -636,7 +643,7 @@ def _(GatePort, math_weight, md_table, mo, qn, short_config, sim):
                 if amp is not None:
                     pr = qn.to_float(qn.probability(amp))
                     parts.append(f'`{source}` → {g}, Pr {pr:.2f}')
-            return 'control: ' + (', '.join(parts) if parts else 'empty')
+            return 'control: ' + (', '.join(parts) if parts else '∅')
 
         by_step = {}
         for pt in sim.all_points.index.values():
@@ -654,14 +661,30 @@ def _(GatePort, math_weight, md_table, mo, qn, short_config, sim):
             rows = []
             for w in points:
                 out_label = label(w) + (' _(cancelled)_' if w.cancelled else '')
-                for parent, contrib in sorted(w.contributions.items(),
-                                              key=lambda kv: sim.cs_point_sort_key(kv[0])):
+                branches = sorted(w.contributions.items(),
+                                  key=lambda kv: sim.cs_point_sort_key(kv[0]))
+                if len(branches) == 1:
+                    parent, contrib = branches[0]
                     rows.append((label(parent),
-                                 ', '.join(controlled_gates(parent, stage)) or '—',
+                                 ', '.join(controlled_gates(parent, stage)) or '∅',
                                  math_weight(parent.weight),
                                  particle_cell(w, parent, contrib),
                                  math_weight(contrib), out_label,
                                  math_weight(w.weight)))
+                    continue
+                # a merged output: its weight belongs to the SUM of the
+                # branches, not to each branch — blank the output columns
+                # on branch rows and close the group with a merged row
+                # showing the addition
+                for parent, contrib in branches:
+                    rows.append((label(parent),
+                                 ', '.join(controlled_gates(parent, stage)) or '∅',
+                                 math_weight(parent.weight),
+                                 particle_cell(w, parent, contrib),
+                                 math_weight(contrib), '', ''))
+                rows.append(('**merged**', '', '', '',
+                             ' '.join(math_weight(c) for _, c in branches),
+                             out_label, math_weight(w.weight)))
             total = qn.to_float(sum(w.probability for w in points
                                     if not w.cancelled))
             # md_table needs a blank line before it; its output starts
@@ -893,6 +916,7 @@ def _(epr_angle_elems, epr_button, epr_trials, mo, sim, supports_epr):
 
 @app.cell(hide_code=True)
 def _(
+    base_env,
     epr_angle_elems,
     epr_button,
     epr_trials,
@@ -918,7 +942,8 @@ def _(
                 return qn.qify(num if units_pick.value == 'radians'
                                else math.radians(num))
             except ValueError:
-                return qn.qify(txt)
+                # symbolic radian expression; may use model variables
+                return qn.qify(txt, base_env)
 
         try:
             values = {k: parse_angle(v)

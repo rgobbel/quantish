@@ -50,7 +50,7 @@ class TestMonteCarlo(unittest.TestCase):
 
     def test_terminal_matches_exact_distribution(self):
         from multiworld.montecarlo import predicted_distribution, sample_terminal
-        sim = run_sim('fig49_multi')
+        sim = run_sim('gr2026/fig49')
         predicted = predicted_distribution(sim.result_space)
         tally = sample_terminal(sim.result_space, N_TRIALS, random.Random(SEED))
         self.assertEqual(sum(tally.values()), N_TRIALS)
@@ -60,7 +60,7 @@ class TestMonteCarlo(unittest.TestCase):
         # fig49 has no world merging, so per-stage sampling is equivalent to
         # sampling the final superposition.
         from multiworld.montecarlo import predicted_distribution, sample_paths
-        sim = run_sim('fig49_multi')
+        sim = run_sim('gr2026/fig49')
         predicted = predicted_distribution(sim.result_space)
         tally, dead_ends = sample_paths(sim.initial_point, len(sim.run_stages),
                                         N_TRIALS, random.Random(SEED))
@@ -75,7 +75,7 @@ class TestMonteCarlo(unittest.TestCase):
         # contribution data the path sampler walks.
         from multiworld.montecarlo import (predicted_distribution,
                                            sample_paths, sample_terminal)
-        sim = run_sim('fig411')
+        sim = run_sim('gr2026/fig411')
         predicted = predicted_distribution(sim.result_space)
         terminal = sample_terminal(sim.result_space, N_TRIALS, random.Random(SEED))
         self.assertLessEqual(tvd(terminal, predicted, N_TRIALS), NOISE_TOLERANCE)

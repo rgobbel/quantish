@@ -77,6 +77,13 @@ def main():
                         help='Render a TikZ circuit diagram to this file in the diagram dir '
                              '(.pdf/.svg/.png chosen by extension, default .pdf). Requires pdflatex.')
     parser.add_argument('--csv-output', default=None, type=str, help='CSV output file, default is no CSV output')
+    parser.add_argument('--set', dest='set_vars', action='append', default=[],
+                        metavar='NAME=EXPR',
+                        help='Override a model variable, e.g. --set theta2=pi/8 '
+                             '(repeatable). Affects gates whose angles reference '
+                             'the variable BY NAME (angle: theta2), not YAML '
+                             'aliases (angle: *theta2), which copy the value at '
+                             'parse time.')
     parser.add_argument('--symbolic', action='store_true', default=SUPPRESS, help='Force symbolic math')
     parser.add_argument('--numeric', action='store_true', default=SUPPRESS, help='Force numeric math')
     parser.add_argument('--sample', action='store_true', help='Run multiple trials and collect a histogram of results')
@@ -100,6 +107,11 @@ def main():
     with open(config_path, 'r') as f:
         config_dict.update(yaml.safe_load(f))
     config = Addict(config_dict)
+    for item in args.set_vars:
+        name, sep, expr = item.partition('=')
+        if not sep or not name.strip():
+            raise SystemExit(f"--set expects NAME=EXPR, got '{item}'")
+        config.variables[name.strip()] = expr.strip()
     symbolic = config.symbolic or False
     CalcMode.default('Symbolic' if symbolic else 'Float')
     qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
@@ -240,30 +252,61 @@ def main():
                 log.info('skipping numeric summaries (symbolic weights with free symbols)')
 
             if config.epr_stats:
-                from multiworld.epr import classify, expected_discrepancy, is_two_stage
+                from multiworld.epr import expected_discrepancy, is_two_stage, outcome
                 log.info(' ')
                 two_stage = is_two_stage(sim)
                 predicted = expected_discrepancy(sim)
                 if predicted is not None:
                     log.info(f'predicted discrepancy rate is {float(predicted):.4f} '
-                             f'(outcome = {"position" if two_stage else "position⊕sign"})')
-                probs = {'same': 0.0, 'diff': 0.0}
-                counts = {'same': 0, 'diff': 0}
-                log.info(f'coupled:')
+                             f'(outcome = {"position" if two_stage else "position⊕sign"}, '
+                             f'law sin²((Q5+Q6)−(Q7+Q8)))')
+                # Tally BOTH g4 branches, not just the conventional coupled
+                # one: with g2 = g1 (missing the +π/2) the coupling inverts
+                # onto g4.lower, and showing one branch alone is unreadable.
+                branches = {'upper': {'same': 0.0, 'diff': 0.0},
+                            'lower': {'same': 0.0, 'diff': 0.0}}
                 for point in nonzeros:
-                    kind = classify(point, two_stage)
-                    if kind == 'uncoupled':
+                    coords = list(point.coords.values())
+                    couplers = [c for c in coords
+                                if c.position.origin is not None
+                                and c.position.origin.gate == 'g4']
+                    if len(couplers) != 1:
                         continue
-                    log.info(f'   [{kind}] {point}')
-                    counts[kind] += 1
-                    probs[kind] += float(point.probability)
-                coupled = probs['same'] + probs['diff']
-                if coupled > 0:
-                    log.info(f"same: {counts['same']} world(s), p={probs['same']:.4f}; "
-                             f"diff: {counts['diff']} world(s), p={probs['diff']:.4f}; "
-                             f"observed discrepancy rate = {probs['diff'] / coupled:.4f}")
+                    others = [c for c in coords if c is not couplers[0]]
+                    kind = ('same' if outcome(others[0], two_stage)
+                            == outcome(others[1], two_stage) else 'diff')
+                    branch = branches[couplers[0].position.origin.port]
+                    branch[kind] += float(point.probability)
+                    log.info(f'   [p3@g4.{couplers[0].position.origin.port} '
+                             f'{kind}] {point}')
+                for port, probs in branches.items():
+                    total = probs['same'] + probs['diff']
+                    if total == 0:
+                        continue
+                    rate = probs['diff'] / total
+                    log.info(f"p3@g4.{port}: same p={probs['same']:.4f} + "
+                             f"diff p={probs['diff']:.4f} = {total:.4f}; "
+                             f"discrepancy = {probs['diff']:.4f}/{total:.4f} "
+                             f"= {rate:.4f}")
+                rate_up = branches['upper']
+                total_up = rate_up['same'] + rate_up['diff']
+                if total_up > 0:
+                    log.info(f"observed discrepancy rate = "
+                             f"{rate_up['diff'] / total_up:.4f} "
+                             f"(coupled = p3@g4.upper, the fig 4.17 "
+                             f"convention with Q2 = Q1 + π/2)")
+                    if predicted is not None:
+                        lo = branches['lower']
+                        total_lo = lo['same'] + lo['diff']
+                        if (total_lo > 0
+                                and abs(rate_up['diff'] / total_up - float(predicted)) > 0.01
+                                and abs((1 - lo['diff'] / total_lo) - float(predicted)) <= 0.01):
+                            log.warning(
+                                'the LOWER branch anti-correlates at the '
+                                'predicted rate — the coupling appears '
+                                'INVERTED (is g2 missing its +π/2?)')
                 else:
-                    log.info('no coupled worlds')
+                    log.info('no coupled worlds at p3@g4.upper')
 
                 # run_paths(sim.initial_point, final_points, sim.n_samples, sim)
 

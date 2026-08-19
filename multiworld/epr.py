@@ -22,6 +22,12 @@ sweep angles {qa=0, qb=π/8, qc=π/4} (or the model's qa/qb/qc variables).
 
 which reduces the intrinsic law to sin²(θ1 − θ2) in both cases — so the
 YAML angles of the overridden gates are placeholders.
+
+Models may instead declare `theta1` and `theta2` in their variables and
+reference them by name in the gate expressions (two-stage:
+g7: {angle: theta1}, g8: {angle: '(q5 + q6) - theta2'}); the sweep then
+rebinds the two variables and never touches the gates, keeping the model
+the single source of truth for how the measurement angles enter.
 """
 import logging
 import random
@@ -127,7 +133,15 @@ def run_pair(sim, theta1, theta2, n_trials: int = 0, rng=None) -> dict:
     theta2 = qify(theta2)
     two_stage = is_two_stage(sim)
     cfg = deepcopy(sim.config)
-    if two_stage:
+    if 'theta1' in cfg.variables and 'theta2' in cfg.variables:
+        # Variable convention: the model's own gate expressions reference
+        # theta1/theta2 by name (e.g. g7: {angle: theta1},
+        # g8: {angle: '(q5 + q6) - theta2'}), so the sweep just rebinds
+        # the variables and the model stays the single source of truth
+        # for how the measurement angles enter the circuit.
+        cfg.variables['theta1'] = theta1
+        cfg.variables['theta2'] = theta2
+    elif two_stage:
         base = sim.gates['g5'].theta + sim.gates['g6'].theta
         cfg.gates['g7'].angle = theta1
         cfg.gates['g8'].angle = base - theta2

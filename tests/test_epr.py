@@ -49,12 +49,16 @@ class TestEPRConventions(unittest.TestCase):
         qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
 
     def test_one_stage_parity_outcome(self):
-        # fig416plus: g5 = g6 = rad(15), so sin²(Q5+Q6) = sin²(30°) = 1/4.
+        # The coupling-stage-only EPR circuit is a 2006-edition figure (the
+        # 2026 draft folds it into fig 4.17's discussion), so it lives in
+        # gr2006. Its g5/g6 angles are working values Randy edits freely, so
+        # assert consistency rather than a fixed number: the exact
+        # discrepancy from the final worlds must match sin²(Q5+Q6) with the
+        # parity (position⊕sign) outcome, for whatever the YAML says.
         from multiworld.epr import expected_discrepancy, is_two_stage
-        sim = run_sim('fig416plus_multi')
+        sim = run_sim('gr2006/fig416')
         self.assertFalse(is_two_stage(sim))
         predicted = float(expected_discrepancy(sim))
-        self.assertAlmostEqual(predicted, 0.25, places=9)
         self.assertAlmostEqual(exact_discrepancy(sim, False), predicted, places=9)
 
     def test_epr_with_qnumber_angles_in_config(self):
@@ -73,8 +77,11 @@ class TestEPRConventions(unittest.TestCase):
             self.assertEqual(complex(deepcopy(val)), complex(val))
         CalcMode.default('Float')
         qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
-        sim = run_sim('fig417')
-        sim.config.gates['g7'].angle = qn.qify('pi/8')
+        sim = run_sim('gr2026/fig417')
+        # g5's declared angle is q5 = 0; storing the same value as a qnumber
+        # Real exercises the deepcopy path without perturbing the circuit
+        # (g7/g8 are owned by run_pair's theta1/theta2 rebinding).
+        sim.config.gates['g5'].angle = qn.qify('0')
         cell = run_pair(sim, qn.qify('0'), qn.qify('pi/8'))
         self.assertAlmostEqual(cell['exact'], cell['analytical'], places=9)
 
@@ -84,7 +91,7 @@ class TestEPRConventions(unittest.TestCase):
         # and CHSH reaches 1 + √2 on the canonical set {0, π/8, π/4}.
         import math
         from multiworld.epr import run_epr_experiment
-        sim = run_sim('fig417')
+        sim = run_sim('gr2026/fig417')
         results = run_epr_experiment(sim, n_trials=0)
         for cell in results['grid'].values():
             self.assertAlmostEqual(cell['exact'], cell['analytical'], places=9)
@@ -100,7 +107,7 @@ class TestEPRConventions(unittest.TestCase):
         # the final worlds must match sin²((Q5+Q6)−(Q7+Q8)) for whatever
         # the YAML currently says, with the plain-position outcome.
         from multiworld.epr import expected_discrepancy, is_two_stage
-        sim = run_sim('fig417')
+        sim = run_sim('gr2026/fig417')
         self.assertTrue(is_two_stage(sim))
         predicted = float(expected_discrepancy(sim))
         self.assertAlmostEqual(exact_discrepancy(sim, True), predicted, places=9)

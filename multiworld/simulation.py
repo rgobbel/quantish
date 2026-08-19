@@ -22,17 +22,30 @@ class Simulation:
         self.precision = config.get('string_precision', 2)
         self.sample = config.get('sample', False)
         self.n_samples = config.get('n_samples', 0)
-        self.qvars = {vname: vval for vname, vval in config.variables.items()}
+        # Model variables, usable by name in any angle/weight expression
+        # ('(q5 + q6) - theta2'). Built in declaration order so a variable
+        # may reference the ones above it; names that sympify already
+        # binds (pi, I, rad, ...) are rejected — they would shadow.
+        self.qvars = {}
+        for vname, vval in config.variables.items():
+            if qn.reserved_name(vname):
+                raise ValueError(
+                    f"variable '{vname}' shadows a builtin math name")
+            self.qvars[vname] = qify(vval, self.qvars)
         self.links = config.links
         self.sources = {v: k for k, v in self.links.items()}
         self.simplified_links = simplify_graph(self.links)
         self.graph_roots = [node for node, degree in self.simplified_links.in_degree() if degree == 0]
         self.topo_stages = list(nx.topological_generations(self.simplified_links))[1:]
-        # one group resolution drives both the stage schedule and diagram
-        # labels: explicit diagram_groups, else the model's run groups
-        # (either historical key), else auto-named topological stages
-        self.declared_groups = self.resolve_groups(config)
-        self.run_stages = self.grouped_run_stages(self.declared_groups)
+        # Run order comes ONLY from the model's declared run_stages;
+        # diagram grouping (diagram_groups) is a separate concern and is
+        # never used for scheduling. A model without run_stages is a bug.
+        self.declared_run_stages = self.normalize_groups(config.get('run_stages'))
+        if not self.declared_run_stages:
+            raise ValueError(
+                f"model '{config.title}' declares no run_stages — "
+                f"run order must be explicit")
+        self.run_stages = self.grouped_run_stages(self.declared_run_stages)
         self.run_order = flat_list(self.run_stages)
         # the step whose CS points show a gate's just-produced outputs
         self.gate_step = {g: i + 1 for i, stage in enumerate(self.run_stages) for g in stage}
@@ -58,9 +71,9 @@ class Simulation:
                 f'(unfed non-particles: {sorted(_roots - _pnames)}; '
                 f'particles that are link targets: {sorted(_pnames - _roots)})')
         log.debug(' ')
-        self.diagram_groups = self.declared_groups
-        if self.diagram_groups is None:
-            self.diagram_groups = {f'{"_".join(group)}': group for group in self.topo_stages}
+        # diagrams use their own grouping when declared, else the run stages
+        self.diagram_groups = (self.normalize_groups(config.get('diagram_groups'))
+                               or self.declared_run_stages)
         # Gates wired only through their control port are pure pass-throughs
         # (delays): diagrams render them as simple boxes instead of full
         # Fredkin gates.
@@ -85,29 +98,22 @@ class Simulation:
         log_seq('downstream links', linkages, logging.DEBUG)
 
     @staticmethod
-    def resolve_groups(config):
-        """The model's declared gate grouping: diagram_groups when present,
-        else run_groups / run_stages (both historical key names). Values
-        are normalized to lists. None when the model declares nothing."""
-        for key in ('diagram_groups', 'run_groups', 'run_stages'):
-            groups = config.get(key)
-            if groups:
-                return {name: ([g] if isinstance(g, str) else list(g))
-                        for name, g in groups.items()}
-        return None
+    def normalize_groups(groups):
+        """Normalize a declared gate grouping ({name: gate-or-list}) to
+        {name: [gates]}. None when nothing declared."""
+        if not groups:
+            return None
+        return {name: ([g] if isinstance(g, str) else list(g))
+                for name, g in groups.items()}
 
     def grouped_run_stages(self, groups):
-        """Execution stages: gates in one stage fire logically
-        simultaneously (the engine treats them so, as does the reference
-        implementation). Without diagram_groups the stages are the
-        topological generations of the link graph; with them, each group
-        contributes one stage per dependency layer inside it (fig 4.17's
-        'couple' group becomes the stages [g3], [g4]). Everything keyed on
-        step numbers — the weight-evolution graph, port marginals, path
-        sampling — is therefore stage-based, matching the book's figures
-        rather than any serialized implementation order."""
-        if not groups:
-            return [list(stage) for stage in self.topo_stages]
+        """Execution stages from the model's declared run_stages: gates in
+        one stage fire logically simultaneously. A declared stage with
+        internal dependencies contributes one sub-stage per dependency
+        layer (a 'couple: [g3, g4]' where g3 feeds g4 becomes [g3], [g4]).
+        Everything keyed on step numbers — the weight-evolution graph,
+        port displays, path sampling — is stage-based, matching the
+        book's figures rather than any serialized implementation order."""
         topo_order = flat_list(self.topo_stages)
         gate_set = set(topo_order)
         deps = {g: {p for p in self.simplified_links.predecessors(g) if p in gate_set}
@@ -139,13 +145,20 @@ class Simulation:
         log.debug(' ')
         particles = config.particles
         for pname, pval in particles.items():
-            pweight = Complex(qify(pval.get('weight', 1)))
-            new_particle = Particle(pname, pweight, qify(pval.sign),
+            pweight = Complex(qify(pval.get('weight', 1), self.qvars))
+            new_particle = Particle(pname, pweight, qify(pval.sign, self.qvars),
                                     precision=self.precision)
             self.particles[pname] = new_particle
         gates = config.gates
         for gname, gval in gates.items():
-            new_gate = FredkinGate(gname, gval.angle)
+            # .get, not .angle: Addict would auto-create an empty Dict for
+            # a missing key and crash unrecognizably inside qify
+            angle = gval.get('angle')
+            if angle is None or isinstance(angle, dict):
+                raise ValueError(
+                    f"gate '{gname}' declares no angle "
+                    f"(found keys: {sorted(gval.keys())})")
+            new_gate = FredkinGate(gname, qify(angle, self.qvars))
             self.fredkin_gates[gname] = new_gate
             self.gates[gname] = new_gate
         for dgname in config.get('delay_gates', []):
