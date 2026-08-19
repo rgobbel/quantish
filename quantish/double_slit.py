@@ -71,7 +71,7 @@ def screen_probability(delta_rad: float, mode: str = 'both',
                        theta_s: float = DEFAULT_THETA_S) -> float:
     """P(p1 exits the test gate's upper switch wire) for one screen
     position, from an exact engine run."""
-    from multiworld.simulation import Simulation
+    from quantish.simulation import Simulation
     sim = Simulation(slit_config(delta_rad, mode, theta0, theta_s))
     sim.run()
     total = 0.0

@@ -61,9 +61,8 @@ Configuration is split between:
 
 1. **Simulation** (`quantish/simulation.py`)
    - Main simulation engine that propagates particle weights through a gate network
-   - Topologically sorts gates based on links to determine execution order
-   - Manages particles, gates, sinks, and the overall state
-   - Two versions exist: `simulation.py` (primary) and `simulation_v2.py` (alternative)
+   - Executes gates stage by stage per the model's required `run_stages`
+   - Manages particles, gates, and the overall state
 
 2. **FredkinGate** (`quantish/gate.py`)
    - Implements quantum Fredkin gates with rotation angles
@@ -140,17 +139,19 @@ Configuration options (usually in common.yaml):
 
 ## File Organization
 
-- `quantish/`: Main package
+- `quantish/`: Main package (renamed from `multiworld/`; the original
+  2025 `quantish/` package is archived in `HIDEME/`)
   - `main.py`: Entry point and CLI
-  - `simulation.py`: Primary simulation engine
+  - `simulation.py`: Simulation engine
   - `gate.py`: Fredkin gate implementation
   - `particle.py`: Particle representation
-  - `qnumber.py`: Unified number system
-  - `sink.py`: Output collection
-  - `config_space.py`: Gate state and wire definitions
-  - `angle.py`: Angle representation and conversion
-  - `util.py`: Utilities (topological sort, logging, etc.)
-  - `mermaid_diagram.py`: Mermaid diagram generation
+  - `qnumber.py`, `calc_mode.py`, `angle.py`: Unified number system
+  - `config_space.py`: CS points, gate state, wire definitions
+  - `epr.py`: EPR experiment sweeps and statistics
+  - `montecarlo.py`: Monte Carlo sampling mode
+  - `mermaid_diagram.py`, `network_graph.py`, `tikz_diagram.py`: Diagrams
+  - `double_slit.py`, `marimo_helpers.py`: Notebook support
+  - `util.py`: Utilities (logging, parsing, etc.)
 - `models/`: YAML configuration files for experiments
   - `defaults.yaml`: Default configuration
   - `gr2006/`, `gr2026/`, `extras/`: per-edition book figures and non-book circuits (see `models/README.md`)

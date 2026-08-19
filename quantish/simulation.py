@@ -4,15 +4,15 @@ import math
 from collections import defaultdict
 from addict import Addict
 import networkx as nx
-from multiworld.particle import Particle
-from multiworld.gate import DelayGate, FredkinGate
-from multiworld.config_space import (Position, GatePort, PCoordinate,
+from quantish.particle import Particle
+from quantish.gate import DelayGate, FredkinGate
+from quantish.config_space import (Position, GatePort, PCoordinate,
                                      ConfigSpacePoint, ConfigSpaceRunner)
-import multiworld.qnumber as qn
-from multiworld.qnumber import qify, Complex
-from multiworld.util import SEP, flat_list, simplify_graph, log_seq
+import quantish.qnumber as qn
+from quantish.qnumber import qify, Complex
+from quantish.util import SEP, flat_list, simplify_graph, log_seq
 
-log = logging.getLogger('multiworld')
+log = logging.getLogger('quantish')
 
 class Simulation:
     def __init__(self, config):

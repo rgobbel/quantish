@@ -1,11 +1,11 @@
 import logging
 
-import multiworld.qnumber as qn
-from multiworld.angle import Angle
-from multiworld.qnumber import qify, Complex, Real
-from multiworld.util import Sign, OTHER
+import quantish.qnumber as qn
+from quantish.angle import Angle
+from quantish.qnumber import qify, Complex, Real
+from quantish.util import Sign, OTHER
 
-log = logging.getLogger('multiworld')
+log = logging.getLogger('quantish')
 
 class FredkinGate:
     """A quantish Fredkin gate: an angle plus the four precomputed weight

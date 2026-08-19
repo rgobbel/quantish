@@ -43,21 +43,21 @@ def _():
 
     _()
 
-    import multiworld.qnumber as qn
-    from multiworld.qnumber import CalcMode
+    import quantish.qnumber as qn
+    from quantish.qnumber import CalcMode
 
     CalcMode.default('Float')
     qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
     logging.basicConfig(level=logging.WARNING)
-    logging.getLogger('multiworld').setLevel(logging.WARNING)
+    logging.getLogger('quantish').setLevel(logging.WARNING)
 
-    from multiworld.config_space import GatePort
-    from multiworld.epr import run_epr_experiment, supports_epr
-    from multiworld.gate import FredkinGate
-    from multiworld.montecarlo import run_monte_carlo
-    from multiworld.simulation import Simulation
-    from multiworld.mermaid_diagram import diagram, short_config
-    from multiworld.network_graph import NetworkGraph
+    from quantish.config_space import GatePort
+    from quantish.epr import run_epr_experiment, supports_epr
+    from quantish.gate import FredkinGate
+    from quantish.montecarlo import run_monte_carlo
+    from quantish.simulation import Simulation
+    from quantish.mermaid_diagram import diagram, short_config
+    from quantish.network_graph import NetworkGraph
 
     REPO_DIR = Path(__file__).resolve().parents[1]
     MODELS_DIR = REPO_DIR / 'models'
@@ -525,7 +525,7 @@ def _(inline_png, mo, sim, tikz_zoom, zoomable):
     # so the pdflatex cost is paid once per Run, not per slider move).
     def _():
         import io
-        from multiworld.tikz_diagram import render_diagram, spec_from_simulation
+        from quantish.tikz_diagram import render_diagram, spec_from_simulation
         try:
             overrides = {g: f'{float(gate.atheta.degrees):.1f}°'
                          for g, gate in sim.fredkin_gates.items()}
@@ -806,7 +806,7 @@ def _(base_config, mo):
     # forms as the gate-angle entries: a bare number in the selected
     # units, anything else a symbolic radian expression.
     def _():
-        from multiworld.epr import DEFAULT_VALUES
+        from quantish.epr import DEFAULT_VALUES
         model_vars = {str(k).lower(): str(v)
                       for k, v in base_config.variables.items()}
         return mo.ui.dictionary({

@@ -3,9 +3,9 @@ from collections import defaultdict
 from pathlib import Path
 import math as m
 
-from multiworld.config_space import ConfigSpace, ConfigSpacePoint
-from multiworld.simulation import Simulation
-from multiworld.qnumber import probability, to_float, ZERO_THRESHOLD, to_native
+from quantish.config_space import ConfigSpace, ConfigSpacePoint
+from quantish.simulation import Simulation
+from quantish.qnumber import probability, to_float, ZERO_THRESHOLD, to_native
 
 
 class NetworkGraph:
@@ -97,7 +97,7 @@ class NetworkGraph:
         def line_color(i):
             return colorsys.hls_to_rgb(hues[i % len(hues)], 0.45, 0.7)
 
-        logging.getLogger('multiworld').setLevel(logging.WARN)
+        logging.getLogger('quantish').setLevel(logging.WARN)
         from matplotlib import pyplot as plt
         plt.set_loglevel("warning")
 

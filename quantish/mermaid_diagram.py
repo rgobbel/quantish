@@ -2,9 +2,9 @@ import logging
 from pathlib import Path
 
 
-from multiworld.simulation import Simulation
-from multiworld.util import SEP, parse_position, sstr, wstr
-import multiworld.qnumber as qn
+from quantish.simulation import Simulation
+from quantish.util import SEP, parse_position, sstr, wstr
+import quantish.qnumber as qn
 import python_mermaid.diagram as pmd
 import python_mermaid.node as pm
 from collections import namedtuple, defaultdict

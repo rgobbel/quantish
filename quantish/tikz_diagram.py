@@ -4,7 +4,7 @@ tikz_diagram.py — TikZ topology renderer for Quantish circuits.
 Ported from quantish_gld/circuits_diagram.py; the layout, routing, TikZ
 emission, and compile pipeline are kept close to the original so future
 improvements can be merged in either direction. The quantish_gld Circuit
-input type is replaced by DiagramSpec, built from a multiworld Simulation
+input type is replaced by DiagramSpec, built from a quantish Simulation
 by spec_from_simulation().
 
 Pipeline:
@@ -31,7 +31,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from multiworld.util import SEP, WIRES
+from quantish.util import SEP, WIRES
 
 
 # --------------------------------------------------------------------------
@@ -58,7 +58,7 @@ class DiagramSpec:
 
 
 def spec_from_simulation(sim, fig: str = None) -> DiagramSpec:
-    """Build a DiagramSpec from a multiworld Simulation.
+    """Build a DiagramSpec from a quantish Simulation.
 
     Columns (engine steps) are the topological generations of the simplified
     link graph — gates with no dependency between them share a column. Row

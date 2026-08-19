@@ -4,7 +4,7 @@ Each YAML file here describes one circuit: particles, Fredkin gates, and the
 links between them. Run one with
 
 ```bash
-python -m multiworld.main -c gr2026/fig417
+python -m quantish.main -c gr2026/fig417
 ```
 
 (paths are relative to this directory; `defaults.yaml` is loaded first).

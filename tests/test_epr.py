@@ -1,4 +1,4 @@
-"""Exact checks of the EPR outcome conventions (multiworld.epr) against the
+"""Exact checks of the EPR outcome conventions (quantish.epr) against the
 sin²-law from quantish_gld/epr_bell.py:
 
     one-stage (g5/g6):        discrepancy = sin²(Q5 + Q6), outcome = position⊕sign
@@ -16,12 +16,12 @@ from addict import Addict
 REPO_DIR = Path(__file__).resolve().parents[1]
 MODELS_DIR = REPO_DIR / 'models'
 
-import multiworld.qnumber as qn
-from multiworld.qnumber import CalcMode
+import quantish.qnumber as qn
+from quantish.qnumber import CalcMode
 
 
 def run_sim(name):
-    from multiworld.simulation import Simulation
+    from quantish.simulation import Simulation
     with open(MODELS_DIR / 'defaults.yaml') as f:
         config = yaml.safe_load(f)
     with open((MODELS_DIR / name).with_suffix('.yaml')) as f:
@@ -33,7 +33,7 @@ def run_sim(name):
 
 
 def exact_discrepancy(sim, two_stage):
-    from multiworld.epr import classify
+    from quantish.epr import classify
     probs = {'same': 0.0, 'diff': 0.0, 'uncoupled': 0.0}
     for point in sim.result_space.index.values():
         probs[classify(point, two_stage)] += float(point.probability)
@@ -44,7 +44,7 @@ def exact_discrepancy(sim, two_stage):
 class TestEPRConventions(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        logging.getLogger('multiworld').setLevel(logging.WARNING)
+        logging.getLogger('quantish').setLevel(logging.WARNING)
         CalcMode.default('Float')
         qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
 
@@ -55,7 +55,7 @@ class TestEPRConventions(unittest.TestCase):
         # assert consistency rather than a fixed number: the exact
         # discrepancy from the final worlds must match sin²(Q5+Q6) with the
         # parity (position⊕sign) outcome, for whatever the YAML says.
-        from multiworld.epr import expected_discrepancy, is_two_stage
+        from quantish.epr import expected_discrepancy, is_two_stage
         sim = run_sim('gr2006/fig416')
         self.assertFalse(is_two_stage(sim))
         predicted = float(expected_discrepancy(sim))
@@ -69,7 +69,7 @@ class TestEPRConventions(unittest.TestCase):
         # supply it.
         from copy import deepcopy
 
-        from multiworld.epr import run_pair
+        from quantish.epr import run_pair
         for _mode in ('Float', 'Symbolic'):
             CalcMode.default(_mode)
             qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
@@ -90,7 +90,7 @@ class TestEPRConventions(unittest.TestCase):
         # Bell's three-angle inequality is violated by 1/2 − 2·sin²(π/8),
         # and CHSH reaches 1 + √2 on the canonical set {0, π/8, π/4}.
         import math
-        from multiworld.epr import run_epr_experiment
+        from quantish.epr import run_epr_experiment
         sim = run_sim('gr2026/fig417')
         results = run_epr_experiment(sim, n_trials=0)
         for cell in results['grid'].values():
@@ -106,7 +106,7 @@ class TestEPRConventions(unittest.TestCase):
         # consistency rather than a fixed value: the exact discrepancy from
         # the final worlds must match sin²((Q5+Q6)−(Q7+Q8)) for whatever
         # the YAML currently says, with the plain-position outcome.
-        from multiworld.epr import expected_discrepancy, is_two_stage
+        from quantish.epr import expected_discrepancy, is_two_stage
         sim = run_sim('gr2026/fig417')
         self.assertTrue(is_two_stage(sim))
         predicted = float(expected_discrepancy(sim))

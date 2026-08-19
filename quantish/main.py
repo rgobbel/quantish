@@ -9,12 +9,12 @@ from pathlib import Path
 import yaml
 from addict import Addict
 
-import multiworld.qnumber as qn
-from multiworld.qnumber import CalcMode
-from multiworld.simulation import Simulation
-from multiworld.util import QLogger, flat_list, zerop, show_points
-from multiworld.mermaid_diagram import diagram
-from multiworld.network_graph import NetworkGraph
+import quantish.qnumber as qn
+from quantish.qnumber import CalcMode
+from quantish.simulation import Simulation
+from quantish.util import QLogger, flat_list, zerop, show_points
+from quantish.mermaid_diagram import diagram
+from quantish.network_graph import NetworkGraph
 
 log = None
 
@@ -130,10 +130,10 @@ def main():
             log_path.unlink(missing_ok=True)
         logging.basicConfig(filename=log_path, format='%(levelname)s:  %(message)s', level=loglevel)
         if args.dup_log_to_console:
-            logging.getLogger('multiworld').addHandler(QLogger())
+            logging.getLogger('quantish').addHandler(QLogger())
     else:
         logging.basicConfig(format=' %(message)s', level=loglevel, handlers=[QLogger()])
-    log = logging.getLogger('multiworld')
+    log = logging.getLogger('quantish')
     if args.preserve_log: log.info(' ')
     if 'symbolic' in args:
         config.symbolic = args.symbolic
@@ -160,7 +160,7 @@ def main():
     save_ll = log.getEffectiveLevel()
     sim = Simulation(config)
     if args.tikz_diagram:
-        from multiworld.tikz_diagram import render_from_simulation
+        from quantish.tikz_diagram import render_from_simulation
         tikz_path = Path(args.diagram_dir, args.tikz_diagram)
         if not tikz_path.suffix:
             tikz_path = tikz_path.with_suffix('.pdf')
@@ -252,7 +252,7 @@ def main():
                 log.info('skipping numeric summaries (symbolic weights with free symbols)')
 
             if config.epr_stats:
-                from multiworld.epr import expected_discrepancy, is_two_stage, outcome
+                from quantish.epr import expected_discrepancy, is_two_stage, outcome
                 log.info(' ')
                 two_stage = is_two_stage(sim)
                 predicted = expected_discrepancy(sim)
@@ -313,9 +313,9 @@ def main():
 
 
             if config.sample and sim.n_samples > 0:
-                from multiworld.montecarlo import run_monte_carlo
+                from quantish.montecarlo import run_monte_carlo
                 run_monte_carlo(sim, sim.n_samples, mode=args.mc_mode, seed=args.mc_seed)
-                from multiworld.epr import run_epr_experiment, supports_epr
+                from quantish.epr import run_epr_experiment, supports_epr
                 if supports_epr(sim):
                     run_epr_experiment(sim, sim.n_samples, seed=args.mc_seed)
 

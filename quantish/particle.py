@@ -5,8 +5,8 @@ conditions parsed from the model YAML, and labels for diagrams.
 """
 from collections import namedtuple
 
-from multiworld.qnumber import Complex, probability
-from multiworld.util import Sign, sstr, wstr
+from quantish.qnumber import Complex, probability
+from quantish.util import Sign, sstr, wstr
 
 CompositeKey = namedtuple('CompositeKey', ['name', 'sign'])
 

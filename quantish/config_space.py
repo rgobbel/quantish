@@ -19,13 +19,13 @@ import itertools
 from dataclasses import dataclass
 from typing import Final, Iterable, Optional, Self, Union, Dict
 
-import multiworld.qnumber as qn
-from multiworld.gate import FredkinGate
-from multiworld.qnumber import Complex, probability
-from multiworld.particle import PKey
-from multiworld.util import SEP, Sign, wstr
+import quantish.qnumber as qn
+from quantish.gate import FredkinGate
+from quantish.qnumber import Complex, probability
+from quantish.particle import PKey
+from quantish.util import SEP, Sign, wstr
 
-log = logging.getLogger('multiworld')
+log = logging.getLogger('quantish')
 
 # a GatePort is a specific input or output wire on a specific gate
 @dataclass(slots=True)

@@ -32,4 +32,5 @@
 /models/HIDEME/
 .env
 *.log
-*.mmd
+*.mmd__pycache__/
+.DS_Store

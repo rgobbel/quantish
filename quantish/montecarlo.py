@@ -26,7 +26,7 @@ import logging
 import random
 from collections import Counter, defaultdict
 
-log = logging.getLogger('multiworld')
+log = logging.getLogger('quantish')
 
 
 def _prob(weight) -> float:
@@ -81,9 +81,9 @@ def sample_paths(initial_point, n_steps: int, n_trials: int,
 
 def epr_tally(result_space, tally: Counter, two_stage: bool) -> dict:
     """Same/diff counts for EPR-style models, using the outcome convention
-    from multiworld.epr (plain position after two measurement stages,
+    from quantish.epr (plain position after two measurement stages,
     position⊕sign after one)."""
-    from multiworld.epr import classify
+    from quantish.epr import classify
     by_key = {p.key: p for p in result_space.index.values()}
     counts = {'same': 0, 'diff': 0, 'uncoupled': 0}
     for key, n in tally.items():
@@ -116,7 +116,7 @@ def run_monte_carlo(sim, n_trials: int, mode: str = 'both', seed=None) -> dict:
     distribution, per-mode tallies, and (for epr_stats models) same/diff
     counts.
     """
-    from multiworld.epr import expected_discrepancy, is_two_stage
+    from quantish.epr import expected_discrepancy, is_two_stage
     if sim.result_space is None:
         sim.run()
     rng = random.Random(seed)

@@ -5,8 +5,8 @@ from typing import Iterable
 
 import networkx as nx
 from addict import Addict
-from multiworld.qnumber import Complex, isq, issym, Real
-import multiworld.qnumber as qn
+from quantish.qnumber import Complex, isq, issym, Real
+import quantish.qnumber as qn
 from graphlib import TopologicalSorter
 from collections import defaultdict, deque
 import sympy as sym
@@ -20,7 +20,7 @@ import random
 
 SEP = '.'
 
-log = logging.getLogger('multiworld')
+log = logging.getLogger('quantish')
 
 SWITCH_WIRES = ('upper', 'lower')
 WIRES = ('control',) + SWITCH_WIRES

@@ -31,15 +31,15 @@ def _():
 
     import logging
 
-    import multiworld.qnumber as qn
-    from multiworld.qnumber import CalcMode
+    import quantish.qnumber as qn
+    from quantish.qnumber import CalcMode
 
     CalcMode.default('Float')
     qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
     logging.basicConfig(level=logging.WARNING)
-    logging.getLogger('multiworld').setLevel(logging.WARNING)
+    logging.getLogger('quantish').setLevel(logging.WARNING)
 
-    from multiworld.double_slit import sample_hits, screen_curve
+    from quantish.double_slit import sample_hits, screen_curve
 
     return alt, mo, pd, random, sample_hits, screen_curve
 
@@ -204,7 +204,7 @@ def _(mo):
     *A follow-on lesson (figs. 4.14/4.15): keep both slits open but couple a
     which-way recorder particle to one arm — the fringes wash out even
     though nothing blocks either path. The engine module
-    (`multiworld.double_slit`, mode `'observed'`) already supports it.*
+    (`quantish.double_slit`, mode `'observed'`) already supports it.*
     """)
     return
 

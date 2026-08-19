@@ -1,7 +1,7 @@
 import unittest
 
-from multiworld.particle import Particle
-from multiworld.util import Sign
+from quantish.particle import Particle
+from quantish.util import Sign
 
 
 class TestParticle(unittest.TestCase):

@@ -2,11 +2,11 @@ import sympy as sym
 import math as m
 import logging
 
-from multiworld.qnumber import isq, CalcMode, qify
-import multiworld.qnumber as qn
-from multiworld.util import angstr
+from quantish.qnumber import isq, CalcMode, qify
+import quantish.qnumber as qn
+from quantish.util import angstr
 
-log = logging.getLogger('multiworld')
+log = logging.getLogger('quantish')
 
 class Angle:
     def __init__(self, value, unit='degrees'):

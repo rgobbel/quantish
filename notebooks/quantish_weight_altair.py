@@ -36,7 +36,7 @@ with app.setup:
 @app.cell
 def _():
     import importlib.util
-    qn_spec = importlib.util.spec_from_file_location('qn', '/Users/gobbel/src/quantish/multiworld/qnumber.py')
+    qn_spec = importlib.util.spec_from_file_location('qn', '/Users/gobbel/src/quantish/quantish/qnumber.py')
     qn = importlib.util.module_from_spec(qn_spec)
     qn_spec.loader.exec_module(qn)
     return (qn,)

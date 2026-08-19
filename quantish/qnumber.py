@@ -10,7 +10,7 @@ import re as rex
 from typing import Any, Callable, TypeIs, cast
 import scipy.special as sci
 
-log = logging.getLogger('multiworld')
+log = logging.getLogger('quantish')
 
 CALC_MODE = 'Float'
 PI = m.pi

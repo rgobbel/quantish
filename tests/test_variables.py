@@ -3,9 +3,9 @@ import unittest
 
 from addict import Addict
 
-import multiworld.qnumber as qn
-from multiworld.qnumber import CalcMode, qify, reserved_name
-from multiworld.simulation import Simulation
+import quantish.qnumber as qn
+from quantish.qnumber import CalcMode, qify, reserved_name
+from quantish.simulation import Simulation
 
 
 def make_config(**overrides):
@@ -99,7 +99,7 @@ class TestThetaRebinding(unittest.TestCase):
         return cfg
 
     def test_sweep_rebinds_variables_and_matches_law(self):
-        from multiworld.epr import run_epr_experiment
+        from quantish.epr import run_epr_experiment
         sim = Simulation(self.fig417_theta_convention())
         sim.run()
         results = run_epr_experiment(sim, n_trials=0)

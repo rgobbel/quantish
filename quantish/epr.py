@@ -33,10 +33,10 @@ import logging
 import random
 from copy import deepcopy
 
-import multiworld.qnumber as qn
-from multiworld.qnumber import qify
+import quantish.qnumber as qn
+from quantish.qnumber import qify
 
-log = logging.getLogger('multiworld')
+log = logging.getLogger('quantish')
 
 # Canonical sweep angles, used when the model doesn't define qa/qb/qc.
 DEFAULT_VALUES = {'qa': '0', 'qb': 'pi/8', 'qc': 'pi/4'}
@@ -127,8 +127,8 @@ def run_pair(sim, theta1, theta2, n_trials: int = 0, rng=None) -> dict:
     (when n_trials > 0), 'analytical' = sin²(θ1−θ2), and 'classical' — the
     linear hidden-variable prediction 2|θ1−θ2|/π.
     """
-    from multiworld.simulation import Simulation
-    from multiworld.montecarlo import epr_tally, sample_terminal
+    from quantish.simulation import Simulation
+    from quantish.montecarlo import epr_tally, sample_terminal
     theta1 = qify(theta1)
     theta2 = qify(theta2)
     two_stage = is_two_stage(sim)

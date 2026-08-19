@@ -1,4 +1,4 @@
-"""Golden-snapshot regression test for the multiworld engine.
+"""Golden-snapshot regression test for the quantish engine.
 
 For each maintained model, the exact final classical states (canonical
 (particle, wire, sign) triples -> complex weight) are recorded in
@@ -31,8 +31,8 @@ GOLDEN_PATH = Path(__file__).parent / 'golden_states.json'
 
 sys.path.insert(0, str(REPO_DIR))
 
-import multiworld.qnumber as qn
-from multiworld.qnumber import CalcMode
+import quantish.qnumber as qn
+from quantish.qnumber import CalcMode
 
 WEIGHT_TOLERANCE = 1e-9
 
@@ -57,7 +57,7 @@ def run_model(name):
     """Final classical states as {canonical key: complex weight}. The key is
     the sorted (particle, resting wire, sign) triples, serialized for JSON as
     'p1@g7.upper:+1|p2@g8.lower:-1|...'."""
-    from multiworld.simulation import Simulation
+    from quantish.simulation import Simulation
     with open(MODELS_DIR / 'defaults.yaml') as f:
         config = yaml.safe_load(f)
     with open((MODELS_DIR / name).with_suffix('.yaml')) as f:
@@ -81,7 +81,7 @@ def snapshot(finals):
 class TestGoldenStates(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        logging.getLogger('multiworld').setLevel(logging.WARNING)
+        logging.getLogger('quantish').setLevel(logging.WARNING)
         CalcMode.default('Float')
         qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
         with open(GOLDEN_PATH) as f:
@@ -111,7 +111,7 @@ class TestGoldenStates(unittest.TestCase):
 
 
 def regen():
-    logging.getLogger('multiworld').setLevel(logging.WARNING)
+    logging.getLogger('quantish').setLevel(logging.WARNING)
     CalcMode.default('Float')
     qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
     data = {name: snapshot(run_model(name)) for name in GOLDEN_MODELS}
