@@ -25,18 +25,20 @@ copy of the book and the file names line up with its figure numbers.
 
 ## Figure mapping (2006 ↔ 2026)
 
-Figures 4.4–4.11 are numbered identically in both editions. After that the
-2026 draft inserts a new figure 4.12 (observing the outcomes of fig. 4.8's
-circuit), shifting the interference/observation sequence by one:
+Figures 4.4–4.8 are numbered identically in both editions. After that the
+2026 draft inserts a new figure 4.9 (fig. 4.7's circuit with differing
+angles), shifting the observation/interference sequence by one:
 
 | circuit | 2006 | 2026 |
 |---|---|---|
 | four-way split | 4.4 | 4.4 |
 | same angle twice / config view | 4.5, 4.6 | 4.5, 4.6 |
 | self-inverting gate | 4.7 | 4.7 |
-| succession of differing angles | 4.8, 4.9 | 4.8, 4.9 |
-| observation, apparent nondeterminism | 4.10, 4.11 | 4.10, 4.11 |
-| observation distinguishes 4.8's outcomes | — | 4.12 *(no model yet)* |
+| succession of differing angles | 4.8 | 4.8 |
+| 4.7's circuit with differing angles | — | 4.9 |
+| p2 and p3 observe p1's position | 4.9 | 4.10 |
+| repeated trials, cumulative records | 4.10 | 4.11 *(illustration, no model)* |
+| an observation distinguishes outcomes | 4.11 | 4.12 |
 | paths remerge and interfere | 4.12 | 4.13 |
 | one path diverted, no interference | 4.13 | 4.14 |
 | observation circumvents interference | 4.14 | 4.15 |

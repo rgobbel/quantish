@@ -1,37 +1,29 @@
 title: Figure 4.9
 
+# Figure 4.7's circuit (both switch wires reconnected to the second gate),
+# but with differing measurement angles Q1 and Q2 — new figure in the 2026
+# revised draft. With Q1 != Q2 the second gate no longer undoes the first:
+# states split at rate sin²(Q1−Q2).
+
 variables:
-   zero: &zero  "0j"
-   one: &one  "1+0j"
-   r60: &r60  "0.5+0.87j"
-   q20: &q20 "rad(20)"
-   q30: &q30 "rad(30)"
-   q45: &q45 "rad(45)"
-   q60: &q60 "rad(60)"
-   q90: &q90 "rad(90)"
-   q120: &q120 "rad(120)"
-   q345: &q345 "acos(4/5)"
-   qp4: &qp4 "pi/4"
-   qp8: &qp8 "pi/8"
+   one: &one "1+0j"
+   q1: 'rad(30)'
+   q2: 'rad(45)'
 
 run_stages:
-   split: [g1]
-   test: [g2, g3]
+   split1: [g1]
+   split2: [g2]
 
 particles:
-   p1: {sign: 1, weight: 1}
-   p2: {sign: 1, weight: 1}
-   p3: {sign: 1, weight: 1}
+   p1: {sign: 1, weight: *one}
 
 gates:
-   g1: {angle: *q30}
-   g2: {angle: 0}
-   g3: {angle: 0}
+   g1: {angle: q1}
+   g2: {angle: q2}
 
 links:
    p1: g1.upper
-   p2: g2.upper
-   p3: g3.upper
 
-   g1.upper: g2.control
-   g1.lower: g3.control
+   g1.control: g2.control
+   g1.upper: g2.upper
+   g1.lower: g2.lower
