@@ -4,6 +4,7 @@ run_stages:
    split1: [g0]
    split2: [g1]
    flat: [g2]
+   flat2: [g3]
 
 particles:
    p1: {sign: 1, weight: 1}

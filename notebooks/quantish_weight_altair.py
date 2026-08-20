@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.23.14"
+__generated_with = "0.24.0"
 app = marimo.App(width="full")
 
 with app.setup:
@@ -100,7 +100,7 @@ def config_file_browser():
 
 @app.cell
 def _(sccb):
-    with open(Path('../models/fig45.yaml')) as f:
+    with open(Path('../models/fig4.05.yaml')) as f:
         cf = yaml.safe_load(f)
     # print(f'LOADED {config_file.value[0].path}')
     if sccb.value:

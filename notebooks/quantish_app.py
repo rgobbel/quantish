@@ -11,12 +11,12 @@ Run with:  marimo edit notebooks/quantish_app.py   (or `marimo run` to serve)
 
 import marimo
 
-__generated_with = "0.23.16"
+__generated_with = "0.24.0"
 app = marimo.App(width="full")
 
 
 @app.cell(hide_code=True)
-def _():
+def imports():
     import cmath
     import logging
     import math
@@ -60,13 +60,13 @@ def _():
     from quantish.network_graph import NetworkGraph
 
     REPO_DIR = Path(__file__).resolve().parents[1]
-    MODELS_DIR = REPO_DIR / 'models'
+    MODELS_TOP = REPO_DIR / 'models'
     return (
         Addict,
         CalcMode,
         FredkinGate,
         GatePort,
-        MODELS_DIR,
+        MODELS_TOP,
         NetworkGraph,
         Simulation,
         alt,
@@ -97,148 +97,66 @@ def _(mo):
 
 @app.cell(hide_code=True)
 def _(mo):
-    model_rescan = mo.ui.run_button(label='↻ rescan models')
-    # remembers the selection across rescans (see the dropdown's on_change)
-    last_model_get, last_model_set = mo.state('gr2026/fig417')
-    return last_model_get, last_model_set, model_rescan
+    mo.md(r"""
+    ## Model Selection
+    Default parameters for each model are stored in a YAML-format file. Models are organized into *collections*. The default set of collections is:
+    - gr2026: models implementing the figures in Chapter 4 of the 2026 revision of *Good and Real*.
+    - gr2006: models implementing the figures in Chapter 4 of the original 2006 edition of *Good and Real*.
+    - extra: more models demonstrating various aspects of the Quantish framework. The `extras` collection includes a model taken from **MIT AIM-1026a**, the original 1989 paper which introduced the Quantish framework.
+
+    The `rescan models` button will reload models that have been modified since this notebook was started.
+    """)
+    return
 
 
 @app.cell(hide_code=True)
-def _(MODELS_DIR, last_model_get, last_model_set, mo, model_rescan):
+def _(
+    MODELS_TOP,
+    collection_pick,
+    last_models_get,
+    last_models_set,
+    mo,
+    model_rescan,
+):
     model_rescan  # dependency: pressing the button re-globs the directory
 
     def _():
-        def key(p):
-            return p.relative_to(MODELS_DIR).with_suffix('').as_posix()
+        collection = collection_pick.value
+        cdir = MODELS_TOP / collection
+        options = {p.stem: p for p in sorted(cdir.glob('*.yaml'))
+                   if p.stem != 'defaults'}
+        remembered = last_models_get().get(collection)
+        default = remembered if remembered in options else next(iter(options))
 
-        options = {key(p): p for p in sorted(MODELS_DIR.rglob('*.yaml'))
-                   if p.stem != 'defaults' and 'HIDEME' not in p.parts}
-        default = last_model_get() if last_model_get() in options \
-            else next(iter(options))
+        def remember(p):
+            if p is not None:
+                last_models_set({**last_models_get(), collection: p.stem})
+
         return mo.ui.dropdown(
             options=options,
             value=default,
             label='model',
-            on_change=lambda p: last_model_set(key(p)) if p is not None else None,
+            on_change=remember,
         )
 
     model_pick = _()
-    mo.hstack([model_pick, model_rescan], justify='start', gap=1)
+    mo.hstack([collection_pick, model_pick, model_rescan],
+              justify='start', gap=1)
     return (model_pick,)
 
 
 @app.cell(hide_code=True)
-def _(Addict, MODELS_DIR, Simulation, mo, model_pick, yaml):
-    def load_config(path):
-        with open(MODELS_DIR / 'defaults.yaml') as f:
-            cfg = yaml.safe_load(f)
-        with open(path) as f:
-            cfg.update(yaml.safe_load(f))
-        cfg['loglevel'] = 'warning'
-        return Addict(cfg)
+def _(mo):
+    mo.md(r"""
+    ## Model Parameters
 
-    base_config = load_config(model_pick.value)
+    Each model has a set of particles, a set of gates, each with a particular angle, and links that connect particles and gates. Once a model is loaded, its gate angles can be modified below. Angles can be input using the sliders, each with a range from -180º to 180º, or the text entry fields, using values in either degrees or radians, according to the radio button selector.
 
-    mode_pick = mo.ui.radio(['Float', 'Symbolic'], value='Float',
-                            label='math mode', inline=True)
-    units_pick = mo.ui.radio(['degrees', 'radians'], value='degrees',
-                             label='typed numbers are', inline=True)
+    Calculations within models often produce very small values, and floating-point roundoff errors can compound, appreciably affecting final results. Models can be run using exact values using symbolic arithmetic. In order to take best advantage of symbolic math, input values (i.e., gate angles) should be specified symbolically (e.g., "pi/6" rather than "30.0º"), angle values can be in the form of expressions parsable by SymPy, such as "rad(30)", which is equivalent to "pi/6".
 
-    # ONE state for all gate angles: {gate: {'deg': float, 'expr': str|None}}.
-    # marimo's state reactivity keys on the getter being referenced as a
-    # global variable — a dict of per-gate states breaks the subscription
-    # (the earlier bug), so everything lives under a single getter/setter.
-    # 'expr' preserves the symbolic form (model YAML or typed) alongside
-    # its numeric degree equivalent.
-    def _():
-        def centered(deg):
-            d = deg % 360.0
-            return d - 360.0 if d > 180.0 else d
-
-        base_sim = Simulation(load_config(model_pick.value))
-        names = list(base_sim.fredkin_gates.keys())
-        angles = mo.state({
-            g: {'deg': round(centered(float(gate.atheta.degrees)) * 2) / 2,
-                'expr': str(base_config.gates[g].angle)}
-            for g, gate in base_sim.fredkin_gates.items()})
-        # the model's variables, so typed expressions can use them by name
-        return names, angles, dict(base_sim.qvars)
-
-    gate_names, (angles_get, angles_set), base_env = _()
-    return (
-        angles_get,
-        angles_set,
-        base_config,
-        base_env,
-        gate_names,
-        load_config,
-        mode_pick,
-        units_pick,
-    )
-
-
-@app.cell(hide_code=True)
-def _(angles_get, angles_set, gate_names, mo):
-    # Sliders live in their OWN cell (and the text entries in theirs):
-    # marimo never re-runs the cell that invoked a state setter, so tied
-    # elements must be defined in separate cells — a text edit re-runs
-    # this cell (rebuilding the sliders), a slider move re-runs the text
-    # cell. Registration through mo.ui.dictionary globals keeps on_change
-    # events flowing.
-    def _():
-        def slider_cb(g):
-            def cb(v):
-                angles_set({**angles_get(), g: {'deg': float(v), 'expr': None}})
-            return cb
-
-        return mo.ui.dictionary({
-            g: mo.ui.slider(
-                -180, 180, step=0.5,
-                value=max(0.0, min(180.0, round(angles_get()[g]['deg'] * 2) / 2)),
-                label=f'**{g}**', show_value=True, full_width=True,
-                on_change=slider_cb(g))
-            for g in gate_names})
-
-    angle_slider_elems = _()
-    return (angle_slider_elems,)
-
-
-@app.cell(hide_code=True)
-def _(angles_get, angles_set, base_env, gate_names, math, mo, mode_pick, qn, units_pick):
-    def _():
-        def text_cb(g):
-            def cb(raw):
-                txt = (raw or '').strip().rstrip('º°').strip()
-                if not txt:
-                    return
-                try:
-                    num = float(txt)
-                    deg = num if units_pick.value == 'degrees' else math.degrees(num)
-                    angles_set({**angles_get(), g: {'deg': deg, 'expr': None}})
-                    return
-                except ValueError:
-                    pass
-                try:
-                    rad = float(qn.qify(txt, base_env))  # symbolic expression (may use model variables), radians
-                    angles_set({**angles_get(),
-                                g: {'deg': math.degrees(rad), 'expr': txt}})
-                except Exception:  # noqa: BLE001 — unparseable: keep previous value
-                    pass
-            return cb
-
-        def shown(cur):
-            # The entry mirrors the current math mode: symbolic form when in
-            # Symbolic mode (and one exists), numeric degrees otherwise.
-            if mode_pick.value == 'Symbolic' and cur['expr']:
-                return cur['expr']
-            return f"{cur['deg']:.1f}º"
-
-        return mo.ui.dictionary({
-            g: mo.ui.text(value=shown(angles_get()[g]), on_change=text_cb(g))
-            for g in gate_names})
-
-    angle_text_elems = _()
-    return (angle_text_elems,)
+    Symbolic math is much slower than floating-point, so model execution in Symbolic mode may take several seconds.
+    """)
+    return
 
 
 @app.cell(hide_code=True)
@@ -270,15 +188,19 @@ def _(
 
 @app.cell(hide_code=True)
 def _(mo):
-    run_btn = mo.ui.run_button(label='▶ Run simulation')
-    run_btn
-    return (run_btn,)
+    mo.md(r"""
+    ## Run the selected model
+
+    Once a model has been loaded and its parameters set, the `Run simulation` button will execute the loaded model with the parameters shown above. Results displays will appear after execution is complete.
+    """)
+    return
 
 
 @app.cell(hide_code=True)
-def _(mo, sim):
-    mo.accordion({'## Loaded Configuration Details': mo.accordion(sim.__dict__, multiple=True, lazy=True)})
-    return
+def _(mo):
+    run_btn = mo.ui.run_button(label='▶ Run simulation')
+    run_btn
+    return (run_btn,)
 
 
 @app.cell(hide_code=True)
@@ -294,8 +216,41 @@ def _(
     mode_pick,
     model_pick,
     qn,
-    run_btn,
 ):
+    # Model construction is cheap and needs no ▶ Run: cells that only need
+    # the loaded model (the EPR sweep) depend on sim_model; cells that show
+    # run results depend on sim (gated on the button, next cell).
+    def build_sim():
+        def angle_for(g):
+            cur = angles_get()[g]
+            if cur['expr']:
+                # keep the expression a STRING: the Simulation loader
+                # qifies it against the model's variables, so names like
+                # theta1 stay live and the EPR sweep's variable rebinding
+                # (run_pair) still has something to rebind. Qifying here
+                # would freeze the current value into the gate.
+                qn.qify(cur['expr'], base_env)  # validate early, clear error
+                return cur['expr']
+            return math.radians(cur['deg'])
+
+        CalcMode.default(mode_pick.value)
+        qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
+        config = load_config(model_pick.value)
+        for g in gate_names:
+            config.gates[g].angle = angle_for(g)
+        return Simulation(config)
+
+    try:
+        sim_model = build_sim()
+    except Exception as exc:  # noqa: BLE001 — old-format models raise all sorts
+        mo.stop(True, mo.md(
+            f"**{model_pick.value.stem} failed to load** — probably "
+            f"an old-format model.\n\n```\n{exc}\n```"))
+    return build_sim, sim_model
+
+
+@app.cell(hide_code=True)
+def _(mo, mode_pick, model_pick, run_btn, build_sim):
     # Gated on the button: changing sliders/text/model/mode marks results
     # stale (this message) but leaves the previous results visible below.
     mo.stop(not run_btn.value,
@@ -303,26 +258,13 @@ def _(
                   'results below are from the previous run_'))
 
     def _():
-        def angle_for(g):
-            cur = angles_get()[g]
-            if cur['expr']:
-                # symbolic expression, in radians; may use model variables
-                return qn.qify(cur['expr'], base_env)
-            return math.radians(cur['deg'])
-
         try:
-            CalcMode.default(mode_pick.value)
-            qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
-            config = load_config(model_pick.value)
-            for g in gate_names:
-                config.gates[g].angle = angle_for(g)
-            run = Simulation(config)
+            run = build_sim()
             run.run()
             return run
         except Exception as exc:  # noqa: BLE001 — old-format models raise all sorts
             mo.stop(True, mo.md(
-                f"**{model_pick.value.stem} failed to load or run** — probably "
-                f"an old-format model.\n\n```\n{exc}\n```"))
+                f"**{model_pick.value.stem} failed to run**\n\n```\n{exc}\n```"))
 
     sim = _()
 
@@ -341,254 +283,57 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(FredkinGate, qn):
-    def cpair(g: FredkinGate, w:qn.Complex, twist=False):
-        """
-        From AIM-1026a: the four split components of weight w.
-        Values are precomputed for speed. twist=True gives the minus-sign
-        column (cos/sin of theta - pi/2, i.e. sin/cos of theta).
-        """
-        if not twist:
-            c2a = w * g.cos2_theta
-            c2b = w * g.cos_sin_theta
-            c3a = w * g.sin2_theta
-            c3b = w * g.mcos_sin_theta
-        else:
-            c2a = w * g.cos2_twist
-            c2b = w * g.cos_sin_twist
-            c3a = w * g.sin2_twist
-            c3b = w * g.mcos_sin_twist
-        return c2a, c2b, c3a, c3b
-
-    return (cpair,)
-
-
-@app.cell(hide_code=True)
-def _(cmath, mo, qn):
-    def latex_weight(w, prec=4) -> str:
-        # In Symbolic mode, render the exact sympy expression as LaTeX.
-        try:
-            if qn.CalcMode.default() == 'Symbolic' and qn.isq(w):
-                import sympy
-                return sympy.latex(qn.simplify(w).v)
-        except Exception:  # noqa: BLE001 — fall back to the numeric form
-            pass
-        wc = complex(w)
-        real, imag = wc.real, wc.imag
-        parts = []
-        if abs(real) > 1e-12:
-            sign = '-' if real < 0 else '+'
-            parts.append(f'{sign}{abs(round(real, 2))}')
-        if abs(imag) > 1e-12:
-            sign = '-' if imag < 0 else '+'
-            parts.append(f' {sign}{abs(imag):.{prec}g}i')
-        return ''.join(parts) if parts else f'{0.00:+.2f}'
-
-    def math_weight(w, prec=4) -> str:
-        # latex_weight wrapped as inline math. Whitespace is normalized
-        # because markdown doesn't recognize '$ x$' (leading space) as
-        # math — symbolic LaTeX often leads with '- \frac{...}'.
-        return f'${" ".join(latex_weight(w, prec).split())}$'
-
-    def phase_deg(w) -> float:
-        return cmath.phase(complex(w)) * 180.0 / cmath.pi
-
-    def md_table(headers, rows) -> str:
-        # NB: markdown needs a blank line before a table, and literal '|'
-        # inside cells (CS-point keys use it as a separator) must be escaped
-        # or they read as column breaks.
-        def cell(c):
-            return str(c).replace('|', r'\|')
-        lines = ['',
-                 '| ' + ' | '.join(headers) + ' |',
-                 '|' + '|'.join(['---'] * len(headers)) + '|']
-        lines += ['| ' + ' | '.join(cell(c) for c in row) + ' |' for row in rows]
-        return '\n'.join(lines)
-
-    _ = mo.md('')  # helpers only
-    def inline_png(png_bytes):
-        # a data-URI <img> instead of marimo's shared-memory virtual
-        # files: re-running a cell disposes the old virtual file while the
-        # browser still holds its URL, producing FileNotFoundError noise
-        # in the server log (same reason the Altair data is inlined)
-        import base64
-        b64 = base64.b64encode(png_bytes).decode()
-        return mo.Html(f'<img src="data:image/png;base64,{b64}">')
-
-    def zoomable(obj, factor):
-        # Width-based zoom: widen an inner container and make the media
-        # fill it. CSS zoom fails here because mo.image and Mermaid SVGs
-        # are max-width-clamped to the container — the clamp scales along
-        # with the zoom, so only the caption text grew.
-        return mo.Html(
-            f'<div style="overflow:auto; max-height:85vh">'
-            f'<div class="qzoom" style="width:{factor * 100:.0f}%">'
-            f'<style>.qzoom img, .qzoom svg '
-            f'{{ width:100% !important; max-width:none !important; '
-            f'height:auto !important; }}</style>'
-            f'{mo.as_html(obj).text}</div></div>')
-
-    return inline_png, latex_weight, math_weight, md_table, phase_deg, zoomable
-
-
-@app.cell(hide_code=True)
-def _(math_weight, md_table, mo, phase_deg, short_config, sim):
-    # Worlds sorted canonically: gate (in evaluation order), then port
-    # (upper before lower), then sign (+ before −); the configuration
-    # label's coordinates are reordered to match.
-    def _():
-        rows = [(
-            f'`{short_config(p, key=sim.coord_sort_key).replace("|", " ")}`',
-            math_weight(p.weight, prec=3),
-            f'${float(p.probability):.4f}$',
-            f'${phase_deg(p.weight):+.1f}º$',
-        ) for p in sorted(sim.result_space.index.values(),
-                          key=sim.cs_point_sort_key)]
-        return mo.accordion({'## Final CS points\n': mo.md(md_table(
-            ['configuration', 'weight $w$', r'$\lvert w\rvert^2$', 'phase'],
-            rows))})
-
-    _()
-    return
-
-
-@app.cell(hide_code=True)
-def _(md_table, mo, sim):
-    # Marginal in the statistics sense: each row sums |w|² over every
-    # final CS point containing that coordinate — the chance of finding that
-    # particle, with that sign, at that port, regardless of where the
-    # other particles ended up. Rows follow gate evaluation order (upper
-    # before lower, + before −), so a port's +/− pair sits together and
-    # sums to the port's total output probability.
-    def _():
-        acc = {}
-        for p in sim.result_space.index.values():
-            prob = float(p.probability)
-            for coord in p.coords.values():
-                entry = acc.setdefault(f'{coord.pkey}@{coord.position.origin}',
-                                       [coord, 0.0])
-                entry[1] += prob
-        rows = [(f'`{key}`', f'{entry[1]:.4f}')
-                for key, entry in sorted(acc.items(),
-                                         key=lambda kv: sim.coord_sort_key(kv[1][0]))]
-        return mo.accordion({
-            '## Marginal probabilities (one coordinate at a time)':
-                mo.md(r'Each row sums $\lvert w\rvert^2$ over every final CS point '
-                      'in which that particle, with that sign, sits at that '
-                      'port — its probability there *regardless of where the '
-                      'other particles ended up* (the marginal over the rest '
-                      'of the configuration). The +/− rows at one port '
-                      "together give the port's total output probability.\n" +
-                      md_table(['coordinate', 'probability'], rows))
-        })
-
-    _()
-    return
-
-
-@app.cell(hide_code=True)
-def _(md_table, mo, sim):
-    # Per-step gate traffic: what arrived at each port (previous step's
-    # coordinate endpoints) and what left it (that step's origins), with
-    # per-sign probabilities and the aggregate Σ (|Σ|² and phase).
-    def _():
-        rows = [(row['step'], row['gate'], row['port'],
-                 row['input'].replace('\n', '<br>'),
-                 row['output'].replace('\n', '<br>'))
-                for row in sim.gate_io()]
-        return mo.accordion({
-            '## Gate inputs and outputs by step':
-                mo.md(md_table(['step', 'gate', 'port', 'input', 'output'], rows))
-        })
-
-    _()
-    return
-
-
-@app.cell(hide_code=True)
 def _(mo):
-    # One zoom slider per diagram, defined together so a zoom change
-    # re-runs only the cell that displays that diagram.
-    def _():
-        def zslider():
-            return mo.ui.slider(0.5, 3.0, step=0.25, value=1.0,
-                                label='zoom', show_value=True)
-        return zslider(), zslider(), zslider()
+    mo.md(r"""
+    ## Results
 
-    tikz_zoom, mermaid_zoom, graph_zoom = _()
-    return graph_zoom, mermaid_zoom, tikz_zoom
+    Several types of results are available:
+    - A diagram of network topology generated using TikZ, a vector graphics package that uses LaTeX for rendering
+    - A diagram showing network topology as well as gate inputs and outputs, generated using the Mermaid graphing framework
+    - A graphical trace of how weights evolve through the running of the model
+    - A table with exact numeric results of a model run
+    - A table of the final set of Configuration Space points (i.e., "classical worlds")
+    - Marginal probabilities: the probability that any given particle will appear at a particular gate output
+    - A trace of input and output values at every execution stage
+    """)
+    return
 
 
 @app.cell(hide_code=True)
-def _(inline_png, mo, sim, tikz_zoom, zoomable):
+def _(mo, sim, tikz_zoom, zoomable):
     # Depends on sim, so it refreshes on every Run (runs are now explicit,
     # so the pdflatex cost is paid once per Run, not per slider move).
+    # SVG, not PNG: vector output stays crisp at any zoom.
     def _():
-        import io
-        from quantish.tikz_diagram import render_diagram, spec_from_simulation
+        from quantish.tikz_diagram import render_diagram_svg, spec_from_simulation
         try:
             overrides = {g: f'{float(gate.atheta.degrees):.1f}°'
                          for g, gate in sim.fredkin_gates.items()}
-            img = render_diagram(spec_from_simulation(sim), dpi=150,
-                                 angle_overrides=overrides)
-            if img is None:
-                return mo.md('_TikZ render unavailable (needs pdflatex + imagemagick)_')
-            buf = io.BytesIO()
-            img.save(buf, format='PNG')
-            return inline_png(buf.getvalue())
+            svg = render_diagram_svg(spec_from_simulation(sim),
+                                     angle_overrides=overrides)
+            if svg is None:
+                return mo.md('_TikZ render unavailable (needs pdflatex + pdf2svg)_')
+            return mo.Html(svg)
         except Exception as exc:  # noqa: BLE001 — show, don't crash the app
             return mo.md(f'_TikZ diagram failed: {exc}_')
 
-    mo.vstack([mo.md('## Circuit diagram (TikZ)'), tikz_zoom,
-               zoomable(_(), tikz_zoom.value)])
+    mo.accordion({'## Circuit diagram (TikZ)': mo.vstack([tikz_zoom,
+               zoomable(_(), tikz_zoom.value)])})
     return
 
 
 @app.cell(hide_code=True)
-def _(diagram, mermaid_zoom, mo, sim, zoomable):
+def _(NetworkGraph, mo, sim):
+    # native Altair: live SVG with tooltips, pans/zooms itself. Shown
+    # directly — mo.ui.altair_chart injects a selection param, which
+    # Vega-Lite rejects on layered charts that carry configure_* options.
     def _():
-        # The generated source carries no theme, and mo.mermaid's own
-        # theme choice is unreadable on nested subgraphs — so pin the
-        # palette of the old CLI-rendered SVGs (mermaid's classic
-        # 'default' look): light-yellow group/gate clusters, light-gray
-        # port nodes. Injected into the frontmatter alongside the title.
-        theme = ('config:\n'
-                 '  theme: base\n'
-                 '  themeVariables:\n'
-                 "    clusterBkg: '#ffffde'\n"
-                 "    clusterBorder: '#aaaa33'\n"
-                 "    primaryColor: '#ececec'\n"
-                 "    primaryBorderColor: '#999999'\n"
-                 "    primaryTextColor: '#333333'\n"
-                 "    lineColor: '#333333'\n"
-                 "    titleColor: '#333333'\n"
-                 "    edgeLabelBackground: 'rgba(232,232,232,0.8)'\n"
-                 'title:')
         try:
-            src = str(diagram(sim, output_file=None, has_run=True)).replace(
-                'title:', theme, 1)
-            return mo.mermaid(src)
-        except Exception as exc:  # noqa: BLE001
-            return mo.md(f'_Mermaid diagram failed: {exc}_')
+            return NetworkGraph(sim.all_points, sim).chart().interactive()
+        except Exception as exc:  # noqa: BLE001 — surface, don't crash the app
+            return mo.md(f'_network graph failed: {exc}_')
 
-    mo.vstack([mo.md('## Gate network with port values (Mermaid)'),
-               mermaid_zoom, zoomable(_(), mermaid_zoom.value)])
-    return
-
-
-@app.cell(hide_code=True)
-def _(NetworkGraph, graph_zoom, inline_png, mo, sim, zoomable):
-    def _():
-        import io
-        from matplotlib import pyplot as plt
-        fig = NetworkGraph(sim.all_points, sim).figure()
-        buf = io.BytesIO()
-        fig.savefig(buf, format='png', dpi=150, bbox_inches='tight')
-        plt.close(fig)
-        return inline_png(buf.getvalue())
-
-    mo.vstack([mo.md('## Weight evolution (CS points × stages)'),
-               graph_zoom, zoomable(_(), graph_zoom.value)])
+    mo.accordion({'## Weight evolution (CS points × stages)': mo.vstack([_()])})
     return
 
 
@@ -702,6 +447,112 @@ def _(GatePort, math_weight, md_table, mo, qn, short_config, sim):
 
 
 @app.cell(hide_code=True)
+def _(diagram, mermaid_zoom, mo, sim, zoomable):
+    def _():
+        # The generated source carries no theme, and mo.mermaid's own
+        # theme choice is unreadable on nested subgraphs — so pin the
+        # palette of the old CLI-rendered SVGs (mermaid's classic
+        # 'default' look): light-yellow group/gate clusters, light-gray
+        # port nodes. Injected into the frontmatter alongside the title.
+        theme = ('config:\n'
+                 '  theme: base\n'
+                 '  themeVariables:\n'
+                 "    clusterBkg: '#ffffde'\n"
+                 "    clusterBorder: '#aaaa33'\n"
+                 "    primaryColor: '#ececec'\n"
+                 "    primaryBorderColor: '#999999'\n"
+                 "    primaryTextColor: '#333333'\n"
+                 "    lineColor: '#333333'\n"
+                 "    titleColor: '#333333'\n"
+                 "    edgeLabelBackground: 'rgba(232,232,232,0.8)'\n"
+                 'title:')
+        try:
+            src = str(diagram(sim, output_file=None, has_run=True)).replace(
+                'title:', theme, 1)
+            return mo.mermaid(src)
+        except Exception as exc:  # noqa: BLE001
+            return mo.md(f'_Mermaid diagram failed: {exc}_')
+
+    mo.accordion({'## Gate network with port values (Mermaid)': mo.vstack([
+               mermaid_zoom, zoomable(_(), mermaid_zoom.value)])})
+    return
+
+
+@app.cell(hide_code=True)
+def _(math_weight, md_table, mo, phase_deg, short_config, sim):
+    # Worlds sorted canonically: gate (in evaluation order), then port
+    # (upper before lower), then sign (+ before −); the configuration
+    # label's coordinates are reordered to match.
+    def _():
+        rows = [(
+            f'`{short_config(p, key=sim.coord_sort_key).replace("|", " ")}`',
+            math_weight(p.weight, prec=3),
+            f'${float(p.probability):.4f}$',
+            f'${phase_deg(p.weight):+.1f}º$',
+        ) for p in sorted(sim.result_space.index.values(),
+                          key=sim.cs_point_sort_key)]
+        return mo.accordion({'## Final CS points\n': mo.md(md_table(
+            ['configuration', 'weight $w$', r'$\lvert w\rvert^2$', 'phase'],
+            rows))})
+
+    _()
+    return
+
+
+@app.cell(hide_code=True)
+def _(md_table, mo, sim):
+    # Marginal in the statistics sense: each row sums |w|² over every
+    # final CS point containing that coordinate — the chance of finding that
+    # particle, with that sign, at that port, regardless of where the
+    # other particles ended up. Rows follow gate evaluation order (upper
+    # before lower, + before −), so a port's +/− pair sits together and
+    # sums to the port's total output probability.
+    def _():
+        acc = {}
+        for p in sim.result_space.index.values():
+            prob = float(p.probability)
+            for coord in p.coords.values():
+                entry = acc.setdefault(f'{coord.pkey}@{coord.position.origin}',
+                                       [coord, 0.0])
+                entry[1] += prob
+        rows = [(f'`{key}`', f'{entry[1]:.4f}')
+                for key, entry in sorted(acc.items(),
+                                         key=lambda kv: sim.coord_sort_key(kv[1][0]))]
+        return mo.accordion({
+            '## Marginal probabilities (one coordinate at a time)':
+                mo.md(r'Each row sums $\lvert w\rvert^2$ over every final CS point '
+                      'in which that particle, with that sign, sits at that '
+                      'port — its probability there *regardless of where the '
+                      'other particles ended up* (the marginal over the rest '
+                      'of the configuration). The +/− rows at one port '
+                      "together give the port's total output probability.\n" +
+                      md_table(['coordinate', 'probability'], rows))
+        })
+
+    _()
+    return
+
+
+@app.cell(hide_code=True)
+def _(md_table, mo, sim):
+    # Per-step gate traffic: what arrived at each port (previous step's
+    # coordinate endpoints) and what left it (that step's origins), with
+    # per-sign probabilities and the aggregate Σ (|Σ|² and phase).
+    def _():
+        rows = [(row['step'], row['gate'], row['port'],
+                 row['input'].replace('\n', '<br>'),
+                 row['output'].replace('\n', '<br>'))
+                for row in sim.gate_io()]
+        return mo.accordion({
+            '## Gate inputs and outputs by step':
+                mo.md(md_table(['step', 'gate', 'port', 'input', 'output'], rows))
+        })
+
+    _()
+    return
+
+
+@app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
     ## Monte Carlo sampling
@@ -790,39 +641,19 @@ def _(
 
 @app.cell(hide_code=True)
 def _(mo):
-    # Defined independently of sim/mode so a math-mode change or a Run can
-    # never reset the user's chosen trial count.
-    epr_trials = mo.ui.slider(0, 50000, step=1000, value=0,
-                              label='trials per cell (0 = exact only)',
-                              show_value=True)
-    epr_button = mo.ui.run_button(label='Run EPR experiment')
-    return epr_button, epr_trials
+    mo.md(r"""
+    ## The Einstein-Podolsky-Rosen / Bell Experiment
+
+    The EPR experiment user interface is hidden until a suitable model such as Figure 4.17 is loaded.
+    """)
+    return
 
 
 @app.cell(hide_code=True)
-def _(base_config, mo):
-    # Sweep-angle entries, reseeded from the model's qa/qb/qc variables
-    # (or the canonical 0, pi/8, pi/4) when the model changes. Same input
-    # forms as the gate-angle entries: a bare number in the selected
-    # units, anything else a symbolic radian expression.
-    def _():
-        from quantish.epr import DEFAULT_VALUES
-        model_vars = {str(k).lower(): str(v)
-                      for k, v in base_config.variables.items()}
-        return mo.ui.dictionary({
-            k: mo.ui.text(value=model_vars.get(k, v), label=f'**{k}** =')
-            for k, v in DEFAULT_VALUES.items()})
-
-    epr_angle_elems = _()
-    return (epr_angle_elems,)
-
-
-@app.cell(hide_code=True)
-def _(epr_angle_elems, epr_button, epr_trials, mo, sim, supports_epr):
-    mo.stop(not supports_epr(sim))
+def _(epr_angle_elems, epr_button, epr_trials, mo, sim_model, supports_epr):
+    mo.stop(not supports_epr(sim_model))
     mo.vstack([
         mo.md(r"""
-    ## EPR-Bell experiment
     **What the sweep does:** it re-runs the whole circuit **nine times**,
     once per pair $(\theta_1, \theta_2)$ from the sweep angles
     $\{q_a, q_b, q_c\}$ chosen below — "measuring $p_1$ at $\theta_1$
@@ -925,11 +756,11 @@ def _(
     mo,
     qn,
     run_epr_experiment,
-    sim,
+    sim_model,
     supports_epr,
     units_pick,
 ):
-    mo.stop(not supports_epr(sim))
+    mo.stop(not supports_epr(sim_model))
     mo.stop(not epr_button.value, mo.md('_press **Run EPR experiment** to sweep_'))
 
     def _():
@@ -954,7 +785,7 @@ def _(
                 mo.md('**sweep angles must be distinct (mod π)** — equal angles '
                       'make cells compare an angle with itself and the '
                       'inequalities degenerate'))
-        res = run_epr_experiment(sim, n_trials=int(epr_trials.value), seed=1,
+        res = run_epr_experiment(sim_model, n_trials=int(epr_trials.value), seed=1,
                                  values=values)
         labels = list(res['values'].keys())
 
@@ -992,7 +823,10 @@ def _(
 def _(mo):
     mo.md(r"""
     ## Weight-split explorer
-    The four-way split of one Fredkin gate measurement at angle $\theta$:
+
+    An interactive tool showing what happens to weights going through a Fredkin gate.
+
+    It demonstrates the four-way split of one Fredkin gate measurement at angle $\theta$:
     $c_{2a} = w\cos^2\theta$, $c_{2b} = i\,w\sin\theta\cos\theta$
     (straight), $c_{3a} = w\sin^2\theta$,
     $c_{3b} = -i\,w\sin\theta\cos\theta$ (cross); $c_2 = c_{2a}+c_{2b}$,
@@ -1018,9 +852,21 @@ def _(mo):
     # keeps the unit circle circular) can't be broken by stretching
     ws_size = mo.ui.slider(300, 1000, step=25, value=500,
                            label='chart size (px)', show_value=True)
+    # the mouse selection, persisted across parameter changes (the chart
+    # is rebuilt on every slider move; the param is reseeded from here)
+    ws_sel_get, ws_sel_set = mo.state(())
     mo.hstack([ws_theta, ws_sign, ws_wmag, ws_wphase, ws_components, ws_size],
               wrap=True)
-    return ws_components, ws_sign, ws_size, ws_theta, ws_wmag, ws_wphase
+    return (
+        ws_components,
+        ws_sel_get,
+        ws_sel_set,
+        ws_sign,
+        ws_size,
+        ws_theta,
+        ws_wmag,
+        ws_wphase,
+    )
 
 
 @app.cell(hide_code=True)
@@ -1036,6 +882,7 @@ def _(
     phase_deg,
     qn,
     ws_components,
+    ws_sel_get,
     ws_sign,
     ws_size,
     ws_theta,
@@ -1056,8 +903,19 @@ def _(
             'perpendicular': [data[c].imag for c in sel],
             'component': sel,
         })
+        # Finder-style selection: click a vector or a legend entry to
+        # make it the selection; shift/cmd/ctrl-click toggles items in and
+        # out; click empty space to clear. One selection with on='click'
+        # AND bind='legend' receives both event streams (verified in the
+        # compiled Vega), so the legend highlighting tracks mark clicks
+        # and vice versa — no difference which you click.
+        mods = 'event.shiftKey || event.metaKey || event.ctrlKey'
+        seed = [{'component': c} for c in ws_sel_get() if c in sel]
+        picked = alt.selection_point(name='picked', fields=['component'],
+                                     on='click', bind='legend', toggle=mods,
+                                     **({'value': seed} if seed else {}))
         base = alt.Chart(frame)
-        vectors = base.mark_rule(strokeWidth=2.5).encode(
+        vectors = base.mark_rule().encode(
             x2=alt.datum(0.0),
             x=alt.X('parallel:Q', axis=alt.Axis(title='Parallel (Re)'),
                     scale=alt.Scale(domain=[-1.1, 1.1])),
@@ -1066,16 +924,23 @@ def _(
                     scale=alt.Scale(domain=[-1.1, 1.1])),
             color=alt.Color('component:N', sort=order,
                             scale=alt.Scale(domain=order)),
-        )
+            strokeWidth=alt.when(picked).then(alt.value(4.0))
+                           .otherwise(alt.value(2.5)),
+            opacity=alt.when(picked).then(alt.value(1.0))
+                       .otherwise(alt.value(0.35)),
+        ).add_params(picked)
         labels = base.mark_text(align='left', baseline='middle', dx=7).encode(
             x='parallel:Q', y='perpendicular:Q', text='component:N',
             color=alt.Color('component:N', sort=order,
                             scale=alt.Scale(domain=order)),
+            opacity=alt.when(picked).then(alt.value(1.0))
+                       .otherwise(alt.value(0.35)),
         )
         sign_str = '+' if ws_sign.value else '−'
+        # .interactive(): mouse-wheel zoom, drag to pan
         chart = (vectors + labels).properties(
             title=f'θ = {ws_theta.value}º, sign = {sign_str}',
-            width=int(ws_size.value), height=int(ws_size.value))
+            width=int(ws_size.value), height=int(ws_size.value)).interactive()
         lines = []
         for name in sel:
             val = data[name]
@@ -1090,12 +955,353 @@ def _(
     \end{{aligned}}
     $$
     """
-        # plain display (not mo.ui.altair_chart): no selection plumbing,
-        # and with inline data no virtual-file churn on slider moves
-        return mo.hstack([chart, mo.md(latex)], align='center', justify='start')
+        # mo.ui.altair_chart carries the 'picked' selection back to
+        # Python so the capture cell below can persist it
+        widget = mo.ui.altair_chart(chart, chart_selection=False,
+                                    legend_selection=False)
+        return widget, mo.hstack([widget, mo.md(latex)],
+                                 align='center', justify='start')
+
+    ws_chart, _view = _()
+    _view
+    return (ws_chart,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Loaded Configuration Details
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo, sim):
+    mo.accordion(sim.__dict__, multiple=True, lazy=True)
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Support Code
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(MODELS_TOP, last_collection_get, last_collection_set, mo, model_rescan):
+    model_rescan  # dependency: pressing the button re-scans the directory
+
+    def _():
+        options = sorted(d.name for d in MODELS_TOP.iterdir()
+                         if d.is_dir() and d.name != 'HIDEME'
+                         and not d.name.startswith('.'))
+        default = last_collection_get() if last_collection_get() in options \
+            else options[0]
+        return mo.ui.dropdown(
+            options=options,
+            value=default,
+            label='collection',
+            on_change=lambda name: last_collection_set(name)
+            if name is not None else None,
+        )
+
+    collection_pick = _()
+    return (collection_pick,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    model_rescan = mo.ui.run_button(label='↻ rescan models')
+    # per-collection selection memory, seeded with each collection's
+    # designated default; a new collection falls back to first-by-name
+    last_collection_get, last_collection_set = mo.state('gr2026')
+    last_models_get, last_models_set = mo.state(
+        {'extras': 'AIM_Figure12', 'gr2006': 'fig4.16', 'gr2026': 'fig4.17'})
+    return (
+        last_collection_get,
+        last_collection_set,
+        last_models_get,
+        last_models_set,
+        model_rescan,
+    )
+
+
+@app.cell(hide_code=True)
+def _(FredkinGate, qn):
+    def cpair(g: FredkinGate, w:qn.Complex, twist=False):
+        """
+        From AIM-1026a: the four split components of weight w.
+        Values are precomputed for speed. twist=True gives the minus-sign
+        column (cos/sin of theta - pi/2, i.e. sin/cos of theta).
+        """
+        if not twist:
+            c2a = w * g.cos2_theta
+            c2b = w * g.cos_sin_theta
+            c3a = w * g.sin2_theta
+            c3b = w * g.mcos_sin_theta
+        else:
+            c2a = w * g.cos2_twist
+            c2b = w * g.cos_sin_twist
+            c3a = w * g.sin2_twist
+            c3b = w * g.mcos_sin_twist
+        return c2a, c2b, c3a, c3b
+
+    return (cpair,)
+
+
+@app.cell(hide_code=True)
+def _(ws_chart, ws_sel_get, ws_sel_set):
+    # Persist the explorer's mouse selection. A freshly rebuilt chart
+    # reports no selection until clicked, so an empty report never clears
+    # a remembered selection — clearing happens by toggling items off.
+    def _():
+        try:
+            comps = tuple(ws_chart.selections.get('picked', {})
+                          .get('component', ()))
+        except Exception:  # noqa: BLE001 — selection shape varies by marimo version
+            return
+        if comps and comps != tuple(ws_sel_get()):
+            ws_sel_set(comps)
 
     _()
     return
+
+
+@app.cell(hide_code=True)
+def _(Addict, MODELS_TOP, Simulation, mo, model_pick, yaml):
+    def load_config(path):
+        with open(MODELS_TOP / 'defaults.yaml') as f:
+            cfg = yaml.safe_load(f)
+        with open(path) as f:
+            cfg.update(yaml.safe_load(f))
+        cfg['loglevel'] = 'warning'
+        return Addict(cfg)
+
+    base_config = load_config(model_pick.value)
+
+    mode_pick = mo.ui.radio(['Float', 'Symbolic'], value='Float',
+                            label='math mode', inline=True)
+    units_pick = mo.ui.radio(['degrees', 'radians'], value='degrees',
+                             label='typed numbers are', inline=True)
+
+    # ONE state for all gate angles: {gate: {'deg': float, 'expr': str|None}}.
+    # marimo's state reactivity keys on the getter being referenced as a
+    # global variable — a dict of per-gate states breaks the subscription
+    # (the earlier bug), so everything lives under a single getter/setter.
+    # 'expr' preserves the symbolic form (model YAML or typed) alongside
+    # its numeric degree equivalent.
+    def _():
+        def centered(deg):
+            d = deg % 360.0
+            return d - 360.0 if d > 180.0 else d
+
+        base_sim = Simulation(load_config(model_pick.value))
+        names = list(base_sim.fredkin_gates.keys())
+        angles = mo.state({
+            g: {'deg': round(centered(float(gate.atheta.degrees)) * 2) / 2,
+                'expr': str(base_config.gates[g].angle)}
+            for g, gate in base_sim.fredkin_gates.items()})
+        # the model's variables, so typed expressions can use them by name
+        return names, angles, dict(base_sim.qvars)
+
+    gate_names, (angles_get, angles_set), base_env = _()
+    return (
+        angles_get,
+        angles_set,
+        base_config,
+        base_env,
+        gate_names,
+        load_config,
+        mode_pick,
+        units_pick,
+    )
+
+
+@app.cell(hide_code=True)
+def _(angles_get, angles_set, gate_names, mo):
+    # Sliders live in their OWN cell (and the text entries in theirs):
+    # marimo never re-runs the cell that invoked a state setter, so tied
+    # elements must be defined in separate cells — a text edit re-runs
+    # this cell (rebuilding the sliders), a slider move re-runs the text
+    # cell. Registration through mo.ui.dictionary globals keeps on_change
+    # events flowing.
+    def _():
+        def slider_cb(g):
+            def cb(v):
+                angles_set({**angles_get(), g: {'deg': float(v), 'expr': None}})
+            return cb
+
+        return mo.ui.dictionary({
+            g: mo.ui.slider(
+                -180, 180, step=0.5,
+                value=max(0.0, min(180.0, round(angles_get()[g]['deg'] * 2) / 2)),
+                label=f'**{g}**', show_value=True, full_width=True,
+                on_change=slider_cb(g))
+            for g in gate_names})
+
+    angle_slider_elems = _()
+    return (angle_slider_elems,)
+
+
+@app.cell(hide_code=True)
+def _(
+    angles_get,
+    angles_set,
+    base_env,
+    gate_names,
+    math,
+    mo,
+    mode_pick,
+    qn,
+    units_pick,
+):
+    def _():
+        def text_cb(g):
+            def cb(raw):
+                txt = (raw or '').strip().rstrip('º°').strip()
+                if not txt:
+                    return
+                try:
+                    num = float(txt)
+                    deg = num if units_pick.value == 'degrees' else math.degrees(num)
+                    angles_set({**angles_get(), g: {'deg': deg, 'expr': None}})
+                    return
+                except ValueError:
+                    pass
+                try:
+                    rad = float(qn.qify(txt, base_env))  # symbolic expression (may use model variables), radians
+                    angles_set({**angles_get(),
+                                g: {'deg': math.degrees(rad), 'expr': txt}})
+                except Exception:  # noqa: BLE001 — unparseable: keep previous value
+                    pass
+            return cb
+
+        def shown(cur):
+            # The entry mirrors the current math mode: symbolic form when in
+            # Symbolic mode (and one exists), numeric degrees otherwise.
+            if mode_pick.value == 'Symbolic' and cur['expr']:
+                return cur['expr']
+            return f"{cur['deg']:.1f}º"
+
+        return mo.ui.dictionary({
+            g: mo.ui.text(value=shown(angles_get()[g]), on_change=text_cb(g))
+            for g in gate_names})
+
+    angle_text_elems = _()
+    return (angle_text_elems,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    # One zoom slider per diagram, defined together so a zoom change
+    # re-runs only the cell that displays that diagram.
+    def _():
+        def zslider():
+            return mo.ui.slider(0.5, 3.0, step=0.25, value=1.0,
+                                label='zoom', show_value=True)
+        return zslider(), zslider(), zslider()
+
+    tikz_zoom, mermaid_zoom, graph_zoom = _()
+    return mermaid_zoom, tikz_zoom
+
+
+@app.cell(hide_code=True)
+def _(cmath, mo, qn):
+    def latex_weight(w, prec=4) -> str:
+        # In Symbolic mode, render the exact sympy expression as LaTeX.
+        try:
+            if qn.CalcMode.default() == 'Symbolic' and qn.isq(w):
+                import sympy
+                return sympy.latex(qn.simplify(w).v)
+        except Exception:  # noqa: BLE001 — fall back to the numeric form
+            pass
+        wc = complex(w)
+        real, imag = wc.real, wc.imag
+        parts = []
+        if abs(real) > 1e-12:
+            sign = '-' if real < 0 else '+'
+            parts.append(f'{sign}{abs(round(real, 2))}')
+        if abs(imag) > 1e-12:
+            sign = '-' if imag < 0 else '+'
+            parts.append(f' {sign}{abs(imag):.{prec}g}i')
+        return ''.join(parts) if parts else f'{0.00:+.2f}'
+
+    def math_weight(w, prec=4) -> str:
+        # latex_weight wrapped as inline math. Whitespace is normalized
+        # because markdown doesn't recognize '$ x$' (leading space) as
+        # math — symbolic LaTeX often leads with '- \frac{...}'.
+        return f'${" ".join(latex_weight(w, prec).split())}$'
+
+    def phase_deg(w) -> float:
+        return cmath.phase(complex(w)) * 180.0 / cmath.pi
+
+    def md_table(headers, rows) -> str:
+        # NB: markdown needs a blank line before a table, and literal '|'
+        # inside cells (CS-point keys use it as a separator) must be escaped
+        # or they read as column breaks.
+        def cell(c):
+            return str(c).replace('|', r'\|')
+        lines = ['',
+                 '| ' + ' | '.join(headers) + ' |',
+                 '|' + '|'.join(['---'] * len(headers)) + '|']
+        lines += ['| ' + ' | '.join(cell(c) for c in row) + ' |' for row in rows]
+        return '\n'.join(lines)
+
+    _ = mo.md('')  # helpers only
+    def inline_png(png_bytes):
+        # a data-URI <img> instead of marimo's shared-memory virtual
+        # files: re-running a cell disposes the old virtual file while the
+        # browser still holds its URL, producing FileNotFoundError noise
+        # in the server log (same reason the Altair data is inlined)
+        import base64
+        b64 = base64.b64encode(png_bytes).decode()
+        return mo.Html(f'<img src="data:image/png;base64,{b64}">')
+
+    def zoomable(obj, factor):
+        # Width-based zoom: widen an inner container and make the media
+        # fill it. CSS zoom fails here because mo.image and Mermaid SVGs
+        # are max-width-clamped to the container — the clamp scales along
+        # with the zoom, so only the caption text grew.
+        return mo.Html(
+            f'<div style="overflow:auto; max-height:85vh">'
+            f'<div class="qzoom" style="width:{factor * 100:.0f}%">'
+            f'<style>.qzoom img, .qzoom svg '
+            f'{{ width:100% !important; max-width:none !important; '
+            f'height:auto !important; }}</style>'
+            f'{mo.as_html(obj).text}</div></div>')
+
+    return inline_png, latex_weight, math_weight, md_table, phase_deg, zoomable
+
+
+@app.cell(hide_code=True)
+def _(base_config, mo):
+    # Sweep-angle entries, reseeded from the model's qa/qb/qc variables
+    # (or the canonical 0, pi/8, pi/4) when the model changes. Same input
+    # forms as the gate-angle entries: a bare number in the selected
+    # units, anything else a symbolic radian expression.
+    def _():
+        from quantish.epr import DEFAULT_VALUES
+        model_vars = {str(k).lower(): str(v)
+                      for k, v in base_config.variables.items()}
+        return mo.ui.dictionary({
+            k: mo.ui.text(value=model_vars.get(k, v), label=f'**{k}** =')
+            for k, v in DEFAULT_VALUES.items()})
+
+    epr_angle_elems = _()
+    return (epr_angle_elems,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    # Defined independently of sim/mode so a math-mode change or a Run can
+    # never reset the user's chosen trial count.
+    epr_trials = mo.ui.slider(0, 50000, step=1000, value=0,
+                              label='trials per cell (0 = exact only)',
+                              show_value=True)
+    epr_button = mo.ui.run_button(label='Run EPR experiment')
+    return epr_button, epr_trials
 
 
 if __name__ == "__main__":

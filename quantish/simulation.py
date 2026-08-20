@@ -32,8 +32,15 @@ class Simulation:
                 raise ValueError(
                     f"variable '{vname}' shadows a builtin math name")
             self.qvars[vname] = qify(vval, self.qvars)
-        self.links = config.links
+        # A delay gate has exactly one port (control), so links may name it
+        # bare — 'd5: d6' — with the '.control' implied.
+        _delays = set(config.get('delay_gates', []))
+        def _canon(end):
+            return f'{end}{SEP}control' if end in _delays else end
+        self.links = {_canon(src): _canon(dst)
+                      for src, dst in config.links.items()}
         self.sources = {v: k for k, v in self.links.items()}
+        self.validate_wiring(config)
         self.simplified_links = simplify_graph(self.links)
         self.graph_roots = [node for node, degree in self.simplified_links.in_degree() if degree == 0]
         self.topo_stages = list(nx.topological_generations(self.simplified_links))[1:]
@@ -130,17 +137,47 @@ class Simulation:
                 stages.append(ready)
                 fired |= set(ready)
                 remaining = [g for g in remaining if g not in ready]
-        for stage in self.topo_stages:
-            leftover = [g for g in stage if g not in fired]
-            if leftover:
-                stages.append(leftover)
-                fired |= set(leftover)
+        # Run order comes only from the declared run_stages, so a gate the
+        # model wires up but forgets to schedule (delay gates included)
+        # would otherwise never fire — or fire at some arbitrary implicit
+        # time. Refuse instead.
+        missing = [g for g in topo_order if g not in fired]
+        if missing:
+            raise ValueError(
+                f"run_stages omits linked gates {missing} — every gate, "
+                f"delay gates included, must be scheduled explicitly")
         return stages
 
+    def validate_wiring(self, config):
+        """A declared element the links never use is a modeling mistake —
+        catch it at load, loudly and all at once, rather than mid-run or
+        (worse) never: particles must feed a gate input, every gate must
+        have at least one input, and every link must target a declared
+        gate. Works from the raw config so it can run before anything is
+        built on top of the links."""
+        declared = set(config.gates.keys()) | set(config.get('delay_gates', []))
+        problems = []
+        for pname in config.particles.keys():
+            if pname not in self.links:
+                problems.append(
+                    f"particle '{pname}' is not linked to any gate input")
+        for src, dst in self.links.items():
+            dest_gate = dst.split(SEP)[0]
+            if dest_gate not in declared:
+                problems.append(
+                    f"link '{src}: {dst}' targets undeclared gate "
+                    f"'{dest_gate}'")
+        fed = {dst.split(SEP)[0] for dst in self.links.values()}
+        for gname in declared:
+            if gname not in fed:
+                problems.append(f"gate '{gname}' has no inputs")
+        if problems:
+            raise ValueError('bad model wiring:\n  ' + '\n  '.join(sorted(problems)))
+
     def load_elements(self, config):
-        links = config.links
-        log.debug(f'config.links:')
-        for k, v in config.links.items():
+        links = self.links
+        log.debug(f'links:')
+        for k, v in links.items():
             log.debug(f'   {k}: {v}')
         log.debug(' ')
         particles = config.particles
@@ -162,7 +199,11 @@ class Simulation:
             self.fredkin_gates[gname] = new_gate
             self.gates[gname] = new_gate
         for dgname in config.get('delay_gates', []):
-            dgate = DelayGate(dgname, self.sources[dgname], self.links[dgname])
+            # .get: a missing source/sink is reported by validate_wiring,
+            # which runs after loading and names every problem at once
+            dport = f'{dgname}{SEP}control'
+            dgate = DelayGate(dgname, self.sources.get(dport, ''),
+                              self.links.get(dport, ''))
             self.delay_gates[dgname] = dgate
             self.gates[dgname] = dgate
         for source, dest in links.items():

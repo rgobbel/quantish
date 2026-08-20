@@ -572,6 +572,35 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
             return sx_lo, sx_hi
         return None
 
+    # Entry corridors: the approach segment directly in front of every
+    # linked input port — y = the port's row, x spanning from the start of
+    # the port's entry gap to the port edge. A foreign stub parked along
+    # this segment walls off the port: the wire that must terminate there
+    # has no way in except on top of it. Reserved up front (keyed by the
+    # owning link, which is of course allowed to use its own corridor) so
+    # every other wire's stubs keep clear.
+    entry_reserves: list[tuple[tuple, float, float, float]] = []
+    for _src, _dst in parsed.links.items():
+        _d_xy, _d_col = dst_xy_col(circuit, L, _dst, delays)
+        if _d_xy is None or _d_col is None:
+            continue
+        _rx_lo, _ = gap_x_range(max(-1, _d_col - 1))
+        entry_reserves.append(((_src, _dst), _d_xy[1], _rx_lo, _d_xy[0]))
+
+    cur_link: list = [None]   # the link being routed, exempt from its own reserve
+
+    def reserve_blocked(y: float, x_lo: float, x_hi: float) -> bool:
+        """Does a horizontal at y over [x_lo, x_hi] sit along another
+        link's reserved entry corridor?"""
+        lo, hi = min(x_lo, x_hi), max(x_lo, x_hi)
+        for owner, ry, rx_lo, rx_hi in entry_reserves:
+            if owner == cur_link[0] or abs(ry - y) > 0.15:
+                continue
+            if rx_hi < lo + 0.05 or rx_lo > hi - 0.05:
+                continue
+            return True
+        return False
+
     # Minimum visual separation between two channels in the same gap.
     _CHANNEL_MIN_GAP = 0.30
 
@@ -630,6 +659,8 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
             if stub_y is None or stub_to is None:
                 return True
             if horizontal_blocked(stub_y, cx, stub_to) is not None:
+                return False
+            if reserve_blocked(stub_y, cx, stub_to):
                 return False
             # the stub must not cross another channel's corner: a vertical
             # (in any gap) whose x lies inside the stub's span and whose
@@ -707,6 +738,7 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
     sorted_links = sorted(parsed.links.items(), key=flexibility_key)
 
     for src, dst in sorted_links:
+        cur_link[0] = (src, dst)
         s_xy = src_xy(L, src, particles, delays)
         d_xy, d_col = dst_xy_col(circuit, L, dst, delays)
         if s_xy is None or d_xy is None:
@@ -721,7 +753,8 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
         # ---- Try straight horizontal. ----
         if (abs(sy - dy) < 0.05 and dx > sx
                 and not hit_horizontal(sy, sx + 0.01, dx - 0.01, exclude=skip_set)
-                and horizontal_blocked(sy, sx, dx) is None):
+                and horizontal_blocked(sy, sx, dx) is None
+                and not reserve_blocked(sy, sx, dx)):
             routes.append(Route([(sx, sy), (dx, dy)]))
             add_horizontal(sy, sx, dx)
             continue
@@ -766,7 +799,9 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
                        or hit_horizontal(dy, cx, dx - 0.02, exclude=skip_set)
                        or hit_vertical(cx, y_lo + 0.02, y_hi - 0.02, exclude=skip_set)
                        or horizontal_blocked(sy, sx, cx) is not None
-                       or horizontal_blocked(dy, cx, dx) is not None)
+                       or horizontal_blocked(dy, cx, dx) is not None
+                       or reserve_blocked(sy, sx, cx)
+                       or reserve_blocked(dy, cx, dx))
                 if not bad:
                     picked_cx = cx
                     break
@@ -892,8 +927,10 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
                 if ux_hi < x_span_lo - 0.05 or ux_lo > x_span_hi + 0.05:
                     continue
                 return False
-            # Also check generic horizontal segments tracked at this y.
-            return horizontal_blocked(ly, x_span_lo, x_span_hi) is None
+            # Also check generic horizontal segments tracked at this y,
+            # and reserved entry corridors of ports along the span.
+            return (horizontal_blocked(ly, x_span_lo, x_span_hi) is None
+                    and not reserve_blocked(ly, x_span_lo, x_span_hi))
 
         valid = []
         for ly in candidate_ys:
@@ -930,6 +967,8 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
             for yy, xa, xb in ((sy, sx, cx_), (dy, d_cx_, dx)):
                 lo, hi = min(xa, xb), max(xa, xb)
                 if horizontal_blocked(yy, lo, hi) is not None:
+                    return False
+                if reserve_blocked(yy, lo, hi):
                     return False
                 for chans in gap_channels_used.values():
                     for ux, uy_lo, uy_hi in chans:
@@ -1354,6 +1393,37 @@ def render_diagram(circuit: Circuit, dpi: int = 150,
         print(f"circuits_diagram: cache save failed: {exc}", file=sys.stderr)
 
     return img
+
+
+def render_diagram_svg(circuit: Circuit,
+                       angle_overrides: dict[str, object] | None = None) -> str | None:
+    """Generate / fetch-from-cache the SVG text for a circuit's topology.
+
+    Same contract as render_diagram (see there for angle_overrides), but
+    returns vector SVG markup, which stays crisp at any zoom.
+    """
+    if circuit.topology is None:
+        return None
+    layout = compute_layout(circuit)
+    routes = route_wires(circuit, layout)
+    tex = emit_tex(circuit, layout, routes, angle_overrides=angle_overrides)
+
+    cache_key_val = cache_key(circuit, angle_overrides)
+    tex_hash = hashlib.sha1(tex.encode()).hexdigest()[:10]
+    cached = CACHE_DIR / f"{cache_key_val}_{tex_hash}.svg"
+    if not cached.exists():
+        try:
+            CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception as exc:
+            print(f"circuits_diagram: cache dir failed: {exc}", file=sys.stderr)
+            return None
+        if not compile_tex_to_file(tex, cached):
+            return None
+    try:
+        return cached.read_text(encoding='utf-8')
+    except Exception:
+        cached.unlink(missing_ok=True)
+        return None
 
 
 def render_diagram_to_file(circuit: Circuit, out_path: Path | str,

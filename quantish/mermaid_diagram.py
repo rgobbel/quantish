@@ -159,11 +159,6 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
     phase_graphs = {}
     mermaid_links = []
 
-    def port_occupied(pos):
-        """After a run, whether any particle exited this port — link edges
-        from never-occupied ports are omitted as noise."""
-        return not has_run or sim.pos_value_str(pos) is not None
-
     for particle_name, particle in sim.particles.items():
         pname = particle_name.split('<')[0]
         particle_node = pmd.Node(id=pname, shape='stadium-shape')
@@ -231,7 +226,7 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
                 ctrl_input_node = mermaid_nodes[ctrl_source_name]
                 mermaid_links.append(pmd.Link(ctrl_input_node, ctrl_gate_node))
         dest_node = None
-        if control_pos in sim.links.keys() and port_occupied(control_pos):
+        if control_pos in sim.links.keys():
             dest = sim.links[control_pos]
             dest_parts = parse_position(dest)
             dest_gate_name, dest_wire = dest_parts
@@ -264,7 +259,7 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
                         mermaid_links.append(pmd.Link(switch_input_node, switch_node))
                 elif inout == 'out':
                     dest_node = None
-                    if switch_pos in sim.links.keys() and port_occupied(switch_pos):
+                    if switch_pos in sim.links.keys():
                         dest = sim.links[switch_pos]
                         dest_parts = parse_position(dest)
                         dest_gate_name, dest_wire = dest_parts
