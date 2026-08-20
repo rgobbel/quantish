@@ -46,8 +46,18 @@ def initialization():
                                       screen_curve, screen_positions,
                                       slit_sim)
 
-    return (DEFAULT_THETA_S, alt, math, mo, pd, random, sample_hits,
-            screen_curve, screen_positions, slit_sim)
+    return (
+        DEFAULT_THETA_S,
+        alt,
+        math,
+        mo,
+        pd,
+        random,
+        sample_hits,
+        screen_curve,
+        screen_positions,
+        slit_sim,
+    )
 
 
 @app.cell(hide_code=True)
@@ -84,9 +94,17 @@ def _(mo):
 
 @app.cell(hide_code=True)
 def _(mo):
-    mo.accordion({'### The analogy, piece by piece': mo.md(r"""
+    # Readability overrides for the comparison table: black text instead
+    # of the theme's gray (KaTeX included), slightly larger headers.
+    _table_css = mo.Html("""<style>
+    .prose table, .prose table td, .prose table .katex { color: #000; }
+    .prose table thead th { color: #000; font-size: 1.08em; }
+    .prose table .katex { font-size: 1.06em; }
+    </style>""")
+    mo.vstack([_table_css, mo.accordion(
+        {'### Quantish vs. real-world: A step-by-step explanation': mo.md(r"""
     | real-world experiment | quantish circuit |
-    |---|---|
+    |---|:---|
     | a photon or electron, fired at the barrier | particle $p_1$, weight 1 |
     | the two slits | the two switch-wire outputs of gate $g_1$ (angle 45°) — the **left arm** (upper wire) and **right arm** (lower wire) |
     | passing through both slits at once | $g_1$ splits $p_1$'s world into superposed configuration-space points, one per arm, each carrying part of the weight |
@@ -102,14 +120,14 @@ def _(mo):
     arm's throughput (a $\cos^2$ modulation that would fake fringes with
     one slit open). Path-length difference is therefore modeled where it
     physically lives — in the flight from the slits to the pixel.
-    """)})
+    """)})])
     return
 
 
 @app.cell(hide_code=True)
 def _(DEFAULT_THETA_S, math, mo):
     _deg = math.degrees(DEFAULT_THETA_S)
-    mo.accordion({'### Exactly how each curve is computed': mo.md(rf"""
+    mo.accordion({'### How each curve is computed': mo.md(rf"""
     **One engine run per condition.** The engine propagates $p_1$
     (weight 1) through the circuit exactly. At $g_1$ (angle
     $\theta = {_deg:.0f}°$) the split rule produces the two arms with
@@ -143,7 +161,7 @@ def _(DEFAULT_THETA_S, math, mo):
       classes, so the arms cannot share a class; the cross term is
       structurally impossible and
       $I = \lvert a_{{\text{{left}}}}\rvert^2 +
-      \lvert a_{{\text{{right}}}}\rvert^2 = 1$, flat — the classical
+      \lvert a_{{\text{{right}}}}\rvert^2 = 1$: flat — the classical
       sum, with both slits open.
     """)})
     return

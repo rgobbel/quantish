@@ -1,8 +1,8 @@
-"""The double-slit experiment, built from quantish Fredkin gates.
+"""This module implements the classic double-slit experiment, built from quantish Fredkin gates.
 
-Per *Good and Real* (p. 200), the two slits are the two switch-wire inputs
-of a recombining gate, and blocking a slit is diverting an arm away
-(figs. 4.13/4.14 in the 2026 numbering). Here the apparatus is just the
+As described in *Good and Real* (p. 200), the two slits are the two switch-wire inputs
+of a recombining gate. Blocking a slit is diverting away one of the output wires
+(figures 4.13 in the 2006 edition, 4.14 in the 2026 numbering). Here the apparatus is just the
 barrier:
 
     p1 -> g1 (split, theta_s) -> upper arm  = slit 1
@@ -10,13 +10,13 @@ barrier:
 
 and the flight from the slits to a screen position x is idealized (the
 slits are infinitely narrow, so there is no diffraction envelope). Each
-screen pixel acts as a remerge gate MATCHED to the split — in quantish,
-interference only ever happens at a recombining gate (fig 4.13; splits
+screen pixel acts as a remerge gate *matched* to the split — in quantish,
+interference only ever happens at a recombining gate (fig 4.13: splits
 at rate sin^2(Q1-Q2)) — so each arm's sign components (the split rule's
 same-sign and flipped-sign pieces) are summed coherently into one arm
 amplitude, exact from the engine's configuration-space points; the path-length difference
 to x enters as a relative phase between the arms; and arms interfere
-only within a class of configuration-space points that agree in every OTHER particle:
+only within a class of configuration-space points that agree in every *other* particle:
 
     I(x) = sum over classes |sum over arms a_arm * e^(i*phi_arm(x))|^2
 
@@ -32,8 +32,8 @@ The three regimes then need no case analysis:
   out, I = |a_u|^2 + |a_l|^2 = the classical sum, with nothing blocking
   either path.
 
-Why the sweep can't be a gate angle: quantish has no pure phase-shifter.
-Any gate offset delta multiplies single-path throughput by cos-squared
+The sweep cannot be a gate angle because quantish has no pure phase-shifter.
+Any gate offset delta multiplies single-path throughput by cosine-squared
 terms too, so a swept recombination angle shows "fringes" even with one
 slit open — a basis-rotation artifact, not interference. And a bare
 position-detecting screen with NO remerge would show no fringes at all:

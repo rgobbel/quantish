@@ -29,8 +29,12 @@ from quantish.util import SEP, Sign, wstr
 
 log = logging.getLogger('quantish')
 
-# a GatePort is a specific input or output wire on a specific gate
-@dataclass(slots=True)
+# a GatePort is a specific input or output wire on a specific gate.
+# NOTE: no slots=True on these dataclasses — dataclass(slots=True)
+# RE-CREATES the class, and marimo's module autoreload then leaves the
+# generated __init__ bound to a stale incarnation ("descriptor 'gate'
+# for 'GatePort' objects doesn't apply to a 'GatePort' object").
+@dataclass
 class GatePort:
     gate: Optional[str] = None
     port: Optional[str] = None
@@ -47,7 +51,7 @@ class GatePort:
 NOWHERE: Final[GatePort] = GatePort(None, None)
 
 # positions are connections between gates
-@dataclass(slots=True)
+@dataclass
 class Position:
     # origin and endpoint are each a GatePort or None
     origin: Optional[GatePort] = None
@@ -71,7 +75,7 @@ class Position:
 # for each particle, a position and a sign. A PCoordinate is one particle's
 # pair of those dimension values. Coordinates are immutable by convention —
 # the runner never mutates one, it creates new ones.
-@dataclass(slots=True, eq=False)
+@dataclass(eq=False)
 class PCoordinate:
     name: str
     sign: Sign
@@ -260,9 +264,9 @@ class ConfigSpaceRunner:
         parts = dest_str.split(SEP)
         return GatePort(*parts) if len(parts) == 2 else GatePort(parts[0], None)
 
-    def particle_factors(self, cs_point: ConfigSpacePoint, pname: str,
-                         stage_gates: Dict[str, FredkinGate]) -> list[tuple[PCoordinate, Optional[Complex]]]:
-        """Alternatives for one particle of one configuration-space point in the current
+    def particle_splits(self, cs_point: ConfigSpacePoint, pname: str,
+                        stage_gates: Dict[str, FredkinGate]) -> list[tuple[PCoordinate, Optional[Complex]]]:
+        """Split components for one particle of one configuration-space point in the current
         stage, as (new coordinate, weight component) pairs. A component of
         None means the weight is unchanged (passthrough)."""
         coord = cs_point.coords[pname]
@@ -351,7 +355,7 @@ class ConfigSpaceRunner:
                     gate = endpoint.gate if endpoint is not None else None
                     return (stage.index(gate) if gate in stage_gates else len(stage),
                             pname)
-                per_particle = [self.particle_factors(cs_point, pname, stage_gates)
+                per_particle = [self.particle_splits(cs_point, pname, stage_gates)
                                 for pname in sorted(cs_point.coords, key=stage_rank)]
                 branches = [(successor_tuple,
                              cs_point.weight * qn.prod(x[1] or 1 for x in successor_tuple))
