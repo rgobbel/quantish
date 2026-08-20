@@ -87,7 +87,7 @@ class TestThetaRebinding(unittest.TestCase):
         models = Path(__file__).resolve().parents[1] / 'models'
         with open(models / 'defaults.yaml') as f:
             cfg = yaml.safe_load(f)
-        with open(models / 'gr2026' / 'fig417.yaml') as f:
+        with open(models / 'gr2026' / 'fig4.17.yaml') as f:
             cfg.update(yaml.safe_load(f))
         cfg['loglevel'] = 'error'
         cfg['symbolic'] = False

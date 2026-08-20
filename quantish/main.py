@@ -49,7 +49,8 @@ def main():
     global log
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
     parser.add_argument('-c', '--config', required=True, help="REQUIRED Path to YAML configuration file")
-    parser.add_argument('--configs-dir', default='models', help='Directory for model files')
+    parser.add_argument('--config-top', default='models', help='Top-level directory for model files')
+    parser.add_argument('--config-sub', default='gr2026', help='Subdirectory for model files')
     parser.add_argument('--use-defaults', action=BooleanOptionalAction, default=True,
                         help='Load default values from defaults.yaml before individual model files')
     parser.add_argument('-s', '--simulate', action=BooleanOptionalAction, default=True, help='Run simulation')
@@ -97,10 +98,14 @@ def main():
                         help='Measure discrepancy for EPR experiment. Assumes a network consistent with book figure 4.16')
     parser.add_argument('--full-stats', action='store_true', help='Include particle names and probabilities in results')
     args = parser.parse_args()
-    config_path = Path(args.configs_dir, args.config).with_suffix('.yaml')
-    config_dir = args.configs_dir
+    # append rather than with_suffix: model names like fig4.17 have a
+    # dotted stem that with_suffix would truncate
+    config_path = Path(args.config_top, args.config_sub, args.config)
+    if config_path.suffix != '.yaml':
+        config_path = config_path.with_name(config_path.name + '.yaml')
+    config_top = args.config_top
     if args.use_defaults:
-        with open(Path(config_dir, 'defaults.yaml'), 'r') as f:
+        with open(Path(config_top, 'defaults.yaml'), 'r') as f:
             config_dict = yaml.safe_load(f)
     else:
         config_dict = {}
@@ -160,18 +165,16 @@ def main():
     save_ll = log.getEffectiveLevel()
     sim = Simulation(config)
     if args.tikz_diagram:
+        tikz_path = Path(args.diagram_dir, args.config + '_tikz.' + args.tikz_diagram)
         from quantish.tikz_diagram import render_from_simulation
-        tikz_path = Path(args.diagram_dir, args.tikz_diagram)
-        if not tikz_path.suffix:
-            tikz_path = tikz_path.with_suffix('.pdf')
         log.info(f'Rendering TikZ circuit diagram to {tikz_path}')
         if not render_from_simulation(sim, tikz_path):
             log.warning(f'TikZ diagram render failed (see stderr)')
     if 'no_diagram' not in args:
         if args.diagram is None:
-            dpath = Path(args.diagram_dir, args.config).with_suffix('.mmd')
+            dpath = Path(args.diagram_dir, args.config + '.mmd')
         else:
-            dpath = Path(args.diagram_dir, args.diagram, ).with_suffix('.mmd')
+            dpath = Path(args.diagram_dir, args.diagram + '.mmd')
         if 'diagram_when' in args:
             if args.diagram_when in ('before', 'both'):
                 before_path = dpath.with_stem(dpath.stem+'_before').with_suffix('.mmd')
@@ -323,7 +326,7 @@ def main():
             log.setLevel(logging.WARN)
             if args.network_graph:
                 if dpath is None:  # diagrams disabled; still need a stem for the graph PDF
-                    dpath = Path(args.diagram_dir, args.config).with_suffix('.mmd')
+                    dpath = Path(args.diagram_dir, args.config + '.mmd')
                 NetworkGraph(all_points, sim, dpath, show=args.show_graph)
 
     if 'no_diagram' not in args:

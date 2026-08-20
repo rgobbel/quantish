@@ -24,7 +24,7 @@ def run_sim(name):
     from quantish.simulation import Simulation
     with open(MODELS_DIR / 'defaults.yaml') as f:
         config = yaml.safe_load(f)
-    with open((MODELS_DIR / name).with_suffix('.yaml')) as f:
+    with open(MODELS_DIR / f'{name}.yaml') as f:
         config.update(yaml.safe_load(f))
     config['loglevel'] = 'warning'
     sim = Simulation(Addict(config))
@@ -56,7 +56,7 @@ class TestEPRConventions(unittest.TestCase):
         # discrepancy from the final worlds must match sin²(Q5+Q6) with the
         # parity (position⊕sign) outcome, for whatever the YAML says.
         from quantish.epr import expected_discrepancy, is_two_stage
-        sim = run_sim('gr2006/fig416')
+        sim = run_sim('gr2006/fig4.16')
         self.assertFalse(is_two_stage(sim))
         predicted = float(expected_discrepancy(sim))
         self.assertAlmostEqual(exact_discrepancy(sim, False), predicted, places=9)
@@ -77,7 +77,7 @@ class TestEPRConventions(unittest.TestCase):
             self.assertEqual(complex(deepcopy(val)), complex(val))
         CalcMode.default('Float')
         qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
-        sim = run_sim('gr2026/fig417')
+        sim = run_sim('gr2026/fig4.17')
         # g5's declared angle is q5 = 0; storing the same value as a qnumber
         # Real exercises the deepcopy path without perturbing the circuit
         # (g7/g8 are owned by run_pair's theta1/theta2 rebinding).
@@ -91,7 +91,7 @@ class TestEPRConventions(unittest.TestCase):
         # and CHSH reaches 1 + √2 on the canonical set {0, π/8, π/4}.
         import math
         from quantish.epr import run_epr_experiment
-        sim = run_sim('gr2026/fig417')
+        sim = run_sim('gr2026/fig4.17')
         results = run_epr_experiment(sim, n_trials=0)
         for cell in results['grid'].values():
             self.assertAlmostEqual(cell['exact'], cell['analytical'], places=9)
@@ -107,7 +107,7 @@ class TestEPRConventions(unittest.TestCase):
         # the final worlds must match sin²((Q5+Q6)−(Q7+Q8)) for whatever
         # the YAML currently says, with the plain-position outcome.
         from quantish.epr import expected_discrepancy, is_two_stage
-        sim = run_sim('gr2026/fig417')
+        sim = run_sim('gr2026/fig4.17')
         self.assertTrue(is_two_stage(sim))
         predicted = float(expected_discrepancy(sim))
         self.assertAlmostEqual(exact_discrepancy(sim, True), predicted, places=9)

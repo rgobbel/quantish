@@ -17,10 +17,10 @@ Follow the book's terms. A **CS point** (configuration-space point, `ConfigSpace
 The main entry point is `quantish/main.py`. Run simulations using:
 
 ```bash
-python -m quantish.main -c <model_name>   # e.g. -c gr2026/fig417
+python -m quantish.main -c <model_name>   # e.g. -c gr2026/fig4.17
 ```
 
-Model files live in the `models/` directory, split by book edition: `gr2006/` (2006 published figure numbers), `gr2026/` (2026 revised-draft numbers), and `extras/` (circuits with no book figure). See `models/README.md` for the figure mapping (e.g., `gr2026/fig417.yaml` is the EPR experiment).
+Model files live in the `models/` directory, split by book edition: `gr2006/` (2006 published figure numbers), `gr2026/` (2026 revised-draft numbers), and `extras/` (circuits with no book figure). See `models/README.md` for the figure mapping (e.g., `gr2026/fig4.17.yaml` is the EPR experiment).
 
 ### Key Command-Line Options
 
@@ -162,7 +162,7 @@ Configuration options (usually in common.yaml):
 ## Notes for Development
 
 - When modifying gate behavior, test with both symbolic and numeric modes
-- EPR experiments (gr2026/fig417.yaml) are particularly sensitive to angle settings
+- EPR experiments (gr2026/fig4.17.yaml) are particularly sensitive to angle settings
 - The simulation supports sampling mode for statistical analysis of quantum-like behavior
 - Mermaid diagrams can be generated before/after simulation to visualize gate networks
 - Log output is controlled by `--loglevel` and provides detailed execution traces in debug mode

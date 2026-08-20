@@ -28,7 +28,7 @@ def run_sim(name):
     from quantish.simulation import Simulation
     with open(MODELS_DIR / 'defaults.yaml') as f:
         config = yaml.safe_load(f)
-    with open((MODELS_DIR / name).with_suffix('.yaml')) as f:
+    with open(MODELS_DIR / f'{name}.yaml') as f:
         config.update(yaml.safe_load(f))
     config['loglevel'] = 'warning'
     sim = Simulation(Addict(config))
@@ -50,7 +50,7 @@ class TestMonteCarlo(unittest.TestCase):
 
     def test_terminal_matches_exact_distribution(self):
         from quantish.montecarlo import predicted_distribution, sample_terminal
-        sim = run_sim('gr2026/fig410')
+        sim = run_sim('gr2026/fig4.10')
         predicted = predicted_distribution(sim.result_space)
         tally = sample_terminal(sim.result_space, N_TRIALS, random.Random(SEED))
         self.assertEqual(sum(tally.values()), N_TRIALS)
@@ -60,7 +60,7 @@ class TestMonteCarlo(unittest.TestCase):
         # fig49 has no world merging, so per-stage sampling is equivalent to
         # sampling the final superposition.
         from quantish.montecarlo import predicted_distribution, sample_paths
-        sim = run_sim('gr2026/fig410')
+        sim = run_sim('gr2026/fig4.10')
         predicted = predicted_distribution(sim.result_space)
         tally, dead_ends = sample_paths(sim.initial_point, len(sim.run_stages),
                                         N_TRIALS, random.Random(SEED))
@@ -75,7 +75,7 @@ class TestMonteCarlo(unittest.TestCase):
         # contribution data the path sampler walks.
         from quantish.montecarlo import (predicted_distribution,
                                            sample_paths, sample_terminal)
-        sim = run_sim('gr2026/fig412')
+        sim = run_sim('gr2026/fig4.12')
         predicted = predicted_distribution(sim.result_space)
         terminal = sample_terminal(sim.result_space, N_TRIALS, random.Random(SEED))
         self.assertLessEqual(tvd(terminal, predicted, N_TRIALS), NOISE_TOLERANCE)

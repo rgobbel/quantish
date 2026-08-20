@@ -37,18 +37,18 @@ from quantish.qnumber import CalcMode
 WEIGHT_TOLERANCE = 1e-9
 
 GOLDEN_MODELS = [
-    'gr2026/fig45',
-    'gr2026/fig47',
-    'gr2026/fig49',
-    'gr2026/fig410',
-    'gr2026/fig412',
-    'gr2026/fig413_full',
-    'gr2026/fig415',
-    'gr2026/fig415x',
-    'gr2026/fig416',
-    'gr2026/fig416x',
-    'gr2026/fig417',
-    'gr2006/fig416',
+    'gr2026/fig4.05',
+    'gr2026/fig4.07',
+    'gr2026/fig4.09',
+    'gr2026/fig4.10',
+    'gr2026/fig4.12',
+    'gr2026/fig4.13_full',
+    'gr2026/fig4.15',
+    'gr2026/fig4.15x',
+    'gr2026/fig4.16',
+    'gr2026/fig4.16x',
+    'gr2026/fig4.17',
+    'gr2006/fig4.16',
     'extras/zero_control',
 ]
 
@@ -60,7 +60,7 @@ def run_model(name):
     from quantish.simulation import Simulation
     with open(MODELS_DIR / 'defaults.yaml') as f:
         config = yaml.safe_load(f)
-    with open((MODELS_DIR / name).with_suffix('.yaml')) as f:
+    with open(MODELS_DIR / f'{name}.yaml') as f:
         config.update(yaml.safe_load(f))
     config['loglevel'] = 'warning'
     sim = Simulation(Addict(config))
