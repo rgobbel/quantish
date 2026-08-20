@@ -2,19 +2,19 @@
 
 Replaces the old spacewalk module. Each trial produces one observed outcome,
 as a real-world run of the experiment would; tabulating many trials
-approximates the exact CS point probabilities.
+approximates the exact configuration-space point probabilities.
 
 Two sampling modes:
 
 terminal
-    Draw a final CS point with probability |weight|^2 (renormalized). The
+    Draw a final configuration-space point with probability |weight|^2 (renormalized). The
     superposition evolves undisturbed until the end, so interference is
     fully preserved and observed frequencies converge on point.probability.
     This is the faithful simulation of a real experiment.
 
 path
     Walk the full quantish state's DAG one stage at a time: from the current
-    CS point, choose a successor with probability proportional to
+    configuration-space point, choose a successor with probability proportional to
     |the amplitude this world contributed to it|^2. Each trial yields a
     full world-line (a story of the run), but choosing per stage amounts to
     collapsing at every stage: on circuits where worlds interfere, path
@@ -43,7 +43,7 @@ def predicted_distribution(result_space) -> dict:
 
 
 def sample_terminal(result_space, n_trials: int, rng: random.Random) -> Counter:
-    """Draw n_trials outcomes from the final CS points, |weight|^2 each."""
+    """Draw n_trials outcomes from the final configuration-space points, |weight|^2 each."""
     points = list(result_space.index.values())
     weights = [_prob(p.weight) for p in points]
     picks = rng.choices(points, weights=weights, k=n_trials)

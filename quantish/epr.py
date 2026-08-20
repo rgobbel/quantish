@@ -69,7 +69,7 @@ def outcome(coord, two_stage: bool) -> str:
 
 def classify(point, two_stage: bool) -> str:
     """'same' / 'diff' (the two measured particles' outcomes agree /
-    disagree) for CS points where the coupling particle exited g4 on the
+    disagree) for configuration-space points where the coupling particle exited g4 on the
     upper wire, else 'uncoupled'.
 
     The coupling particle is identified structurally — the one whose final
@@ -123,7 +123,7 @@ def run_pair(sim, theta1, theta2, n_trials: int = 0, rng=None) -> dict:
 
     Rebuilds the simulation with the measurement gates overridden per the
     module-docstring convention and returns the conditional discrepancy:
-    'exact' from the final CS points, 'sampled' from n_trials terminal draws
+    'exact' from the final configuration-space points, 'sampled' from n_trials terminal draws
     (when n_trials > 0), 'analytical' = sin²(θ1−θ2), and 'classical' — the
     linear hidden-variable prediction 2|θ1−θ2|/π.
     """

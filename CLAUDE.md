@@ -8,7 +8,7 @@ Quantish Physics is a simulation of "quantish" physics from Chapter 4 of *Good a
 
 ### Terminology
 
-Follow the book's terms. A **CS point** (configuration-space point, `ConfigSpacePoint`, `cs_point` in code — the book calls it a *classical state*) is a full assignment of a position and sign to every particle, with one complex weight. The **quantum state** (the full quantish world) is the weighted superposition of CS points. Avoid the bare word "world" for either. The squared magnitudes of the CS points' weights always sum to 1 (the `check_total_probability` invariant), and a CS point's |weight|² is its probability of being the successor to its immediate predecessor. The four split values a gate applies to a switch-wire particle are its **components** — c2a, c2b, c3a, c3b in the book's order (cos²θ, i·sinθcosθ, sin²θ, −i·sinθcosθ); per-particle displays label them by particle, not "factor".
+Follow the book's terms. A **configuration-space point** (`ConfigSpacePoint` and `cs_point` in code — the book calls it a *classical state*) is a full assignment of a position and sign to every particle, with one complex weight. Write the term out in prose and displays; the abbreviation "CS point" is reserved for variable names (`cs_point`) and very informal communication. The **quantum state** (the full quantish world) is the weighted superposition of configuration-space points. Avoid the bare word "world" for either. The squared magnitudes of the configuration-space points' weights always sum to 1 (the `check_total_probability` invariant), and a configuration-space point's |weight|² is its probability of being the successor to its immediate predecessor. The four split values a gate applies to a switch-wire particle are its **components** — c2a, c2b, c3a, c3b in the book's order (cos²θ, i·sinθcosθ, sin²θ, −i·sinθcosθ); per-particle displays label them by particle, not "factor".
 
 ## Development Commands
 
@@ -146,7 +146,7 @@ Configuration options (usually in common.yaml):
   - `gate.py`: Fredkin gate implementation
   - `particle.py`: Particle representation
   - `qnumber.py`, `calc_mode.py`, `angle.py`: Unified number system
-  - `config_space.py`: CS points, gate state, wire definitions
+  - `config_space.py`: configuration-space points, gate state, wire definitions
   - `epr.py`: EPR experiment sweeps and statistics
   - `montecarlo.py`: Monte Carlo sampling mode
   - `mermaid_diagram.py`, `network_graph.py`, `tikz_diagram.py`: Diagrams

@@ -1,7 +1,7 @@
 """Quantish Physics — marimo front-end.
 
 Pick a model, adjust gate angles with sliders, and everything downstream
-reacts: exact final CS points (LaTeX weights), marginal summaries, circuit
+reacts: exact final configuration-space points (LaTeX weights), marginal summaries, circuit
 diagrams (TikZ + Mermaid), the weight-evolution graph, Monte Carlo
 sampling, the Bell/CHSH experiment, and the four-way weight-split
 explorer.
@@ -274,7 +274,7 @@ def _(mo, mode_pick, model_pick, run_btn, build_sim):
         return mo.md(
             f"Ran **{sim.title}** ({mode_pick.value} mode) — {angles}; "
             f"{len(sim.run_stages)} steps, "
-            f"{len(sim.result_space.index)} final CS point(s), "
+            f"{len(sim.result_space.index)} final configuration-space point(s), "
             f"total probability "
             f"{sum(float(p.probability) for p in sim.result_space.index.values()):.6f}")
 
@@ -333,23 +333,23 @@ def _(NetworkGraph, mo, sim):
         except Exception as exc:  # noqa: BLE001 — surface, don't crash the app
             return mo.md(f'_network graph failed: {exc}_')
 
-    mo.accordion({'## Weight evolution (CS points × stages)': mo.vstack([_()])})
+    mo.accordion({'## Weight evolution (configuration-space points × stages)': mo.vstack([_()])})
     return
 
 
 @app.cell(hide_code=True)
 def _(GatePort, math_weight, md_table, mo, qn, short_config, sim):
     # Tabular twin of the weight-evolution graph: per stage, one row per
-    # parent→child branch — the input CS point and its weight, the
+    # parent→child branch — the input configuration-space point and its weight, the
     # per-particle components the gate applied (cos²θ, ±i·sinθcosθ, sin²θ),
-    # the branch amplitude, and the output CS point's total weight. Where
-    # branch w ≠ point w, interfering branches merged into that CS point.
+    # the branch amplitude, and the output configuration-space point's total weight. Where
+    # branch w ≠ point w, interfering branches merged into that configuration-space point.
     def _():
         def label(p):
             return f'`{short_config(p, key=sim.coord_sort_key).replace("|", " ")}`'
 
         def particle_cell(w, parent, contrib):
-            # A merged CS point stores only its FIRST branch's per-particle
+            # A merged configuration-space point stores only its FIRST branch's per-particle
             # components; for other branches show just the branch's overall
             # multiplier Π (recovered as branch w / input w).
             facts = {name: f for name, f in w.particles.items() if f is not None}
@@ -369,7 +369,7 @@ def _(GatePort, math_weight, md_table, mo, qn, short_config, sim):
                 return 'Π: ?'
 
         def controlled_gates(cs_point, stage):
-            # per-CS-point positional check, as in the engine
+            # per-configuration-space point positional check, as in the engine
             return [g for g in stage
                     if any(c.position.endpoint == GatePort(g, 'control')
                            for c in cs_point.coords.values())]
@@ -397,8 +397,8 @@ def _(GatePort, math_weight, md_table, mo, qn, short_config, sim):
         for step in sorted(by_step):
             points = sorted(by_step[step], key=sim.cs_point_sort_key)
             if step == 0:
-                sections['Step 0 — initial CS point'] = mo.md(md_table(
-                    ['CS point', 'weight $w$'],
+                sections['Step 0 — initial configuration-space point'] = mo.md(md_table(
+                    ['configuration-space point', 'weight $w$'],
                     [(label(w), math_weight(w.weight)) for w in points]))
                 continue
             stage = sim.run_stages[step - 1]
@@ -436,10 +436,10 @@ def _(GatePort, math_weight, md_table, mo, qn, short_config, sim):
             # with one newline, so add the other after the header text
             sections[f'Step {step} — {", ".join(stage)}'] = mo.md(
                 control_header(stage, parents) + '\n' +
-                md_table(['input CS point', 'control', '$w_{in}$', 'particles',
-                          'branch $w$', 'output CS point', '$w_{out}$'], rows) +
+                md_table(['input configuration-space point', 'control', '$w_{in}$', 'particles',
+                          'branch $w$', 'output configuration-space point', '$w_{out}$'], rows) +
                 f'\n\ntotal probability after step: {total:.6f}')
-        return mo.accordion({'## Weight evolution table (CS points)':
+        return mo.accordion({'## Weight evolution table (configuration-space points)':
                              mo.accordion(sections, multiple=True, lazy=True)})
 
     _()
@@ -491,7 +491,7 @@ def _(math_weight, md_table, mo, phase_deg, short_config, sim):
             f'${phase_deg(p.weight):+.1f}º$',
         ) for p in sorted(sim.result_space.index.values(),
                           key=sim.cs_point_sort_key)]
-        return mo.accordion({'## Final CS points\n': mo.md(md_table(
+        return mo.accordion({'## Final configuration-space points\n': mo.md(md_table(
             ['configuration', 'weight $w$', r'$\lvert w\rvert^2$', 'phase'],
             rows))})
 
@@ -502,7 +502,7 @@ def _(math_weight, md_table, mo, phase_deg, short_config, sim):
 @app.cell(hide_code=True)
 def _(md_table, mo, sim):
     # Marginal in the statistics sense: each row sums |w|² over every
-    # final CS point containing that coordinate — the chance of finding that
+    # final configuration-space point containing that coordinate — the chance of finding that
     # particle, with that sign, at that port, regardless of where the
     # other particles ended up. Rows follow gate evaluation order (upper
     # before lower, + before −), so a port's +/− pair sits together and
@@ -520,7 +520,7 @@ def _(md_table, mo, sim):
                                          key=lambda kv: sim.coord_sort_key(kv[1][0]))]
         return mo.accordion({
             '## Marginal probabilities (one coordinate at a time)':
-                mo.md(r'Each row sums $\lvert w\rvert^2$ over every final CS point '
+                mo.md(r'Each row sums $\lvert w\rvert^2$ over every final configuration-space point '
                       'in which that particle, with that sign, sits at that '
                       'port — its probability there *regardless of where the '
                       'other particles ended up* (the marginal over the rest '
@@ -558,15 +558,15 @@ def _(mo):
     ## Monte Carlo sampling
     Optional sampled trials on top of the exact run above. Two modes:
 
-    - **terminal** — each trial draws one final CS point from the
+    - **terminal** — each trial draws one final configuration-space point from the
       evolved superposition with probability $\lvert w\rvert^2$. This is
       the faithful simulation of a real experiment: interference stays
       intact until observation, and frequencies converge on the exact
       values as trials grow.
-    - **path** — each trial walks the CS-point graph one stage at a
+    - **path** — each trial walks the configuration-space point graph one stage at a
       time, picking a successor in proportion to the amplitude it
       received. That yields a world-line story per trial, but choosing
-      per stage amounts to *collapsing at every stage*: where CS points
+      per stage amounts to *collapsing at every stage*: where configuration-space points
       interfere, path statistics legitimately diverge from the
       exact values — the divergence measures how much interference
       matters.
@@ -631,7 +631,7 @@ def _(
                              f'{freq:.4f}', f'{pred.get(key, 0.0):.4f}'))
             sections.append(f'**{label}** — {note}; '
                             f'total variation distance {tvd / 2:.4f}\n\n' +
-                            md_table(['CS point', 'count', 'freq', 'exact'],
+                            md_table(['configuration-space point', 'count', 'freq', 'exact'],
                                      rows))
         return mo.md('\n\n'.join(sections))
 
@@ -733,7 +733,7 @@ def _(epr_angle_elems, epr_button, epr_trials, mo, sim_model, supports_epr):
     else is read as a symbolic radian expression (`pi/8`, `rad(30)`).
 
     With trials = 0 (the default) each cell uses only the exact final
-    CS points — fast. Setting trials adds per-cell Monte Carlo sampling on
+    configuration-space points — fast. Setting trials adds per-cell Monte Carlo sampling on
     top. **Symbolic mode multiplies the cost**: nine exact symbolic runs
     with non-special angles may take several seconds even at 0 trials.
     """),
@@ -1239,7 +1239,7 @@ def _(cmath, mo, qn):
 
     def md_table(headers, rows) -> str:
         # NB: markdown needs a blank line before a table, and literal '|'
-        # inside cells (CS-point keys use it as a separator) must be escaped
+        # inside cells (configuration-space point keys use it as a separator) must be escaped
         # or they read as column breaks.
         def cell(c):
             return str(c).replace('|', r'\|')

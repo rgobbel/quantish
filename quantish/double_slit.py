@@ -14,9 +14,9 @@ screen pixel acts as a remerge gate MATCHED to the split — in quantish,
 interference only ever happens at a recombining gate (fig 4.13; splits
 at rate sin^2(Q1-Q2)) — so each arm's sign components (the split rule's
 same-sign and flipped-sign pieces) are summed coherently into one arm
-amplitude, exact from the engine's CS points; the path-length difference
+amplitude, exact from the engine's configuration-space points; the path-length difference
 to x enters as a relative phase between the arms; and arms interfere
-only within a class of CS points that agree in every OTHER particle:
+only within a class of configuration-space points that agree in every OTHER particle:
 
     I(x) = sum over classes |sum over arms a_arm * e^(i*phi_arm(x))|^2
 

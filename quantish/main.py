@@ -223,7 +223,8 @@ def main():
             show_points(final_points, indent='   ')
             log.info(' ')
             nonzeros = final_points  # zero-weight worlds were already dropped by the runner
-            # marginal probabilities: each config space point contributes its |weight|^2 to
+            # marginal probabilities: each configuration-space point
+            # contributes its |weight|^2 to
             # every coordinate it assigns
             try:
                 pkey_summary = defaultdict(float)

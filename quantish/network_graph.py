@@ -1,6 +1,6 @@
-"""CS-point evolution DAG of a simulation, rendered with Vega-Altair.
+"""Configuration-space point evolution DAG of a simulation, rendered with Vega-Altair.
 
-Each glyph is one CS point: a stack of cells, one per particle
+Each glyph is one configuration-space point: a stack of cells, one per particle
 (hue = particle identity, brightness = magnitude, dark = 0, light = 1;
 fine black diagonal stripes = nothing happened to it). Arrows show
 successor relationships and respect particle identity: they leave only the
@@ -23,9 +23,9 @@ Columns, left to right:
   settles in the stage column right after the one that produced it, with
   nothing coming out of it.
 
-CS points appear in the canonical display order (gate, then port with
+configuration-space points appear in the canonical display order (gate, then port with
 upper first, then sign with + first — sim.cs_point_sort_key). Cancelled
-and zero-weight CS points do not appear at all. Gates are implicit: the
+and zero-weight configuration-space points do not appear at all. Gates are implicit: the
 focus is stages and their results.
 """
 import colorsys
@@ -461,7 +461,7 @@ class NetworkGraph:
         cells['fx1'] = cells['x1'] - cells['bx']
         cells['fy0'] = cells['y0'] + cells['by']
         cells['fy1'] = cells['y1'] - cells['by']
-        tooltip = [alt.Tooltip('cs_point:N', title='CS point'),
+        tooltip = [alt.Tooltip('cs_point:N', title='configuration-space point'),
                    alt.Tooltip('particle:N', title='particle'),
                    alt.Tooltip('value:N', title='value'),
                    alt.Tooltip('pr:N', title='Pr(point)')]

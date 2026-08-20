@@ -47,7 +47,7 @@ gate_fields = {'upper': DiagramFields(field='upper', label='UPPER'),
 #     return final_chart
 
 def short_config(point, key=None):
-    """Compact one-line label for a CS point's coordinates: sign, gate, and the
+    """Compact one-line label for a configuration-space point's coordinates: sign, gate, and the
     port initial for each particle, e.g. '+g2c|+g2l|+g3u'. Coordinates
     appear in particle-name order unless a sort key (e.g.
     sim.coord_sort_key) is supplied."""

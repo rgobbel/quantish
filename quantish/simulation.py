@@ -54,7 +54,7 @@ class Simulation:
                 f"run order must be explicit")
         self.run_stages = self.grouped_run_stages(self.declared_run_stages)
         self.run_order = flat_list(self.run_stages)
-        # the step whose CS points show a gate's just-produced outputs
+        # the step whose configuration-space points show a gate's just-produced outputs
         self.gate_step = {g: i + 1 for i, stage in enumerate(self.run_stages) for g in stage}
         self.particles = Addict()
         self.fredkin_gates = Addict()
@@ -230,9 +230,10 @@ class Simulation:
                 self.initial_coords[source] = pcoord
                 log.debug(f'PARTICLE {particle}, INITIAL POSITION: {pcoord}')
         log.debug(' ')
-        # the initial config space point's weight is the product of the configured particle weights
+        # the initial configuration-space point's weight is the product of
+        # the configured particle weights
         # absent (zero-weight) particles route gates by their absence but
-        # must not zero the initial CS point's weight, so they stay out of the product
+        # must not zero the initial configuration-space point's weight, so they stay out of the product
         initial_weight = qn.prod([p.weight for p in self.particles.values()
                                   if not qn.zerop(p.weight)])
         self.initial_point = ConfigSpacePoint(0, list(self.initial_coords.values()), initial_weight)
@@ -252,7 +253,7 @@ class Simulation:
 
     def port_summary(self, step, port, end='origin'):
         """Formatted per-particle summary of the amplitudes at `port` over
-        the CS points at `step`, one line per particle:
+        the configuration-space points at `step`, one line per particle:
 
             p1+: 0.56, p1-: 0.19 | Σ: 0.75 ∠+30º
 
@@ -265,7 +266,7 @@ class Simulation:
         if self.all_points is None:
             return None
         probs = defaultdict(lambda: defaultdict(float))   # pname -> sign -> Σ|w|²
-        amps = defaultdict(complex)                       # pname -> Σ of CS-point weights
+        amps = defaultdict(complex)                       # pname -> Σ of configuration-space point weights
         try:
             for point in self.all_points.index.values():
                 if point.step != step or point.cancelled:
@@ -294,7 +295,7 @@ class Simulation:
     def gate_io(self):
         """Per-step gate traffic: a list of rows {step, gate, port, input,
         output} for every gate port that saw a particle — inputs are what
-        was arriving at the port in the previous step's CS points (coordinate
+        was arriving at the port in the previous step's configuration-space points (coordinate
         endpoints), outputs what exited it when the gate fired (coordinate
         origins), both in port_summary format."""
         rows = []
@@ -334,14 +335,14 @@ class Simulation:
                 -int(coord.sign))
 
     def cs_point_sort_key(self, point):
-        """Canonical display order for a whole CS point: compare CS points by
+        """Canonical display order for a whole configuration-space point: compare configuration-space points by
         their coordinates taken in coord_sort_key order, so rows group by
         gate, then port (upper first), then sign (+ first)."""
         return tuple(sorted(self.coord_sort_key(c) for c in point.coords.values()))
 
     def port_particle_amps(self, step, port, end='origin'):
         """Per-particle summed amplitude (qnumber Complex) at `port` over
-        the CS points at `step`. end='origin' sums what exited the
+        the configuration-space points at `step`. end='origin' sums what exited the
         port, end='endpoint' what is arriving at it. Empty dict when
         nothing matches."""
         amps = {}

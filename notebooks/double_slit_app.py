@@ -11,12 +11,12 @@ Run with:  marimo run notebooks/double_slit_app.py
 
 import marimo
 
-__generated_with = "0.23.16"
+__generated_with = "0.24.0"
 app = marimo.App(width="full")
 
 
 @app.cell(hide_code=True)
-def _():
+def initialization():
     import random
     import sys
     from pathlib import Path
@@ -112,7 +112,17 @@ def _(fringes, mo, n_points, screen_curve):
 
 
 @app.cell(hide_code=True)
-def _(curves, fire_btn, hits_get, hits_set, random, sample_hits, shots, xs, mo):
+def _(
+    curves,
+    fire_btn,
+    hits_get,
+    hits_set,
+    mo,
+    random,
+    sample_hits,
+    shots,
+    xs,
+):
     mo.stop(not fire_btn.value)
     _rng = random.Random()
     _cur = hits_get()
