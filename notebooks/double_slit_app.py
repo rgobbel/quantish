@@ -90,10 +90,10 @@ def _(mo):
     | a photon or electron, fired at the barrier | particle $p_1$, weight 1 |
     | the two slits | the two switch-wire outputs of gate $g_1$ (angle 45°) — the **left arm** (upper wire) and **right arm** (lower wire) |
     | passing through both slits at once | $g_1$ splits $p_1$'s world into superposed configuration-space points, one per arm, each carrying part of the weight |
-    | the slit plane | the boxes $S_1$ and $S_2$, where the arms arrive (pass-throughs; they change no amplitudes) |
+    | the two slits themselves | the boxes $S_1$ and $S_2$, where the arms arrive (pass-throughs; they change no amplitudes) |
     | different path lengths from the two slits to screen position $x$ | a relative phase $e^{i\varphi(x)}$ applied to the right arm's amplitude — the flight to the screen is idealized, which is the one non-circuit ingredient |
     | the screen pixel at $x$ | a detector that recombines the two arms coherently (a remerge matched to the split) and registers $\lvert\text{amplitude}\rvert^2$ |
-    | blocking a slit | diverting that arm into the barrier box $B$ — those worlds never reach the screen |
+    | blocking slit $n$ | the block $B_n$ standing in that slit's place — the arm is diverted into it and those worlds never reach the screen |
     | a which-way detector at one slit | recorder particle $p_2$ on gate $g_4$'s upper wire, with the right arm wired to $g_4$'s **control**: exactly in the worlds where $p_1$ took the right arm, $p_2$ is switched to $g_4$'s lower wire |
 
     Why must the phase be applied *outside* the gate network? Because a
@@ -136,7 +136,7 @@ def _(DEFAULT_THETA_S, math, mo):
     - **Both slits**: one class, two arms —
       $I = 1 + \cos(f\pi x)$: fringes from 0 to 2, peaking at **4×** the
       single-slit intensity, with true zeros where the worlds cancel.
-    - **One slit blocked**: the other arm ends at the barrier $B$, so one
+    - **One slit blocked**: the other arm ends at its block $B_n$, so one
       amplitude remains — $I = \lvert a\rvert^2 = \tfrac{{1}}{{2}}$,
       flat.
     - **Recorder**: $p_2$'s position differs between the two arms'
@@ -186,7 +186,7 @@ def _(fringes, mo, n_points, screen_curve, screen_positions):
 @app.cell(hide_code=True)
 def _(DEFAULT_THETA_S, math, mo, slit_sim):
     # Circuit diagram per condition, rendered from the very Simulation
-    # objects the curves come from (S1/S2 = the slit plane, B = barrier).
+    # objects the curves come from (Sn = slit n, Bn = a block in its place).
     def _diagram(mode, width):
         try:
             from quantish.tikz_diagram import (render_diagram_svg,
@@ -330,8 +330,8 @@ def _(mo):
     gate angle can't carry a pure phase. That is also exactly why the
     recorder kills the fringes: $p_2$ makes the two arms disagree, and the
     remerge rule then has nothing it is allowed to merge — and why
-    blocking a slit (diverting an arm to $B$) gives a flat line: a single
-    world has nothing to interfere with.
+    blocking a slit (diverting its arm into the block $B_n$) gives a flat
+    line: a single world has nothing to interfere with.
     """)
     return
 

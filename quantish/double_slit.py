@@ -60,24 +60,24 @@ _CROSS_PHASE = math.pi / 2
 def slit_config(mode: str = 'both',
                 theta_s: float = DEFAULT_THETA_S) -> Addict:
     """The whole apparatus up to (but not including) the flight to a screen
-    position — it does not depend on x. Each open arm ends at a labeled
-    screen-plane box (S1 for the upper arm, S2 for the lower); blocking a
-    slit diverts its arm to the barrier box B instead (the book's
-    "diversion away", fig 4.14). 'observed' couples a recorder particle to
-    the lower arm (an angle-0 gate used via its control wire) on the way
-    to S2. The boxes are pass-throughs (delay gates): they change no
-    amplitudes, but they make each mode's circuit — and its diagram — show
-    where the arms actually end up."""
+    position — it does not depend on x. Each arm ends at the slit plane:
+    slit n is the box Sn (S1 for the upper arm, S2 for the lower), and a
+    blocked slit n is the block Bn in its place (the book's "diversion
+    away", fig 4.14). 'observed' couples a recorder particle to the lower
+    arm (an angle-0 gate used via its control wire) on the way to S2. The
+    boxes are pass-throughs (delay gates): they change no amplitudes, but
+    they make each mode's circuit — and its diagram — show where the arms
+    actually end up."""
     if mode not in MODES:
         raise ValueError(f'unknown mode {mode!r}; expected one of {MODES}')
     gates = {'g1': {'angle': theta_s}}
     particles = {'p1': {'sign': 1, 'weight': 1}}
     delay_gates = ['S1', 'S2'] if mode in ('both', 'observed') else \
-                  ['S1', 'B'] if mode == 'slit1' else ['B', 'S2']
+                  ['S1', 'B2'] if mode == 'slit1' else ['B1', 'S2']
     links = {'p1': 'g1.upper',
-             'g1.upper': 'S1' if mode != 'slit2' else 'B',
+             'g1.upper': 'S1' if mode != 'slit2' else 'B1',
              'g1.lower': 'S2' if mode in ('both', 'slit2') else
-                         'g4.control' if mode == 'observed' else 'B'}
+                         'g4.control' if mode == 'observed' else 'B2'}
     run_stages = {'split': ['g1'], 'arrive': list(delay_gates)}
     if mode == 'observed':
         gates['g4'] = {'angle': 0}
@@ -99,8 +99,8 @@ def slit_sim(mode: str = 'both', theta_s: float = DEFAULT_THETA_S):
     return Simulation(slit_config(mode, theta_s))
 
 
-# Which screen-plane box each arm ends at; particles ending at B hit the
-# barrier and never reach the screen.
+# Which slit each arm passes through; particles ending at a block (B1/B2)
+# never reach the screen.
 _ARM_OF_BOX = {'S1': 'upper', 'S2': 'lower'}
 
 
