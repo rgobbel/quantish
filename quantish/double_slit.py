@@ -59,25 +59,49 @@ _CROSS_PHASE = math.pi / 2
 
 def slit_config(mode: str = 'both',
                 theta_s: float = DEFAULT_THETA_S) -> Addict:
-    """The barrier apparatus. It does not depend on the screen position —
-    the screen is outside the gate network. 'observed' couples a recorder
-    particle to the lower arm (an angle-0 gate used via its control wire)."""
+    """The whole apparatus up to (but not including) the flight to a screen
+    position — it does not depend on x. Each open arm ends at a labeled
+    screen-plane box (S1 for the upper arm, S2 for the lower); blocking a
+    slit diverts its arm to the barrier box B instead (the book's
+    "diversion away", fig 4.14). 'observed' couples a recorder particle to
+    the lower arm (an angle-0 gate used via its control wire) on the way
+    to S2. The boxes are pass-throughs (delay gates): they change no
+    amplitudes, but they make each mode's circuit — and its diagram — show
+    where the arms actually end up."""
     if mode not in MODES:
         raise ValueError(f'unknown mode {mode!r}; expected one of {MODES}')
     gates = {'g1': {'angle': theta_s}}
     particles = {'p1': {'sign': 1, 'weight': 1}}
-    links = {'p1': 'g1.upper'}
-    run_stages = {'split': ['g1']}
+    delay_gates = ['S1', 'S2'] if mode in ('both', 'observed') else \
+                  ['S1', 'B'] if mode == 'slit1' else ['B', 'S2']
+    links = {'p1': 'g1.upper',
+             'g1.upper': 'S1' if mode != 'slit2' else 'B',
+             'g1.lower': 'S2' if mode in ('both', 'slit2') else
+                         'g4.control' if mode == 'observed' else 'B'}
+    run_stages = {'split': ['g1'], 'arrive': list(delay_gates)}
     if mode == 'observed':
         gates['g4'] = {'angle': 0}
         particles['p2'] = {'sign': 1, 'weight': 1}
         links['p2'] = 'g4.upper'
-        links['g1.lower'] = 'g4.control'
-        run_stages['observe'] = ['g4']
-    return Addict({'title': 'double slit', 'symbolic': False,
+        links['g4.control'] = 'S2'
+        run_stages = {'split': ['g1'], 'observe': ['g4'],
+                      'arrive': list(delay_gates)}
+    return Addict({'title': f'double slit ({mode})', 'symbolic': False,
                    'loglevel': 'error', 'variables': {},
-                   'run_stages': run_stages,
+                   'run_stages': run_stages, 'delay_gates': delay_gates,
                    'particles': particles, 'gates': gates, 'links': links})
+
+
+def slit_sim(mode: str = 'both', theta_s: float = DEFAULT_THETA_S):
+    """A loaded (unrun) Simulation of the mode's apparatus — e.g. for
+    rendering its circuit diagram."""
+    from quantish.simulation import Simulation
+    return Simulation(slit_config(mode, theta_s))
+
+
+# Which screen-plane box each arm ends at; particles ending at B hit the
+# barrier and never reach the screen.
+_ARM_OF_BOX = {'S1': 'upper', 'S2': 'lower'}
 
 
 def arm_amplitudes(mode: str = 'both',
@@ -86,14 +110,16 @@ def arm_amplitudes(mode: str = 'both',
     arm in ('upper', 'lower'). A class is a distinct assignment of every
     particle other than p1 — amplitudes interfere only within a class.
     Each arm's two sign components sum coherently (the matched-remerge
-    idealization; see the module docstring)."""
-    from quantish.simulation import Simulation
-    sim = Simulation(slit_config(mode, theta_s))
+    idealization; see the module docstring); arms ending at the barrier
+    are absorbed and contribute nothing."""
+    sim = slit_sim(mode, theta_s)
     sim.run()
     classes: dict[tuple, dict[str, complex]] = {}
     for point in sim.result_space.index.values():
         origin = point.coords['p1'].position.origin
-        arm = 'upper' if (origin.gate, origin.port) == ('g1', 'upper') else 'lower'
+        arm = _ARM_OF_BOX.get(origin.gate)
+        if arm is None:          # ended at the barrier: absorbed
+            continue
         key = tuple((name, str(coord.pkey.sign), str(coord.position))
                     for name, coord in sorted(point.coords.items())
                     if name != 'p1')
@@ -111,9 +137,7 @@ def screen_curve(n_points: int, fringes: float, mode: str = 'both',
                  theta_s: float = DEFAULT_THETA_S) -> tuple[list[float], list[float]]:
     """(positions, intensities) across the screen. The lower arm's path
     difference sweeps `fringes` pattern periods over the screen; blocked
-    arms (the barrier absorbs them) contribute no amplitude."""
-    open_arms = {'both': ('upper', 'lower'), 'observed': ('upper', 'lower'),
-                 'slit1': ('upper',), 'slit2': ('lower',)}[mode]
+    arms end at the barrier inside the circuit and contribute nothing."""
     classes = arm_amplitudes(mode, theta_s)
     xs = screen_positions(n_points)
     intensities = []
@@ -121,8 +145,8 @@ def screen_curve(n_points: int, fringes: float, mode: str = 'both',
         phase = {'upper': 0.0, 'lower': fringes * math.pi * x + _CROSS_PHASE}
         total = 0.0
         for amps in classes:
-            summed = sum(amps[arm] * cmath.exp(1j * phase[arm])
-                         for arm in open_arms if arm in amps)
+            summed = sum(amp * cmath.exp(1j * phase[arm])
+                         for arm, amp in amps.items())
             total += abs(summed) ** 2
         intensities.append(total)
     return xs, intensities
