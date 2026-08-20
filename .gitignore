@@ -13,6 +13,7 @@
 /qcbook/
 /.idea/
 /debug/
+/docs/
 /models/AIM_Figure12.yaml
 /aisoftmax.py
 /aisoftmax2.py
