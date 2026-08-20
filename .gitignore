@@ -13,6 +13,7 @@
 /qcbook/
 /.idea/
 /debug/
+/debugging/
 /docs/
 /models/AIM_Figure12.yaml
 /aisoftmax.py
@@ -26,12 +27,13 @@
 /qkquantish.py
 /qwen_tree.py
 /models/ra.yml
-/notebooks/symphys2.py
-/notebooks/sympy_physics.py
 /test.ipynb
 /.ipynb_checkpoints/
 /models/HIDEME/
 .env
 *.log
-*.mmd__pycache__/
+*.mmd
+__pycache__/
+__marimo__/
+*~
 .DS_Store
