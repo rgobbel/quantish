@@ -55,14 +55,19 @@ def slit_config(delta_rad: float, mode: str = 'both',
         links['g1.upper'] = 'g2.upper'
     if mode in ('both', 'slit2'):
         links['g1.lower'] = 'g2.lower'
+    run_stages = {'prepare': ['g0'], 'split': ['g1'],
+                  'unsplit': ['g2'], 'test': ['g3']}
     if mode == 'observed':
         gates['g4'] = {'angle': 0}
         particles['p2'] = {'sign': 1, 'weight': 1}
         links['p2'] = 'g4.upper'
         links['g1.lower'] = 'g4.control'
         links['g4.control'] = 'g2.lower'
+        run_stages = {'prepare': ['g0'], 'split': ['g1'], 'observe': ['g4'],
+                      'unsplit': ['g2'], 'test': ['g3']}
     return Addict({'title': 'double slit', 'symbolic': False,
                    'loglevel': 'error', 'variables': {},
+                   'run_stages': run_stages,
                    'particles': particles, 'gates': gates, 'links': links})
 
 
