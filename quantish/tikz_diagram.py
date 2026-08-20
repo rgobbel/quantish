@@ -1201,8 +1201,7 @@ def emit_tex(circuit: Circuit, L: Layout, routes: list[Route],
     # using (the slider's value), falling back to the YAML's literal default.
     for gname, (x, y) in L.gate_xy.items():
         gdata = parsed.gates[gname]
-        sub = subscript(gname)
-        title = rf"$g_{{{sub}}}$" if sub else rf"$g$"
+        title = math_label(gname)
         if angle_overrides is not None and gname in angle_overrides:
             angle_text = format_angle(angle_overrides[gname])
         else:
@@ -1213,14 +1212,17 @@ def emit_tex(circuit: Circuit, L: Layout, routes: list[Route],
 
     # Delays.
     for dname, (cx, cy) in L.delay_xy.items():
-        out.append(rf"\node[delay] ({dname}) at ({cx:.2f},{cy:.2f}) {{{tex_escape(dname)}}};")
+        out.append(rf"\node[delay] ({dname}) at ({cx:.2f},{cy:.2f}) {{{math_label(dname)}}};")
 
     # Particles.
     for pname, (cx, cy) in L.particle_xy.items():
         sign_int = circuit.topology['topo']['particle_starts'][pname][1]
         sign_char = '+' if sign_int > 0 else '-'
         sub = subscript(pname)
-        label = rf"${sign_char}{pname[:1]}_{{{sub}}}$" if sub else rf"${sign_char}{pname[:1]}$"
+        stem = pname[:len(pname) - len(sub)] if sub else pname
+        if len(stem) > 2:
+            stem = stem[0]   # a long name would burst the particle circle
+        label = math_label(stem + sub, prefix=sign_char)
         out.append(rf"\node[particle] ({pname}) at ({cx:.2f},{cy:.2f}) {{{label}}};")
 
     # Wires.
@@ -1232,6 +1234,16 @@ def emit_tex(circuit: Circuit, L: Layout, routes: list[Route],
 
     out.append(_TEX_POSTAMBLE)
     return "\n".join(out)
+
+def math_label(name: str, prefix: str = '') -> str:
+    """A name as a math-mode label with trailing digits subscripted:
+    'g1' → $g_1$, 'S2' → $S_2$, 'B' → $B$ — the one convention for gates,
+    delay boxes, and particles alike."""
+    sub = subscript(name)
+    stem = (name[:len(name) - len(sub)] if sub else name).replace('_', r'\_')
+    body = rf"{stem}_{{{sub}}}" if sub else stem
+    return rf"${prefix}{body}$"
+
 
 def subscript(name: str) -> str:
     """Extract the trailing digit(s) of a name like 'g3' or 'p2' for $g_3$.
