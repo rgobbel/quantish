@@ -22,6 +22,7 @@ Public API:
 from __future__ import annotations
 
 import hashlib
+import re
 import shutil
 import subprocess
 import sys
@@ -1407,12 +1408,28 @@ def render_diagram(circuit: Circuit, dpi: int = 150,
     return img
 
 
+def _uniquify_svg_ids(svg: str, tag: str) -> str:
+    """Namespace an SVG's internal ids with a per-diagram tag.
+
+    pdf2svg names every glyph/clip definition generically (glyph-0-1,
+    clip1, …). When several such SVGs are inlined into ONE web page, the
+    browser resolves each <use href="#…"> against the first definition in
+    the whole document — so a page with multiple diagrams renders text
+    with another diagram's glyphs wherever the ids happen to collide.
+    """
+    svg = re.sub(r'\bid="', f'id="{tag}-', svg)
+    svg = re.sub(r'href="#', f'href="#{tag}-', svg)
+    svg = re.sub(r'url\(#', f'url(#{tag}-', svg)
+    return svg
+
+
 def render_diagram_svg(circuit: Circuit,
                        angle_overrides: dict[str, object] | None = None) -> str | None:
     """Generate / fetch-from-cache the SVG text for a circuit's topology.
 
     Same contract as render_diagram (see there for angle_overrides), but
-    returns vector SVG markup, which stays crisp at any zoom.
+    returns vector SVG markup, which stays crisp at any zoom and is safe
+    to inline alongside other diagrams on one page (ids are namespaced).
     """
     if circuit.topology is None:
         return None
@@ -1432,7 +1449,7 @@ def render_diagram_svg(circuit: Circuit,
         if not compile_tex_to_file(tex, cached):
             return None
     try:
-        return cached.read_text(encoding='utf-8')
+        return _uniquify_svg_ids(cached.read_text(encoding='utf-8'), tex_hash)
     except Exception:
         cached.unlink(missing_ok=True)
         return None
