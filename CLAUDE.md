@@ -119,6 +119,9 @@ Configuration is split between:
 
 Model files define:
 - `title`: Experiment name
+- `caption` (optional): a one-line description, typically the book
+  figure's caption — shown as a box in the Mermaid diagram, under the
+  title in the app, and in the model-load log
 - `run_stages`: named execution stages (every linked gate must appear)
 - `diagram_groups` (optional): display grouping when it differs from
   `run_stages`
@@ -130,6 +133,8 @@ Model files define:
 Configuration options (usually in defaults.yaml):
 - `symbolic`: true/false for math mode
 - `string_precision`: decimal places in displays
+- `max_symbolic_len`: Symbolic-mode expressions longer than this display
+  as floats (display.sym_or_float)
 - `sample` / `n_samples`: enable sampling mode
 - `epr_stats`: collect EPR statistics (the fig4.17 models set it)
 

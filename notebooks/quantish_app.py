@@ -12,7 +12,7 @@ Run with:  marimo edit notebooks/quantish_app.py   (or `marimo run` to serve)
 import marimo
 
 __generated_with = "0.24.0"
-app = marimo.App(width="full", css_file="quantish_app.css")
+app = marimo.App(width="full", css_file="css/quantish_app.css")
 
 
 @app.cell(hide_code=True)
@@ -79,15 +79,15 @@ def initialization():
         CalcMode,
         FredkinGate,
         GatePort,
-        coord_sort_key,
-        cs_point_sort_key,
-        gate_io,
         MODELS_TOP,
         NetworkGraph,
         Simulation,
         alt,
         cmath,
+        coord_sort_key,
+        cs_point_sort_key,
         diagram,
+        gate_io,
         math,
         mo,
         pd,
@@ -103,9 +103,22 @@ def initialization():
 def _(mo):
     mo.md(r"""
     # Quantish Physics
-    A simulation of the quantish universe from Chapter 4 of
-    *Good and Real* (Drescher, 2006): Fredkin gates, complex-weighted
-    Configuration Space points, and EPR experiments.
+    This [Marimo](https://marimo.io) notebook contains a simulation of the quantish universe described in Chapter 4 of
+    *Good and Real: Demystifying Paradoxes from Physics to Ethics* by Gary L. Drescher (MIT Press, 2006). Included are simulations of Fredkin gates, complex-weighted
+    configuration space points, and the classic Einstein-Podolsky-Rosen experiment.
+
+    Several types of results are available:
+    - A diagram of network topology generated using TikZ, a vector graphics package that uses LaTeX for rendering
+    - A diagram showing network topology as well as gate inputs and outputs, generated using the Mermaid graphing framework
+    - A graphical trace of how weights evolve through the running of the model
+    - A table with exact numeric results of a model's run
+    - A table of the final set of configuration space points (i.e., "classical worlds")
+    - Marginal probabilities: the probability that any given particle will appear at a particular gate output
+    - A trace of input and output values at every execution stage
+
+    In addition to the basic simulation, there are:
+    - a Monte Carlo simulation, in which a model is run many times, tracing a single execution path depending on the probabilities of outputs at each gate, and tabulated to show statistics consistent with the results of running equivalent real-world experiments
+    - a weight-split explorer, to show concretely effects of various inputs to quantish Fredkin gates
     """)
     return
 
@@ -114,12 +127,15 @@ def _(mo):
 def _(mo):
     mo.md(r"""
     ## Model Selection
-    Default parameters for each model are stored in a YAML-format file. Models are organized into *collections*. The default set of collections is:
-    - gr2026: models implementing the figures in Chapter 4 of the 2026 revision of *Good and Real*.
-    - gr2006: models implementing the figures in Chapter 4 of the original 2006 edition of *Good and Real*.
-    - extra: more models demonstrating various aspects of the Quantish framework. The `extras` collection includes a model taken from **MIT AIM-1026a**, the original 1989 paper which introduced the Quantish framework.
 
-    The `rescan models` button will reload models that have been modified since this notebook was started.
+    The default model is as simple as possible, a single Fredkin gate as shown in figure 4.4 of _Good and Real_. Follow along in the book for fuller explanations of what's happening in each figure.
+
+    The default parameters for each model are stored in a YAML file. Models are organized into *collections*. The default set of collections is:
+    - **gr2026**: models implementing the figures in Chapter 4 of the 2026 revision of *Good and Real*.
+    - **gr2006**: models implementing the figures in Chapter 4 of the original 2006 edition of *Good and Real*.
+    - **extra**: more models demonstrating various aspects of the quantish framework. The `extras` collection includes a model taken from `MIT AIM-1026a`, the original 1989 paper which introduced the quantish framework.
+
+    The **rescan models** button will reload models that have been modified since this notebook was started.
     """)
     return
 
@@ -165,11 +181,11 @@ def _(mo):
     mo.md(r"""
     ## Model Parameters
 
-    Each model has a set of particles, a set of gates, each with a particular angle, and links that connect particles and gates. Once a model is loaded, its gate angles can be modified below. Angles can be input using the sliders, each with a range from -180º to 180º, or the text entry fields, using values in either degrees or radians, according to the radio button selector.
+    Each model has a set of particles, a set of gates each with a particular angle, and links that connect particles and gates. Once a model is loaded, its gate angles can be modified below. Angles can be input using the sliders, each with a range from -180º to 180º, or the text entry fields, using values in either degrees or radians, according to the radio button selector. Added specifically for the simulation of the double-slit experiment, gates have an optional _phase_ parameter, allowing a gate with a zero angle to act as a _phase plate_, but that option is not surfaced in this application.
 
-    Calculations within models often produce very small values, and floating-point roundoff errors can compound, appreciably affecting final results. Models can be run using exact values using symbolic arithmetic. In order to take best advantage of symbolic math, input values (i.e., gate angles) should be specified symbolically (e.g., "pi/6" rather than "30.0º"), angle values can be in the form of expressions parsable by SymPy, such as "rad(30)", which is equivalent to "pi/6".
+    Calculations within models often produce very small values, and floating-point roundoff errors can compound, appreciably affecting final results. Models can be run using exact values using symbolic arithmetic. In order to take best advantage of symbolic math, input values such gate angles should be specified symbolically (e.g., "pi/6" rather than "30.0º"). All numeric values can be in the form of expressions parsable by SymPy, such as "rad(30)", equivalent to "pi/6" arithmetic expressions such as "pi/6 + pi/8", and references to variables defined in a `variables` clause in a model's YAML specification.
 
-    Symbolic math is much slower than floating-point, so model execution in Symbolic mode may take several seconds, especially for large models like the EPR setup.
+    _Note:_ Symbolic math is much slower than floating-point, so model execution in Symbolic mode may take several seconds, especially for large models like the EPR setup (2026 figure 4.17, 2006 figure 4.16).
     """)
     return
 
@@ -188,8 +204,14 @@ def _(
         rows = [mo.hstack([angle_slider_elems[g], angle_text_elems[g]],
                           widths=[5, 1], align='center')
                 for g in gate_names]
+        # the model's caption (typically the book figure's) is Markdown
+        # and passes through verbatim — no added styling
+        _caption = ' '.join(str(base_config.get('caption', '')).split())
+        _title = (f"**{base_config.title}**: {_caption}" if _caption
+                  else f"**{base_config.title}**")
         return mo.vstack([
-            mo.md(f"**{base_config.title}** — gate angles. Slider and entry track "
+            mo.md(_title),
+            mo.md("Gate angles: Slider and entry track "
                   "each other; sliders are degrees (0-centered). Typed numbers "
                   "use the units selector; anything else is a symbolic radian "
                   "expression (`pi/8`, `rad(30)`, `acos(4/5)`)."),
@@ -256,15 +278,6 @@ def _(build_sim, mo, mode_pick, model_pick, run_btn):
 def _(mo):
     mo.md(r"""
     ## Results
-
-    Several types of results are available:
-    - A diagram of network topology generated using TikZ, a vector graphics package that uses LaTeX for rendering
-    - A diagram showing network topology as well as gate inputs and outputs, generated using the Mermaid graphing framework
-    - A graphical trace of how weights evolve through the running of the model
-    - A table with exact numeric results of a model run
-    - A table of the final set of Configuration Space points (i.e., "classical worlds")
-    - Marginal probabilities: the probability that any given particle will appear at a particular gate output
-    - A trace of input and output values at every execution stage
     """)
     return
 
@@ -287,8 +300,42 @@ def _(mo, sim, tikz_zoom, zoomable):
         except Exception as exc:  # noqa: BLE001 — show, don't crash the app
             return mo.md(f'_TikZ diagram failed: {exc}_')
 
-    mo.accordion({'## Circuit diagram (TikZ)': mo.vstack([tikz_zoom,
+    mo.accordion({'## TikZ circuit diagram': mo.vstack([tikz_zoom,
                zoomable(_(), tikz_zoom.value)])})
+    return
+
+
+@app.cell(hide_code=True)
+def _(diagram, mermaid_zoom, mo, sim, zoomable):
+    mo.stop(sim is None)  # nothing to show until ▶ Run
+
+    def _():
+        # The generated source carries no theme, and mo.mermaid's own
+        # theme choice is unreadable on nested subgraphs — so pin the
+        # palette of the old CLI-rendered SVGs (mermaid's classic
+        # 'default' look): light-yellow group/gate clusters, light-gray
+        # port nodes. Injected into the frontmatter alongside the title.
+        theme = ('config:\n'
+                 '  theme: base\n'
+                 '  themeVariables:\n'
+                 "    clusterBkg: '#ffffde'\n"
+                 "    clusterBorder: '#aaaa33'\n"
+                 "    primaryColor: '#ececec'\n"
+                 "    primaryBorderColor: '#999999'\n"
+                 "    primaryTextColor: '#333333'\n"
+                 "    lineColor: '#333333'\n"
+                 "    titleColor: '#333333'\n"
+                 "    edgeLabelBackground: 'rgba(232,232,232,0.8)'\n"
+                 'title:')
+        try:
+            src = str(diagram(sim, output_file=None, has_run=True)).replace(
+                'title:', theme, 1)
+            return mo.mermaid(src)
+        except Exception as exc:  # noqa: BLE001
+            return mo.md(f'_Mermaid diagram failed: {exc}_')
+
+    mo.accordion({'## Mermaid circuit diagram including weight values': mo.vstack([
+               mermaid_zoom, zoomable(_(), mermaid_zoom.value)])})
     return
 
 
@@ -304,12 +351,21 @@ def _(NetworkGraph, mo, sim):
         except Exception as exc:  # noqa: BLE001 — surface, don't crash the app
             return mo.md(f'_network graph failed: {exc}_')
 
-    mo.accordion({'## Weight evolution (configuration-space points × stages)': mo.vstack([_()])})
+    mo.accordion({'## Weight evolution graphic (configuration-space points × stages)': mo.vstack([_()])})
     return
 
 
 @app.cell(hide_code=True)
-def _(GatePort, coord_sort_key, cs_point_sort_key, math_weight, md_table, mo, qn, sim):
+def _(
+    GatePort,
+    coord_sort_key,
+    cs_point_sort_key,
+    math_weight,
+    md_table,
+    mo,
+    qn,
+    sim,
+):
     mo.stop(sim is None)  # nothing to show until ▶ Run
     # Tabular twin of the weight-evolution graph: per stage, one row per
     # parent→child branch — the input configuration-space point and its weight, the
@@ -419,41 +475,15 @@ def _(GatePort, coord_sort_key, cs_point_sort_key, math_weight, md_table, mo, qn
 
 
 @app.cell(hide_code=True)
-def _(diagram, mermaid_zoom, mo, sim, zoomable):
-    mo.stop(sim is None)  # nothing to show until ▶ Run
-
-    def _():
-        # The generated source carries no theme, and mo.mermaid's own
-        # theme choice is unreadable on nested subgraphs — so pin the
-        # palette of the old CLI-rendered SVGs (mermaid's classic
-        # 'default' look): light-yellow group/gate clusters, light-gray
-        # port nodes. Injected into the frontmatter alongside the title.
-        theme = ('config:\n'
-                 '  theme: base\n'
-                 '  themeVariables:\n'
-                 "    clusterBkg: '#ffffde'\n"
-                 "    clusterBorder: '#aaaa33'\n"
-                 "    primaryColor: '#ececec'\n"
-                 "    primaryBorderColor: '#999999'\n"
-                 "    primaryTextColor: '#333333'\n"
-                 "    lineColor: '#333333'\n"
-                 "    titleColor: '#333333'\n"
-                 "    edgeLabelBackground: 'rgba(232,232,232,0.8)'\n"
-                 'title:')
-        try:
-            src = str(diagram(sim, output_file=None, has_run=True)).replace(
-                'title:', theme, 1)
-            return mo.mermaid(src)
-        except Exception as exc:  # noqa: BLE001
-            return mo.md(f'_Mermaid diagram failed: {exc}_')
-
-    mo.accordion({'## Gate network with port values (Mermaid)': mo.vstack([
-               mermaid_zoom, zoomable(_(), mermaid_zoom.value)])})
-    return
-
-
-@app.cell(hide_code=True)
-def _(coord_sort_key, cs_point_sort_key, math_weight, md_table, mo, phase_deg, sim):
+def _(
+    coord_sort_key,
+    cs_point_sort_key,
+    math_weight,
+    md_table,
+    mo,
+    phase_deg,
+    sim,
+):
     mo.stop(sim is None)  # nothing to show until ▶ Run
     # Worlds sorted canonically: gate (in evaluation order), then port
     # (upper before lower), then sign (+ before −); the configuration
@@ -475,7 +505,7 @@ def _(coord_sort_key, cs_point_sort_key, math_weight, md_table, mo, phase_deg, s
 
 
 @app.cell(hide_code=True)
-def _(md_table, mo, sim):
+def _(coord_sort_key, md_table, mo, sim):
     mo.stop(sim is None)  # nothing to show until ▶ Run
     # Marginal in the statistics sense: each row sums |w|² over every
     # final configuration-space point containing that coordinate — the chance of finding that
@@ -510,7 +540,7 @@ def _(md_table, mo, sim):
 
 
 @app.cell(hide_code=True)
-def _(md_table, mo, sim):
+def _(gate_io, md_table, mo, sim):
     mo.stop(sim is None)  # nothing to show until ▶ Run
     # Per-step gate traffic: what arrived at each port (previous step's
     # coordinate endpoints) and what left it (that step's origins), with
@@ -569,6 +599,7 @@ def _(mo):
 
 @app.cell(hide_code=True)
 def _(
+    coord_sort_key,
     mc_button,
     mc_mode,
     mc_seed,
@@ -590,6 +621,12 @@ def _(
         results = run_monte_carlo(sim, n_trials, mode=mc_mode.value,
                                   seed=int(mc_seed.value))
         pred = results['predicted']
+        # compact row labels: the same short-config form the final-points
+        # table uses, looked up from the terminal points (raw keys are
+        # unreadably long for multi-particle models)
+        short = {p.key: p.short_config(
+                     key=lambda c: coord_sort_key(sim, c)).replace('|', ' ')
+                 for p in sim.result_space.index.values()}
         sections = []
         # terminal first: it is the faithful baseline the path mode's
         # per-stage collapse is measured against
@@ -604,7 +641,9 @@ def _(
             for key in sorted(set(tally) | set(pred), key=lambda k: -pred.get(k, 0)):
                 freq = tally.get(key, 0) / n_trials
                 tvd += abs(freq - pred.get(key, 0.0))
-                rows.append((f'`{key.split(":")[0][:60].replace("|", " ")}`',
+                bare = key.split(':')[0]
+                label_str = short.get(bare, bare[:60].replace('|', ' '))
+                rows.append((f'`{label_str}`',
                              tally.get(key, 0),
                              f'{freq:.4f}', f'{pred.get(key, 0.0):.4f}'))
             sections.append(f'**{label}** — {note}; '
@@ -712,8 +751,13 @@ def _(epr_angle_elems, epr_button, epr_trials, mo, sim_model, supports_epr):
 
     With trials = 0 (the default) each cell uses only the exact final
     configuration-space points — fast. Setting trials adds per-cell Monte Carlo sampling on
-    top. **Symbolic mode multiplies the cost**: nine exact symbolic runs
+    top.
+
+    **Note: Symbolic mode (set above) multiplies the cost**: nine exact symbolic runs
     with non-special angles may take several seconds even at 0 trials.
+    Values may be entered here as either symbolic or floating-point expressions.
+    Computation will use the selected mode in either case.
+
     """),
         mo.hstack([epr_angle_elems['qa'], epr_angle_elems['qb'],
                    epr_angle_elems['qc']],
@@ -822,7 +866,7 @@ def _(mo):
     ws_sign = mo.ui.switch(value=True, label='sign + (off = −)')
     ws_wmag = mo.ui.slider(0.0, 1.0, step=0.05, value=1.0, label='|w|',
                            show_value=True)
-    ws_wphase = mo.ui.slider(-180, 180, step=5, value=0, label='arg(w) (º)',
+    ws_wphase = mo.ui.slider(-180, 180, step=5, value=0, label='φ(w) (º)',
                              show_value=True)
     ws_components = mo.ui.multiselect(
         options=['c2', 'c3', 'c2a', 'c2b', 'c3a', 'c3b'],
@@ -949,24 +993,29 @@ def _(
 
 @app.cell(hide_code=True)
 def _(mo):
+    # shown in the editor only: in `marimo run` the code cells below are
+    # hidden, so the heading would sit over nothing
     mo.md(r"""
     ## Loaded Configuration Details
-    """)
+    """) if mo.app_meta().mode != 'run' else None
     return
 
 
 @app.cell(hide_code=True)
 def _(mo, model_pick, sim):
-    mo.stop(sim is None)  # nothing to show until ▶ Run
+    # editor-only section: hidden with its heading in `marimo run`
+    mo.stop(sim is None or mo.app_meta().mode == 'run')
     mo.accordion({str(model_pick.value.stem): mo.accordion(sim.__dict__, multiple=True, lazy=True)})
     return
 
 
 @app.cell(hide_code=True)
 def _(mo):
+    # shown in the editor only: in `marimo run` the code cells below are
+    # hidden, so the heading would sit over nothing
     mo.md(r"""
     ## Support Code
-    """)
+    """) if mo.app_meta().mode != 'run' else None
     return
 
 
@@ -1236,12 +1285,18 @@ def _(mo):
 
 @app.cell(hide_code=True)
 def _(cmath, mo, qn):
-    def latex_weight(w, prec=4) -> str:
-        # In Symbolic mode, render the exact sympy expression as LaTeX.
+    def latex_weight(w, prec=4, max_len=40) -> str:
+        # In Symbolic mode, render the exact sympy expression as LaTeX —
+        # unless its plain-text form is longer than max_len characters
+        # (the display.sym_or_float policy): complex models and awkward
+        # inputs can produce unreadably long expressions, and those fall
+        # back to the numeric form below.
         try:
             if qn.CalcMode.default() == 'Symbolic' and qn.isq(w):
                 import sympy
-                return sympy.latex(qn.simplify(w).v)
+                simplified = qn.simplify(w).v
+                if len(str(simplified)) <= max_len:
+                    return sympy.latex(simplified)
         except Exception:  # noqa: BLE001 — fall back to the numeric form
             pass
         wc = complex(w)

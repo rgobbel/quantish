@@ -9,6 +9,7 @@ this module affects a run.
 import cmath
 import logging
 import math
+import re
 from collections import defaultdict
 
 import quantish.qnumber as qn
@@ -20,6 +21,44 @@ log = logging.getLogger('quantish')
 # display ordering of a gate's ports: the switch wires the book's
 # figures read top-down, then the pass-through control
 PORT_DISPLAY_ORDER = {'upper': 0, 'lower': 1, 'control': 2}
+
+# In Symbolic mode, exact expressions are shown wherever they stay
+# readable; past this many characters the display falls back to floats.
+# Models can override with a `max_symbolic_len` setting (see
+# defaults.yaml); sim.max_symbolic_len carries the effective value.
+MAX_SYMBOLIC_LEN = 40
+
+
+# model captions are Markdown; these peel the markers off for surfaces
+# that can only show plain text (Vega chart titles, log lines)
+_MD_MARKERS = [(re.compile(r'\*\*(.+?)\*\*'), r'\1'),
+               (re.compile(r'\*(.+?)\*'), r'\1'),
+               (re.compile(r'_(.+?)_'), r'\1'),
+               (re.compile(r'`(.+?)`'), r'\1')]
+
+
+def strip_markdown(text: str) -> str:
+    """Plain text from lightly-Markdown'd text (model captions):
+    bold/italic/code markers removed, content kept."""
+    for pattern, repl in _MD_MARKERS:
+        text = pattern.sub(repl, text)
+    return text
+
+
+def sym_or_float(value, float_str, max_len=None) -> str:
+    """The display form of `value`: in Symbolic mode, the exact
+    simplified expression — unless it exceeds max_len characters, in
+    which case (and always in Float mode) `float_str` is used. Overly
+    long expressions fall back to floats entirely: an ellipsized
+    formula would be useless for checking arithmetic."""
+    if qn.CalcMode.default() != 'Symbolic':
+        return float_str
+    try:
+        s = str(qn.simplify(qn.qify(value)))
+    except (TypeError, ValueError):
+        return float_str
+    limit = MAX_SYMBOLIC_LEN if max_len is None else max_len
+    return s if len(s) <= limit else float_str
 
 
 def coord_sort_key(sim, coord):
@@ -56,34 +95,42 @@ def port_summary(sim, step, port, end='origin'):
     numbers, shown as squared magnitude and phase — the port's
     wire-weight view. end='origin' summarizes what exited the port,
     end='endpoint' what is arriving at it. None when nothing matches
-    (or symbolic weights with free symbols)."""
+    (or symbolic weights with free symbols). In Symbolic mode the
+    probabilities show as exact expressions while they stay short
+    (sym_or_float): book angles usually collapse to tidy rationals."""
     if sim.all_points is None:
         return None
-    probs = defaultdict(lambda: defaultdict(float))   # pname -> sign -> Σ|w|²
-    amps = defaultdict(complex)                       # pname -> Σ of configuration-space point weights
-    try:
-        for point in sim.all_points.index.values():
-            if point.step != step or point.cancelled:
-                continue
-            for pname, coord in point.coords.items():
-                where = (coord.position.origin if end == 'origin'
-                         else coord.position.endpoint)
-                if where == port:
-                    probs[pname][str(coord.sign)] += float(point.probability)
-                    amps[pname] += complex(point.weight)
-    except (TypeError, ValueError):
-        return None  # symbolic weights with free symbols
+    # accumulate as Q numbers so Symbolic mode can display exact values
+    probs = defaultdict(lambda: defaultdict(lambda: qn.ZERO))  # pname -> sign -> Σ|w|²
+    amps = defaultdict(lambda: qn.Complex(0))  # pname -> Σ of configuration-space point weights
+    for point in sim.all_points.index.values():
+        if point.step != step or point.cancelled:
+            continue
+        for pname, coord in point.coords.items():
+            where = (coord.position.origin if end == 'origin'
+                     else coord.position.endpoint)
+            if where == port:
+                sign = str(coord.sign)
+                probs[pname][sign] = probs[pname][sign] + point.probability
+                amps[pname] = amps[pname] + point.weight
     if not probs:
         return None
+    prec = sim.precision
+    max_len = getattr(sim, 'max_symbolic_len', MAX_SYMBOLIC_LEN)
     lines = []
-    for pname in sorted(probs.keys()):
-        sign_parts = ', '.join(
-            f'{pname}{sign}: {prob:.{sim.precision}f}'
-            for sign, prob in sorted(probs[pname].items(), reverse=True))
-        agg = amps[pname]
-        phase_deg = math.degrees(cmath.phase(agg)) if abs(agg) > 1e-12 else 0.0
-        lines.append(f'{sign_parts}\nΣ: {abs(agg) ** 2:.{sim.precision}f} '
-                     f'∠{phase_deg:+.0f}º')
+    try:
+        for pname in sorted(probs.keys()):
+            sign_parts = ', '.join(
+                f'{pname}{sign}: '
+                f'{sym_or_float(prob, f"{float(prob):.{prec}f}", max_len)}'
+                for sign, prob in sorted(probs[pname].items(), reverse=True))
+            agg = complex(amps[pname])
+            phase_deg = math.degrees(cmath.phase(agg)) if abs(agg) > 1e-12 else 0.0
+            sum_pr = sym_or_float(qn.probability(amps[pname]),
+                                  f'{abs(agg) ** 2:.{prec}f}', max_len)
+            lines.append(f'{sign_parts}\nΣ: {sum_pr} ∠{phase_deg:+.0f}º')
+    except (TypeError, ValueError):
+        return None  # symbolic weights with free symbols
     return '\n'.join(lines)
 
 
@@ -142,16 +189,21 @@ def amp_value_str(sim, pname, amp):
     decomposition into real- and imaginary-part contributions, and
     the phase in degrees. (In this circuit family the real part is
     the plus-sign component and the imaginary part the minus-sign
-    component.)"""
+    component.) In Symbolic mode the amplitude and probability show
+    as exact expressions while they stay short (sym_or_float)."""
     prec = sim.precision
+    max_len = getattr(sim, 'max_symbolic_len', MAX_SYMBOLIC_LEN)
     re_v = qn.to_float(amp.real)
     im_v = qn.to_float(amp.imag)
     pr = qn.to_float(qn.probability(amp))
     pr_re = qn.to_float(qn.probability(amp.real))
     pr_im = qn.to_float(qn.probability(amp.imag))
     deg = qn.to_float(amp.phase.degrees)
-    return (f'{pname} {re_v:+.{prec}f},{im_v:+.{prec}f}i\n'
-            f'Pr: {pr:.{prec}f} ({pr_re:.{prec}f}+{pr_im:.{prec}f}) ∠{deg:+.0f}º')
+    amp_str = sym_or_float(amp, f'{re_v:+.{prec}f},{im_v:+.{prec}f}i',
+                           max_len)
+    pr_str = sym_or_float(qn.probability(amp), f'{pr:.{prec}f}', max_len)
+    return (f'{pname} {amp_str}\n'
+            f'Pr: {pr_str} ({pr_re:.{prec}f}+{pr_im:.{prec}f}) ∠{deg:+.0f}º')
 
 
 def pos_value_str(sim, pos):

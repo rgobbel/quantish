@@ -58,6 +58,39 @@ class TestVariables(unittest.TestCase):
             Simulation(cfg)
         self.assertIn('shadows', str(ctx.exception))
 
+    def test_phase_accepts_the_same_expression_forms_as_angle(self):
+        # degrees via rad(), and model variables, just like gate angles
+        cfg = make_config()
+        cfg.gates.g1.phase = 'rad(60)'
+        sim = Simulation(cfg)
+        self.assertAlmostEqual(float(sim.gates['g1'].phase),
+                               3.14159265 / 3, places=6)
+        cfg = make_config()
+        cfg.gates.g1.phase = 'qx + qy'
+        sim = Simulation(cfg)
+        self.assertAlmostEqual(float(sim.gates['g1'].phase),
+                               3.14159265 / 4, places=6)
+
+    def test_phase_accepts_the_same_expression_forms_as_angle(self):
+        # degrees via rad(), and model variables, just like gate angles
+        cfg = make_config()
+        cfg.gates.g1.phase = 'rad(60)'
+        sim = Simulation(cfg)
+        self.assertAlmostEqual(float(sim.gates['g1'].phase),
+                               3.14159265 / 3, places=6)
+        cfg = make_config()
+        cfg.gates.g1.phase = 'qx + qy'
+        sim = Simulation(cfg)
+        self.assertAlmostEqual(float(sim.gates['g1'].phase),
+                               3.14159265 / 4, places=6)
+
+    def test_caption_is_optional_and_normalized(self):
+        sim = Simulation(make_config())
+        self.assertEqual(sim.caption, '')
+        cfg = make_config(caption='A caption\n  spanning folded  lines.')
+        sim = Simulation(cfg)
+        self.assertEqual(sim.caption, 'A caption spanning folded lines.')
+
     def test_qify_still_parses_plain_expressions(self):
         self.assertAlmostEqual(float(qify('pi/4')), 0.785398, places=5)
         self.assertAlmostEqual(complex(qify('1+0j')).real, 1.0)

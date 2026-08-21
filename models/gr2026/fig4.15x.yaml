@@ -1,5 +1,7 @@
 title: Figure 4.15
 
+caption: Like figure 4.15, but here we've connected the lower output of *g1* as well.
+
 variables:
    zero: &zero '0j'
    one: &one '1+0j'

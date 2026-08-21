@@ -35,7 +35,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from quantish.config_space import ConfigSpace, GatePort
-from quantish.display import cs_point_sort_key
+from quantish.display import cs_point_sort_key, strip_markdown
 from quantish.simulation import Simulation
 from quantish.qnumber import probability, to_float
 import quantish.qnumber as qn
@@ -372,7 +372,10 @@ class NetworkGraph:
                     n_columns=len(col_labels), band_h=band_h,
                     cells=cells, stripes=stripes,
                     arrows=arrows, labels=labels,
-                    title=f'{sim.title} — weight evolution')
+                    # chart titles are plain text: peel the caption's
+                    # Markdown markers rather than show them literally
+                    title=f'{sim.title}{" - " if sim.caption else ""}'
+                          f'{strip_markdown(sim.caption)}')
 
     # ---------- the Altair renderer ----------
 

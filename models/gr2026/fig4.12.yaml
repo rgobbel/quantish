@@ -1,5 +1,7 @@
 title: Figure 4.12
 
+caption: An observation distinguishes between two outcomes of passing *p1* through a succession of gates with distinct measurement angles.
+
 variables:
    one: &one '1+0j'
    r60: &r60 '0.5+0.87j'

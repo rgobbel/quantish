@@ -18,7 +18,13 @@ class FredkinGate:
     phase_factor in the runner (config_space.particle_splits). A phase
     never changes a magnitude, so an angle-0 gate with a phase, entered
     through its control wire, is a pure phase plate: one particle in,
-    same particle out, weight rotated by φ in the complex plane."""
+    same particle out, weight rotated by φ in the complex plane.
+
+    The phase is an extension beyond the book's gates, which have only
+    the measurement angle; its default of 0 leaves every book circuit
+    unchanged. The name comes from the optics device — a thin
+    transparent plate inserted into one light path, delaying the wave so
+    its phase shifts without its amplitude changing."""
 
     def __init__(self, name:str, theta:Real=0, phase:Real=0):
         self.name = name

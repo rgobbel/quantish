@@ -4,5 +4,6 @@
 symbolic: false             # symbolic or numerical processing. Symbolic uses exact values when possible.
 
 string_precision: 2         # float precision to use when printing weight values. Does not affect computation
+max_symbolic_len: 40        # in Symbolic mode, expressions longer than this display as floats instead
 
 sample: false

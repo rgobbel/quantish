@@ -1,5 +1,7 @@
 title: Figure 4.16 (delay gates)
 
+caption: The network of figure 4.16, this time with delay gates added. The result is identical to that from figure 4.16
+
 variables:
    zero: &zero '0j'
    one: &one '1+0j'

@@ -16,7 +16,14 @@ class Simulation:
     def __init__(self, config):
         self.config = config
         self.title = config.title
+        # optional model caption (typically the book figure's caption);
+        # .get, not .caption: Addict would auto-create an empty Dict.
+        # Whitespace is normalized so folded YAML blocks read as one line.
+        self.caption = ' '.join(str(config.get('caption', '')).split())
         self.precision = config.get('string_precision', 2)
+        # display-only: Symbolic-mode expressions longer than this fall
+        # back to floats (see display.sym_or_float)
+        self.max_symbolic_len = config.get('max_symbolic_len', 40)
         self.n_samples = config.get('n_samples', 0)
         self.load_variables(config)
         self.canonicalize_links(config)
@@ -107,6 +114,8 @@ class Simulation:
                                    if ports_used.get(g) == {'control'}}
 
     def log_model(self, loglevel):
+        if self.caption:
+            log.log(loglevel, f'caption: {self.caption}')
         log_seq('self.qvars', self.qvars, loglevel)
         log_seq('self.gates', self.gates, loglevel)
         log_seq('self.particles', self.particles, loglevel)

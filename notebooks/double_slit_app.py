@@ -17,7 +17,7 @@ Run with: ``marimo run notebooks/double_slit_app.py``
 import marimo
 
 __generated_with = "0.24.0"
-app = marimo.App(width="full", css_file="double_slit_app.css")
+app = marimo.App(width="full", css_file="css/double_slit_app.css")
 
 
 @app.cell(hide_code=True)
@@ -120,6 +120,10 @@ def _(mo):
 def _(mo):
     mo.md(r"""
     ## Overview
+
+    The [double-slit experiment](https://en.wikipedia.org/wiki/Double-slit_experiment) is a classic result in physics, first described by [Thomas Young](https://en.wikipedia.org/wiki/Thomas_Young_(scientist)) in 1801, supporting his contention that light consists of waves. More recently, it was discovered that electrons, atoms, and even molecules show the same behavior. With detectors for individual photons, this demonstrates in a striking way the principle of [wave-particle duality](https://en.wikipedia.org/wiki/Wave%E2%80%93particle_duality).
+
+    This application is a demonstration of the double-slit phenomenon in the quantish framework.
     """)
     return
 
@@ -127,10 +131,10 @@ def _(mo):
 @app.cell(hide_code=True)
 def _(mo):
     """The comparison table's readability styles (black text, larger
-    headers) live in double_slit_app.css, loaded via the App's css_file:
+    headers) live in css/double_slit_app.css, loaded via the App's css_file:
     a <style> tag emitted from a cell gets sanitized away."""
     mo.accordion(
-        {'### Quantish vs. real-world: A step-by-step explanation': mo.md(r"""
+        {'### A step-by-step explanation of the quantish model vs. the real-world experiment': mo.md(r"""
     Two conventions are used throughout:
     - gate $g_1$'s **upper** switch output
     leads to the **left** slit ($S_1$) and its **lower** switch output to
@@ -141,7 +145,7 @@ def _(mo):
     passing through it–its occupancy decides only whether or not that gate
     swaps its switch wires. (One deliberate exception: a gate with a
     **phase** setting, like $g_p$, rotates the weight of every particle
-    traversing it, control input included.)
+    traversing it, control input included, without effecting amplitude.)
 
     | real-world experiment | quantish circuit |
     |---|:---|
@@ -152,18 +156,28 @@ def _(mo):
     | different path lengths from the two slits to screen position $x$ | the phase plate $g_p$ (an angle-0 gate with phase $\varphi(x)$) on the right slit's wire: it rotates the passing amplitude by $e^{i\varphi(x)}$ and changes nothing else |
     | the screen pixel at $x$ | the remerge gate $g_2$ (matched to the split) followed by the sign sorter $g_5$; a particle reaching the detector box $S$ is a hit at this pixel |
     | blocking slit $n$ | the block $B_n$ standing in that slit's place. The wire is diverted into it and those worlds never reach the screen |
-    | a which-way detector at one slit | recorder particle $p_2$ enters gate $g_4$'s upper switch input, and the wire to the right slit passes through $g_4$'s **control** input on its way to $S_2$. In the worlds where $p_1$ heads for the right slit, the occupied control makes $g_4$ swap its switch wires and $p_2$ exits on the lower wire; in the other worlds it exits on the upper wire. $p_2$'s exit records which slit $p_1$ used, without touching $p_1$ |
+    | a which-way detector at one slit | recorder particle $p_2$ enters gate $g_4$'s upper switch input, and the wire to the right slit passes through $g_4$'s `control` input on its way to $S_2$. In the worlds where $p_1$ heads for the right slit, the occupied control makes $g_4$ swap its switch wires and $p_2$ exits on the lower wire; in the other worlds it exits on the upper wire. $p_2$'s exit records which slit $p_1$ used, without touching $p_1$ |
 
-    Why sweep a *phase* and not a gate angle? An angle sets magnitudes
+    In optics, a *phase plate* it is a thin slip of transparent
+    material inserted into one light path: the wave crosses it more
+    slowly and comes out with its phase shifted but its brightness
+    untouched (the trick behind Zernike's phase-contrast microscope).
+    Our $g_p$ is its quantish counterpart: an angle-0 gate whose
+    **phase** setting rotates every traversing weight by $e^{i\varphi}$.
+    The book's gates have only a measurement angle — the phase setting is
+    this simulator's one extension beyond chapter 4's physics, and its
+    default of 0 leaves every circuit from the book exactly as printed.
+
+    Why sweep a phase and not a gate angle? A gate's angle changes magnitudes
     and phase together, so sweeping any gate's angle changes even a single
-    slit's throughput, a $\cos^2$ modulation that would fake fringes with
+    slit's throughput, a $\cos^2$ modulation that would show fringes even with
     only one slit open. The phase knob is different: $\lvert e^{i\varphi}\rvert = 1$,
     so $g_p$ can never change what a single path delivers, and anything
     the screen shows beyond a flat line is genuine two-path interference.
 
-    And why the sorter $g_5$? At the matched remerge, the relative phase
-    does **not** steer $p_1$ between $g_2$'s output wires–it moves weight
-    between the two **sign components** of the upper wire, and a position
+    And why the sorter, $g_5$? At the matched remerge, the relative phase
+    does *not* steer $p_1$ between $g_2$'s output wires. Rather, it moves weight
+    between the two sign components of the upper wire, and a position
     detector placed right there would see nothing. But a minus-sign
     particle entering a switch wire exits on the *other* wire, so the
     angle-0 gate $g_5$ turns the sign difference back into a position
@@ -200,16 +214,16 @@ def _(DEFAULT_THETA_S, math, mo):
     rule allows to interfere; and $g_5$ sorts the result into the
     detectors $S$ and $D$. What the screen shows at $x$ is the
     **intensity** $\mathcal{{I}}(x)$: the probability that $p_1$ ends at
-    $S$, the arrival rate a long exposure at that pixel records. (Script
+    $S$, the arrival rate a long exposure at that pixel records. (Intensity is designated by a script
     $\mathcal{{I}}$, to keep it clearly apart from the imaginary unit
     $i$.)
 
     - **Both slits**: the two slits' worlds interfere at $g_2$, and
       $\mathcal{{I}} = \tfrac{{1}}{{2}}\bigl(1 + \cos(f\pi x)\bigr)$:
-      fringes from 0 to 1, peaking at **4×** the single-slit intensity,
+      fringes from 0 to 1, peaking at 4 times the single-slit intensity,
       with true zeros where the worlds cancel.
     - **One slit blocked**: the other wire ends at its block $B_n$, and
-      a pure phase cannot change a lone path's magnitude, so
+      a pure phase cannot change a lone path's magnitude, so the resulting intensity
       $\mathcal{{I}} = \tfrac{{1}}{{4}}$ is flat.
     - **Recorder**: $p_2$'s position differs between the two slits'
       worlds, so the remerge rule forbids their interference. The cross
@@ -233,15 +247,15 @@ def _(mo):
     def _():
         mtext = mo.md(r"""
         - **fringes**&#42; ($f$) controls how many bright fringes fit across
-          the screen when both slits are open (odd values only, so the
-          screen edges always sit on dark fringes).
+          the screen when both slits are open. We allow odd values only, so that the
+          screen edges always sit on dark fringes.
         - **screen resolution** controls the granularity of each raster display.
         - **particles per volley** controls how many simulated particles will be fired at the apparatus with each press of **fire particles**.
-        - **fire particles** does just that: it fires a volley at each of the four conditions shown, and displays every particle that reaches the screen. Not all of them do: blocking a slit absorbs about half the volley, so those rasters fill half as fast (the hit counts in the titles keep score).
+        - **fire particles** does just that: it fires a volley in each of the four conditions displayed, and displays every particle that reaches the screen. Not all of them do: blocking a slit absorbs about half the volley, so those rasters fill half as fast. The hit counts in the titles keep score.
         - **reset screens** erases the raster displays.
         """)
         # Book-style footnote: a plain <details> element styled small by
-        # the .qfootnote rules in double_slit_app.css (a marimo accordion
+        # the .qfootnote rules in css/double_slit_app.css (a marimo accordion
         # always renders at full prose size).
         note = mo.as_html(mo.md(r"""
         At screen position $x$ (running from $-1$ to $+1$), the phase
@@ -250,15 +264,15 @@ def _(mo):
         the two slits advances through $f$ full turns across the screen, and
         the open-slits intensity
         $\mathcal{I}(x) = \tfrac{1}{2}\bigl(1 + \cos(f\pi x)\bigr)$ shows
-        exactly $f$ bright fringes, the central one pinned at $x = 0$
+        exactly $f$ bright fringes, with the central one pinned at $x = 0$,
         where the two paths match. Only odd values are offered: the
         screen edges sit at phase $\pm f\pi$, so an even count would put
         half a bright fringe at each edge and the pattern would read as
         $f$ dark fringes instead. In a real apparatus this one number
-        stands in for the slit geometry: the phase difference there is about
+        stands in for the slit geometry. The phase difference there is about
         $2\pi d x / (\lambda L)$ for slit separation $d$, wavelength
         $\lambda$, and screen distance $L$, so wider spacing, a shorter
-        wavelength, or a closer screen all put more fringes on the screen.
+        wavelength, or a closer screen will all put more fringes on the screen.
         The single-slit and recorder curves contain no cross term for the
         phase to modulate, which is why the slider affects only the
         both-slits-open panel.
@@ -290,6 +304,8 @@ def _(mo):
 def _(mo):
     mo.md(r"""
     ## Simulation results
+
+    (best viewed with a wide window on a large screen)
     """)
     return
 
@@ -374,7 +390,7 @@ def _(mo):
     mo.md(r"""
     **Where the interference happens:** In quantish physics, only a
     recombining gate makes superposed worlds interfere (see figures 4.13 and 4.14: worlds
-    remerge only when they agree in **every** particle). Here that gate
+    remerge only when they agree in *every* particle). Here that gate
     really is in the circuit: each screen pixel is one engine run through
     the remerge gate $g_2$ (matched to the split at $g_1$, as in figure
     4.7), with the path-length difference to that pixel carried by the
@@ -390,9 +406,11 @@ def _(mo):
 
 @app.cell(hide_code=True)
 def _(mo):
+    # shown in the editor only: in `marimo run` the code cells below are
+    # hidden, so the heading would sit over nothing
     mo.md(r"""
     ## Support code
-    """)
+    """) if mo.app_meta().mode != 'run' else None
     return
 
 

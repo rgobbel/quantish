@@ -127,6 +127,19 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
     phase_graphs = {}
     mermaid_links = []
 
+    if getattr(sim, 'caption', ''):
+        # the model's caption, as a free-standing box ahead of the circuit
+        # (node content is emitted inside double quotes: escape any).
+        # Captions are Markdown; when one uses markers, wrap it as a
+        # mermaid "markdown string" (backticks inside the quotes) so the
+        # bold/italics render instead of showing literal asterisks.
+        caption_node = pmd.Node(id='model_caption')
+        text = sim.caption.replace('"', '#quot;')
+        if any(marker in text for marker in ('*', '_')):
+            text = f'`{text}`'
+        caption_node.content = text
+        diag.add_nodes([caption_node])
+
     for particle_name, particle in sim.particles.items():
         pname = particle_name.split('<')[0]
         particle_node = pmd.Node(id=pname, shape='stadium-shape')
