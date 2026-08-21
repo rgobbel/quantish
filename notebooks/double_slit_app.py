@@ -31,7 +31,23 @@ def initialization():
     import marimo as mo
     import pandas as pd
 
-    alt.data_transformers.enable('default')
+    # Inline chart data in the Vega-Lite spec. 'default' is not enough:
+    # mo.ui.altair_chart overrides any non-marimo transformer with
+    # marimo_arrow, whose virtual files are disposed on every cell re-run
+    # while the browser still requests them ("Virtual file not found"
+    # tracebacks flooding the server log). marimo respects transformers
+    # named marimo_*, and marimo_inline_csv embeds the data as a base64
+    # data: URL, so no virtual files exist at all.
+    try:
+        alt.data_transformers.enable('marimo_inline_csv')
+    except Exception:
+        try:  # marimo registers its transformers lazily
+            from marimo._plugins.ui._impl.charts.altair_transformer import (
+                register_transformers)
+            register_transformers()
+            alt.data_transformers.enable('marimo_inline_csv')
+        except Exception:  # not running under marimo at all
+            alt.data_transformers.enable('default')
     _repo = Path(__file__).resolve().parents[1]
     if str(_repo) not in sys.path:
         sys.path.insert(0, str(_repo))
