@@ -23,7 +23,8 @@ draws it, and its weight-evolution graph after a run:
 
 ![The figure 4.4 circuit](images/fig4.04_circuit.png)
 
-![Weight evolution for figure 4.4](images/fig4.04_weight_evolution.png)
+<img src="images/fig4.04_weight_evolution.png" width="420"
+     alt="Weight evolution for figure 4.4">
 
 To get started with a. gentle introduction, follow the installation instructions below, then go to  [Quick Start](#quick-start).
 
