@@ -32,7 +32,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from quantish.util import SEP, WIRES, angle_label
+from quantish.util import SEP, angle_label
 
 
 # --------------------------------------------------------------------------
@@ -74,59 +74,38 @@ def spec_from_simulation(sim, fig: str = None) -> DiagramSpec:
     # A symbolic angle spec ('pi/6', 'rad(30)', 'theta1') labels the gate
     # verbatim with its degrees appended; a numeric one shows degrees only.
     def angle_text(gname):
-        return angle_label(config.gates[gname].angle,
-                           sim.fredkin_gates[gname].atheta.degrees,
+        text = angle_label(config.gates[gname].angle,
+                           sim.fredkin_gates[gname].theta.degrees,
                            degree_sign='°')
+        phase = config.gates[gname].get('phase')
+        if phase is not None:
+            text += ' φ=' + angle_label(
+                phase, sim.fredkin_gates[gname].phase.degrees,
+                degree_sign='°')
+        return text
 
     gates = {gname: {'angle': angle_text(gname),
-                     'deg': float(sim.fredkin_gates[gname].atheta.degrees)}
+                     'deg': float(sim.fredkin_gates[gname].theta.degrees)}
              for gname in sim.fredkin_gates.keys()
              if gname not in sim.pass_through_gates}
     particles = {pname: {} for pname in sim.particles.keys()}
 
-    # Wire naming mirrors quantish_gld's resolve_topology: every wire is named
-    # for the port that emits onto it; a linked destination shares that name.
-    gate_inputs = {g: {port: f'{g}_{port}_in' for port in WIRES} for g in gates}
-    gate_outputs = {g: {port: f'{g}_{port}_out' for port in WIRES} for g in gates}
-    delay_in = {d: f'{d}_in' for d in delay_names}
-    delay_out = {d: f'{d}_out' for d in delay_names}
+    # The renderer needs only each particle's sign, for its circle label.
+    # (The quantish_gld original also derived per-port wire names here;
+    # nothing in this renderer reads them.)
+    particle_signs = {src: int(sim.particles[src].sign)
+                      for src in links if src in particles}
 
-    def out_wire(source: str) -> str | None:
-        if SEP in source:
-            g, port = source.split(SEP, 1)
-            if g in delay_out:  # 'd1.control' — the delay's single output
-                return delay_out[g]
-            return gate_outputs[g][port]
-        if source in delay_out:
-            return delay_out[source]
-        return None
-
-    def set_in_wire(dest: str, wire_name: str) -> None:
-        if SEP in dest:
-            g, port = dest.split(SEP, 1)
-            if g in delay_in:
-                delay_in[g] = wire_name
-            else:
-                gate_inputs[g][port] = wire_name
-        elif dest in delay_in:
-            delay_in[dest] = wire_name
-
-    def in_wire(dest: str) -> str:
-        if SEP in dest:
-            g, port = dest.split(SEP, 1)
-            if g in delay_in:
-                return delay_in[g]
-            return gate_inputs[g][port]
-        return delay_in.get(dest, dest)
-
-    particle_starts = {}
-    for src, dst in links.items():
-        if src in particles:
-            particle_starts[src] = (in_wire(dst), int(sim.particles[src].sign))
-            continue
-        wire = out_wire(src)
-        if wire is not None:
-            set_in_wire(dst, wire)
+    # A pass-through gate that carries a phase is a phase plate: annotate
+    # its box with the phase (an angle_overrides entry for the box name
+    # replaces the annotation text).
+    delay_notes = {}
+    for gname in _pass_through:
+        phase = config.gates[gname].get('phase')
+        if phase is not None:
+            delay_notes[gname] = 'φ=' + angle_label(
+                phase, sim.fredkin_gates[gname].phase.degrees,
+                degree_sign='°')
 
     # Particle links stay in `links` for routing; the renderer draws them
     # from the particle circle to the destination port.
@@ -151,11 +130,8 @@ def spec_from_simulation(sim, fig: str = None) -> DiagramSpec:
                                  particles=particles, links=links,
                                  stage_gates=stage_gates, stage_names=stage_names),
             'topo': {
-                'gate_inputs': gate_inputs,
-                'gate_outputs': gate_outputs,
-                'delay_in': delay_in,
-                'delay_out': delay_out,
-                'particle_starts': particle_starts,
+                'particle_signs': particle_signs,
+                'delay_notes': delay_notes,
             },
             'engine_steps': engine_steps,
         },
@@ -172,23 +148,33 @@ Circuit = DiagramSpec
 # --------------------------------------------------------------------------
 
 # All distances are in TikZ "cm" units. 1 cm ≈ 28pt.
-GATE_WIDTH        = 4.2     # outer frame width
-GATE_HEIGHT       = 2.4     # outer frame height
-STAGE_WIDTH       = 6.0     # horizontal distance between stage column origins
+# Gates are portrait rectangles (taller than wide), as in the book's
+# figures. These constants are the single source of truth: the \fgate TeX
+# macro below is generated from them.
+GATE_WIDTH        = 3.0     # outer frame width
+GATE_HEIGHT       = 3.4     # outer frame height
+COL_GAP           = 1.8     # wire channel between columns
+STAGE_WIDTH       = GATE_WIDTH + COL_GAP   # full-gate column stride
 GATE_VSPACE       = 1.0     # vertical gap between gates in the same stage
 DELAY_HEIGHT      = 0.7
 DELAY_VSPACE      = 0.5
 PARTICLE_OFFSET_X = -1.8    # particle column relative to stage 1's gate left edge
 # The control port is a single centered box (the control wire just passes
 # through). Its half-width determines where the left/right edges sit
-# relative to the gate's horizontal center.
-CONTROL_HALF_W = 0.7
+# relative to the gate's horizontal center. Delay boxes share the width.
+PORT_W = 1.1                # port / delay box width
+CONTROL_HALF_W = PORT_W / 2
+DELAY_COL_WIDTH = PORT_W    # a column of only delay boxes is just that wide
+DELAY_COL_GAP = 0.45        # gap beside a delay-only (inline-box) column
 
-# Port-row y-offsets, measured from the gate's *top* (north anchor):
+# Port-row y-offsets, measured from the gate's *top* (north anchor). The
+# two header rows (name, angle) sit above the control row. Upper and
+# lower are 0.8 apart so inline delay boxes (DELAY_HEIGHT tall, centered
+# on the rows) on adjacent rows keep clear of each other.
 PORT_DY = {
-    'control': -0.95,
-    'upper':   -1.45,
-    'lower':   -1.95,
+    'control': -1.30,
+    'upper':   -2.10,
+    'lower':   -2.90,
 }
 
 # X-offsets (relative to a gate's north-west) of the *outer* edge of the
@@ -214,24 +200,25 @@ class Layout:
     particle_xy:    dict[str, tuple[float, float]] = field(default_factory=dict)   # center
     bounds:         tuple[float, float, float, float] = (0, 0, 0, 0)               # x_min,y_min,x_max,y_max
     col_of:         dict[str, int] = field(default_factory=dict)                   # gate/delay → engine-step column
-    stage_label_x:  list[tuple[float, float, str]] = field(default_factory=list)   # (x_left, x_right, label) per execution stage
+    col_x:          list[float] = field(default_factory=list)                      # column left edge
+    col_width:      list[float] = field(default_factory=list)
     stage_label_y:  float = 0.0
 
 def total_height(circuit: Circuit):
     parsed = circuit.topology['parsed']
     max_height = 0
     for stage in parsed.stage_gates:
+        # mirror stage_ys exactly: each member advances by its stride, and
+        # the trailing inter-gate space doesn't count toward the span
         cur_height = 0
         for gate in stage:
-            if gate in parsed.gates.keys():
+            if gate in parsed.delay_gates:
+                cur_height += DELAY_HEIGHT + DELAY_VSPACE
+            else:
                 cur_height += GATE_HEIGHT + GATE_VSPACE
-            cur_height -= GATE_VSPACE
-        if len(parsed.delay_gates) >= 0:
-            cur_height += DELAY_VSPACE
-            for gate in stage:
-                if gate in parsed.delay_gates:
-                    cur_height += DELAY_HEIGHT + DELAY_VSPACE
-            cur_height -= DELAY_VSPACE
+        if stage:
+            cur_height -= (DELAY_VSPACE if stage[-1] in parsed.delay_gates
+                           else GATE_VSPACE)
         max_height = max(max_height, cur_height)
     return max_height
 
@@ -257,26 +244,40 @@ def compute_layout(circuit: Circuit) -> Layout:
     # execution stage row, *consistent across all columns*. So a column with only
     # the row-0 gate puts that gate at the same y as a fully-populated
     # column's row-0 gate, and the ports line up across columns.
-    max_rows = max((len(s) for s in parsed.stage_gates), default=0) or 1
-    # Compute the y for each row index. Rows 0..max_rows-1 stack top-to-bottom
-    # centered around y=0. Use the gate height + vspacing as the row stride.
     row_stride = GATE_HEIGHT + GATE_VSPACE
     delay_stride = DELAY_HEIGHT + DELAY_VSPACE
-    row_ys0 = []
-    total_h = total_height(circuit)
-    top = total_h / 2.0
-    for r in range(max_rows):
-        row_ys0.append(top - r * row_stride)
+    top = total_height(circuit) / 2.0
 
+    # A column holding only delay boxes is drawn inline, book-style: it's
+    # only as wide as the boxes, the gaps beside it shrink, and each box
+    # sits at its incoming wire's y so the wire runs straight through it
+    # (a slit or detector drawn ON the wire, not a full stage away). A box
+    # whose source y can't be resolved (fed by a particle) falls back to
+    # the stacked placement.
+    delay_only = [all(name in delays for name in names)
+                  for names in engine_steps]
+
+    x = 0.0
     for col, names in enumerate(engine_steps):
-        x = col * STAGE_WIDTH
+        width = DELAY_COL_WIDTH if delay_only[col] else GATE_WIDTH
+        L.col_x.append(x)
+        L.col_width.append(width)
         row_ys = stage_ys(parsed, names, top, row_stride, delay_stride)
         for row_y, name in zip(row_ys, names):
             h = height(parsed, name)
             if name in delays:
-                L.delay_xy[name] = (x + GATE_WIDTH/2, row_y - h / 2)
+                y = (source_port_y(parsed, L, name)
+                     if delay_only[col] else None)
+                if y is None:
+                    y = row_y - h / 2
+                L.delay_xy[name] = (x + width/2, y)
             else:
                 L.gate_xy[name] = (x, row_y)
+        gap = COL_GAP
+        if col + 1 < len(engine_steps) and (delay_only[col]
+                                            or delay_only[col + 1]):
+            gap = DELAY_COL_GAP
+        x += width + gap
 
     # Pass 3: particles. Place them top-to-bottom in execution order, spread evenly
     # across the *full* vertical extent of the diagram (topmost-gate-top to
@@ -305,21 +306,11 @@ def compute_layout(circuit: Circuit) -> Layout:
         for i, pname in enumerate(parsed.particles):
             L.particle_xy[pname] = (PARTICLE_OFFSET_X, ys[i])
 
-    # Stage labels: one per execution stage, spanning the columns its gates occupy.
-    if parsed.stage_names:
-        col_xs = []
-        for s_idx, stage in enumerate(parsed.stage_gates):
-            cols = sorted({L.col_of[n] for n in stage if n in L.col_of})
-            if not cols:
-                continue
-            x_left = cols[0] * STAGE_WIDTH
-            x_right = cols[-1] * STAGE_WIDTH + GATE_WIDTH
-            col_xs.append((x_left, x_right, parsed.stage_names[s_idx]))
-        L.stage_label_x = col_xs
-        # y above the topmost gate.
-        if L.gate_xy:
-            topmost = max(y for _, y in L.gate_xy.values())
-            L.stage_label_y = topmost + 0.7
+    # Stage-label band y, above the topmost gate (the labels themselves
+    # are drawn from group_boxes in emit_tex).
+    if parsed.stage_names and L.gate_xy:
+        topmost = max(y for _, y in L.gate_xy.values())
+        L.stage_label_y = topmost + 0.7
 
     # Bounding box.
     xs = [PARTICLE_OFFSET_X - 0.5]
@@ -327,7 +318,8 @@ def compute_layout(circuit: Circuit) -> Layout:
     for x, y in L.gate_xy.values():
         xs.extend([x, x + GATE_WIDTH]); ys.extend([y, y - GATE_HEIGHT])
     for x, y in L.delay_xy.values():
-        xs.extend([x, x + CONTROL_HALF_W]); ys.extend([y - DELAY_HEIGHT, y + DELAY_HEIGHT])
+        xs.extend([x - CONTROL_HALF_W, x + CONTROL_HALF_W])
+        ys.extend([y - DELAY_HEIGHT / 2, y + DELAY_HEIGHT / 2])
     for x, y in L.particle_xy.values():
         xs.extend([x - 0.4, x + 0.4]); ys.extend([y - 0.4, y + 0.4])
     # Reserve room above for the stage label band.
@@ -371,13 +363,6 @@ def group_boxes(parsed, L: Layout) -> list[dict]:
     return result
 
 
-def stage_row(parsed, name: str) -> int:
-    """Return the row index of `name` within its execution stage (0 if not found)."""
-    for stage in parsed.stage_gates:
-        for i, n in enumerate(stage):
-            if n == name:
-                return i
-    return 0
 
 def stage_ys(parsed, stage_gates, top,  gate_stride, delay_stride) -> list[float]:
     ys = [top]
@@ -395,18 +380,22 @@ def stage_ys(parsed, stage_gates, top,  gate_stride, delay_stride) -> list[float
 def height(parsed, name: str) -> float:
     return DELAY_HEIGHT if name in parsed.delay_gates else GATE_HEIGHT
 
-def vspace(parsed, name: str) -> float:
-    return DELAY_VSPACE if name in parsed.delay_gates else GATE_VSPACE
+def source_port_y(parsed, L: Layout, name: str) -> float | None:
+    """The y of the wire feeding delay box `name`: its source port's row,
+    resolved through chains of already-placed boxes (columns are laid out
+    left to right, so a box's source is always placed first). None when
+    the source is a particle or not yet placed."""
+    for src, dst in parsed.links.items():
+        if dst.split(SEP)[0] != name:
+            continue
+        parts = src.split(SEP)
+        if parts[0] in L.delay_xy:                      # an upstream box
+            return L.delay_xy[parts[0]][1]
+        if len(parts) == 2 and parts[0] in L.gate_xy:   # a gate port
+            return L.gate_xy[parts[0]][1] + PORT_DY[parts[1].replace('_out', '')]
+        return None
+    return None
 
-def vspace_for_stack(parsed, names: list[str]) -> float:
-    if len(names) <= 1:
-        return 0
-    return sum(vspace(parsed, n) for n in names[:-1])
-
-
-# --------------------------------------------------------------------------
-# Wire endpoint resolution
-# --------------------------------------------------------------------------
 
 def port_xy(L: Layout, gate_name: str, port: str, side: str) -> tuple[float, float]:
     """Coordinates of a port on a Fredkin gate or a delay's in/out point.
@@ -430,37 +419,6 @@ def port_xy(L: Layout, gate_name: str, port: str, side: str) -> tuple[float, flo
         edge_x = x + PORT_IN_DX if side == 'in' else x + PORT_OUT_DX
     return edge_x, y + dy
 
-def wire_endpoint(circuit: Circuit, L: Layout, wire_name: str, side: str) -> tuple[float, float] | None:
-    """Find the (x, y) where a wire enters or exits its node."""
-    topo = circuit.topology['topo']
-    if side == 'in':
-        # Search gate inputs and delay inputs.
-        for gname, ports in topo['gate_inputs'].items():
-            for port, w in ports.items():
-                if w == wire_name:
-                    return port_xy(L, gname, port, 'in')
-        for dname, w in topo['delay_in'].items():
-            if w == wire_name:
-                return port_xy(L, dname, '_delay', 'in')
-    else:  # out
-        for gname, ports in topo['gate_outputs'].items():
-            for port, w in ports.items():
-                if w == wire_name:
-                    return port_xy(L, gname, port, 'out')
-        for dname, w in topo['delay_out'].items():
-            if w == wire_name:
-                return port_xy(L, dname, '_delay', 'out')
-    return None
-
-
-def wire_endpoint_y(circuit: Circuit, L: Layout, wire_name: str, side: str) -> float:
-    end = wire_endpoint(circuit, L, wire_name, side)
-    return end[1] if end else 0.0
-
-
-# --------------------------------------------------------------------------
-# Wire routing — picks vertical channels in each inter-stage gap.
-# --------------------------------------------------------------------------
 
 @dataclass
 class Route:
@@ -497,8 +455,8 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
     for name, (x, y) in L.gate_xy.items():
         obstacles[name] = (x, y, x + GATE_WIDTH, y - GATE_HEIGHT)
     for name, (cx, cy) in L.delay_xy.items():
-        obstacles[name] = (cx + GATE_WIDTH/2 - CONTROL_HALF_W, cy + DELAY_HEIGHT / 2,
-                           cx + GATE_WIDTH/2 + CONTROL_HALF_W, cy - DELAY_HEIGHT / 2)
+        obstacles[name] = (cx - CONTROL_HALF_W, cy + DELAY_HEIGHT / 2,
+                           cx + CONTROL_HALF_W, cy - DELAY_HEIGHT / 2)
 
     def hit_horizontal(y: float, x1: float, x2: float,
                        exclude: set[str] = frozenset(),
@@ -549,9 +507,14 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
             # clearance so a vertical channel doesn't graze a particle, and
             # end clear of the first column's group-box border.
             return (PARTICLE_OFFSET_X + 0.55, -_GAP_MARGIN)
-        gate_right = gap * STAGE_WIDTH + GATE_WIDTH
-        next_left = (gap + 1) * STAGE_WIDTH
-        return gate_right + _GAP_MARGIN, next_left - _GAP_MARGIN
+        gate_right = L.col_x[gap] + L.col_width[gap]
+        next_left = (L.col_x[gap + 1] if gap + 1 < len(L.col_x)
+                     else gate_right + COL_GAP)
+        lo, hi = gate_right + _GAP_MARGIN, next_left - _GAP_MARGIN
+        if hi - lo < 0.3:   # narrow (inline-box) gap: pare the margins
+            mid = (gate_right + next_left) / 2
+            lo, hi = mid - 0.15, mid + 0.15
+        return lo, hi
 
     # Track per-gap channel (vertical-segment) allocations: list of
     # (x, y_low, y_high). When picking a new channel, we prefer one that
@@ -568,12 +531,21 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
         if x_hi > x_lo + 0.02:
             horizontal_segments.append((y, min(x_lo, x_hi), max(x_lo, x_hi)))
 
+    # Two segments at "the same y" match within this tolerance (a pair of
+    # near-but-not-identical baselines would render as overlapping lines).
+    _Y_MATCH_TOL = 0.15
+    # A vertical terminating within this distance of a stub's y reads as a
+    # T-junction fusing the wires; farther away it's a clean crossing.
+    _TJUNCTION_TOL = 0.10
+    # Endpoint shrink for interval-interior tests.
+    _CORNER_EPS = 0.02
+
     def horizontal_blocked(y: float, x_lo: float, x_hi: float) -> tuple[float, float] | None:
         """If a horizontal at y overlapping [x_lo, x_hi] is already in use,
         return the (x_lo, x_hi) of the conflicting segment."""
         lo, hi = min(x_lo, x_hi), max(x_lo, x_hi)
         for sy, sx_lo, sx_hi in horizontal_segments:
-            if abs(sy - y) > 0.15:
+            if abs(sy - y) > _Y_MATCH_TOL:
                 continue
             if sx_hi < lo + 0.05 or sx_lo > hi - 0.05:
                 continue
@@ -602,12 +574,33 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
         link's reserved entry corridor?"""
         lo, hi = min(x_lo, x_hi), max(x_lo, x_hi)
         for owner, ry, rx_lo, rx_hi in entry_reserves:
-            if owner == cur_link[0] or abs(ry - y) > 0.15:
+            if owner == cur_link[0] or abs(ry - y) > _Y_MATCH_TOL:
                 continue
             if rx_hi < lo + 0.05 or rx_lo > hi - 0.05:
                 continue
             return True
         return False
+
+    def stub_clean(y: float, xa: float, xb: float, exempt_xs=()) -> bool:
+        """One horizontal stub from xa to xb at y: free of recorded
+        horizontals, reserved entry corridors, and other channels'
+        terminating corners (a vertical ENDING at the stub's y would
+        visually fuse with it — a T-junction; a pass-through crossing is
+        fine). `exempt_xs` names a route's own channels."""
+        lo, hi = min(xa, xb), max(xa, xb)
+        if horizontal_blocked(y, lo, hi) is not None:
+            return False
+        if reserve_blocked(y, lo, hi):
+            return False
+        for chans in gap_channels_used.values():
+            for ux, uy_lo, uy_hi in chans:
+                if ux in exempt_xs:
+                    continue
+                if (lo + _CORNER_EPS < ux < hi - _CORNER_EPS
+                        and (abs(y - uy_lo) <= _TJUNCTION_TOL
+                             or abs(y - uy_hi) <= _TJUNCTION_TOL)):
+                    return False
+        return True
 
     # Minimum visual separation between two channels in the same gap.
     _CHANNEL_MIN_GAP = 0.30
@@ -615,7 +608,8 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
     def alloc_channel(gap: int, y_low: float, y_high: float,
                       stub_y: float | None = None,
                       stub_to: float | None = None,
-                      spread: bool = False) -> float:
+                      spread: bool = False,
+                      exclude_xs: frozenset = frozenset()) -> float:
         """Pick a channel x in `gap` whose vertical span doesn't overlap any
         already-allocated channel whose y-span overlaps ours.
 
@@ -627,6 +621,9 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
         already-allocated x in this gap, regardless of y overlap. This is
         used in the particle corridor so successive particle wires fan out
         in a cascade rather than stacking on the leftmost slot.
+
+        `exclude_xs` are x's a retrying caller has already tried and
+        rejected; they count as conflicts in every pass.
 
         Strategy:
           1. Build the set of x's whose verticals would conflict (overlapping
@@ -643,9 +640,10 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
         conflicts = [
             ux for ux, uy_lo, uy_hi in used
             if not (y_high < uy_lo + 0.10 or y_low > uy_hi - 0.10)
-        ]
+        ] + list(exclude_xs)
         # When spreading, every prior x acts as a soft-conflict for proximity.
-        proximity_xs = [ux for ux, _, _ in used] if spread else conflicts
+        proximity_xs = ([ux for ux, _, _ in used] + list(exclude_xs)
+                        if spread else conflicts)
 
         n = 32
         candidates = [x_lo + (x_hi - x_lo) * (i + 0.5) / n for i in range(n)]
@@ -666,23 +664,7 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
         def stub_ok(cx: float) -> bool:
             if stub_y is None or stub_to is None:
                 return True
-            if horizontal_blocked(stub_y, cx, stub_to) is not None:
-                return False
-            if reserve_blocked(stub_y, cx, stub_to):
-                return False
-            # the stub must not cross another channel's corner: a vertical
-            # (in any gap) whose x lies inside the stub's span and whose
-            # y-span reaches the stub's y would visually fuse the wires
-            lo, hi = min(cx, stub_to), max(cx, stub_to)
-            for chans in gap_channels_used.values():
-                for ux, uy_lo, uy_hi in chans:
-                    # only a vertical that TERMINATES at the stub's y fuses
-                    # with it (T-junction); a pass-through crossing is fine
-                    if (lo + 0.02 < ux < hi - 0.02
-                            and (abs(stub_y - uy_lo) <= 0.1
-                                 or abs(stub_y - uy_hi) <= 0.1)):
-                        return False
-            return True
+            return stub_clean(stub_y, cx, stub_to)
 
         for cx in candidates:
             if not all(abs(cx - cf) >= _CHANNEL_MIN_GAP for cf in proximity_xs):
@@ -794,14 +776,13 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
             # corner stub to clear gates AND already-routed horizontals.
             y_lo, y_hi = min(sy, dy), max(sy, dy)
             picked_cx = None
-            tried = []
+            tried = set()
             for _attempt in range(8):
                 # In the particle corridor (gap == -1), spread successive
                 # particle wires so they cascade rather than stack on the
                 # leftmost slot.
                 cx = alloc_channel(gap, y_lo, y_hi, stub_y=dy, stub_to=dx,
-                                   spread=(gap == -1))
-                tried.append(cx)
+                                   spread=(gap == -1), exclude_xs=tried)
                 # Validate against gates and horizontal stubs.
                 bad = (hit_horizontal(sy, sx + 0.02, cx, exclude=skip_set)
                        or hit_horizontal(dy, cx, dx - 0.02, exclude=skip_set)
@@ -813,23 +794,10 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
                 if not bad:
                     picked_cx = cx
                     break
-                # Pop the failed allocation so the next attempt sees fresh state,
-                # but treat it as a forbidden x by re-recording with infinite span
-                # (forces alloc_channel to pick something else).
+                # Roll back the failed allocation and forbid its x on the
+                # next attempt.
                 gap_channels_used[gap].pop()
-                # Instead of permanently blocking, just record the conflict and
-                # ask alloc_channel to try the *next* candidate. We do this by
-                # adding a fake conflict at the just-tried cx.
-                gap_channels_used[gap].append((cx, -1e9, 1e9))
-            # Clean up fake conflicts we added.
-            for tcx in tried:
-                if picked_cx is None or tcx != picked_cx:
-                    # Remove the corresponding fake entry (last matching).
-                    for i in range(len(gap_channels_used[gap]) - 1, -1, -1):
-                        if (abs(gap_channels_used[gap][i][0] - tcx) < 1e-6
-                                and gap_channels_used[gap][i][1] == -1e9):
-                            gap_channels_used[gap].pop(i)
-                            break
+                tried.add(cx)
             if picked_cx is None:
                 continue
             two_step = [(sx, sy), (picked_cx, sy), (picked_cx, dy), (dx, dy)]
@@ -970,25 +938,10 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
         valid.sort(key=lane_cost)
 
         def stubs_clean(ly: float, cx_: float, d_cx_: float) -> bool:
-            # both port stubs must be free of recorded horizontals AND of
-            # other channels' corners (else the wires visually fuse)
-            for yy, xa, xb in ((sy, sx, cx_), (dy, d_cx_, dx)):
-                lo, hi = min(xa, xb), max(xa, xb)
-                if horizontal_blocked(yy, lo, hi) is not None:
-                    return False
-                if reserve_blocked(yy, lo, hi):
-                    return False
-                for chans in gap_channels_used.values():
-                    for ux, uy_lo, uy_hi in chans:
-                        if ux in (cx_, d_cx_):
-                            continue  # this route's own channels
-                        # only a vertical TERMINATING at this y fuses with
-                        # the stub; a pass-through crossing is fine
-                        if (lo + 0.02 < ux < hi - 0.02
-                                and (abs(yy - uy_lo) <= 0.1
-                                     or abs(yy - uy_hi) <= 0.1)):
-                            return False
-            return True
+            # both port stubs must be clean (see stub_clean), with this
+            # route's own two channels exempt
+            return all(stub_clean(yy, xa, xb, exempt_xs=(cx_, d_cx_))
+                       for yy, xa, xb in ((sy, sx, cx_), (dy, d_cx_, dx)))
 
         # Try lane candidates nearest-first; keep the first whose channel
         # allocations leave both stubs clean. Roll back failed allocations.
@@ -1084,7 +1037,7 @@ TEX_PREAMBLE = r"""\documentclass[border=8pt,tikz]{standalone}
     },
     fport/.style = {
         draw=black!50, rounded corners=1pt, line width=0.3pt,
-        inner sep=0pt, minimum width=14mm, minimum height=4mm,
+        inner sep=0pt, minimum width=@PW@, minimum height=4mm,
         fill=blue!4,
         font=\sffamily\footnotesize,
     },
@@ -1097,7 +1050,7 @@ TEX_PREAMBLE = r"""\documentclass[border=8pt,tikz]{standalone}
     delay/.style = {
         draw=black!60, line width=0.4pt,
         rectangle, rounded corners=2pt, fill=black!8,
-        minimum width=14mm, minimum height=7mm,
+        minimum width=@PW@, minimum height=7mm,
         font=\sffamily\footnotesize,
         inner sep=2pt,
     },
@@ -1114,20 +1067,21 @@ TEX_PREAMBLE = r"""\documentclass[border=8pt,tikz]{standalone}
     },
 ]
 """
+TEX_PREAMBLE = TEX_PREAMBLE.replace('@PW@', f'{PORT_W * 10:.0f}mm')
+
 TEX_GATE_DEF = r"""
 %% Fredkin gate macro: \fgate{name}{title}{angle}{x}{y}{angle-degrees}.
 %%
-%% Visual model:
+%% Visual model (portrait, as in the book's figures):
 %%
-%%   +-- name : angle ------------------------+
-%%   |                                        |
-%%   |              [ control ]               |   ← single passthrough box
-%%   |                                        |
-%%   |  [uin] \ . . . . . . / [uout]         |
-%%   |          X     (dotted X = 4-way split)
-%%   |  [lin] / . . . . . . \ [lout]         |
-%%   |                                        |
-%%   +----------------------------------------+
+%%   +---- name  [compass] ----+
+%%   |          angle          |
+%%   |       [ control ]       |   ← single passthrough box
+%%   |                         |
+%%   |  [uin] \ . . / [uout]   |
+%%   |          X        (dotted X = 4-way split)
+%%   |  [lin] / . . \ [lout]   |
+%%   +-------------------------+
 %%
 %% Switch ports are split (in / out) since the gate's switch logic does
 %% something interesting between them. The control wire just passes through,
@@ -1138,36 +1092,35 @@ TEX_GATE_DEF = r"""
 %%   #1-uin  / #1-uout : input/output upper switch ports
 %%   #1-lin  / #1-lout : input/output lower switch ports
 %%
-%% Layout (relative to the outer-frame north-west = (0,0)):
-%%   width  ≈ 4.2 cm  (frame)
-%%   height ≈ 2.4 cm
-%%   port box width ≈ 1.4 cm, height ≈ 0.4 cm
+%% All numbers are generated from the layout constants at the top of
+%% tikz_diagram.py (GATE_WIDTH/GATE_HEIGHT, PORT_DY, PORT_W...).
 \newcommand{\fgate}[6]{%
     %% Outer frame
     \node[fgate, anchor=north west,
-          minimum width=4.2cm, minimum height=2.4cm]
+          minimum width=@GW@cm, minimum height=@GH@cm]
           (#1-box) at (#4,#5) {};
-    %% Title
+    %% Header row 1: the gate name, with the compass glyph (a needle at
+    %% the measurement angle #6, 0 pointing right as in the book's
+    %% figures) in the top-right corner.
     \node[anchor=north, inner sep=0pt, yshift=-2pt]
-          at ($(#1-box.north)$)
-          {\textbf{#2}\;{\scriptsize\color{black!60}#3}};
-    %% Angle glyph: a compass-needle arrow at the measurement angle #6
-    %% (degrees, 0 pointing right as in the book's figures), in the title
-    %% row to the right of the angle text — clear of the control port.
-    \fill[black!65] ($(#1-box.north west)+(3.55,-0.35)$) circle (0.04);
+          at ($(#1-box.north)$) {\textbf{#2}};
+    \fill[black!65] ($(#1-box.north west)+(@CXX@,-0.30)$) circle (0.04);
     \draw[->, line width=0.7pt, color=black!65]
-        ($(#1-box.north west)+(3.55,-0.35)$) -- ++(#6:0.3);
+        ($(#1-box.north west)+(@CXX@,-0.30)$) -- ++(#6:0.28);
+    %% Header row 2: the angle.
+    \node[anchor=north, inner sep=0pt, yshift=-0.44cm]
+          at ($(#1-box.north)$) {\scriptsize\color{black!60}#3};
     %% Single control port (centered horizontally).
     \node[fport, anchor=center] (#1-control)
-          at ($(#1-box.north)+(0,-0.95)$) {control};
+          at ($(#1-box.north)+(0,@CY@)$) {control};
     %% Aliases so the router can target the same box via cin/cout names.
     \coordinate (#1-cin)  at ($(#1-control.west)$);
     \coordinate (#1-cout) at ($(#1-control.east)$);
     %% Input/output switch ports.
-    \node[fport, anchor=center] (#1-uin)  at ($(#1-box.north west)+(0.85,-1.45)$) {upper};
-    \node[fport, anchor=center] (#1-uout) at ($(#1-box.north east)+(-0.85,-1.45)$) {upper};
-    \node[fport, anchor=center] (#1-lin)  at ($(#1-box.north west)+(0.85,-1.95)$) {lower};
-    \node[fport, anchor=center] (#1-lout) at ($(#1-box.north east)+(-0.85,-1.95)$) {lower};
+    \node[fport, anchor=center] (#1-uin)  at ($(#1-box.north west)+(@PX@,@UY@)$) {upper};
+    \node[fport, anchor=center] (#1-uout) at ($(#1-box.north east)+(-@PX@,@UY@)$) {upper};
+    \node[fport, anchor=center] (#1-lin)  at ($(#1-box.north west)+(@PX@,@LY@)$) {lower};
+    \node[fport, anchor=center] (#1-lout) at ($(#1-box.north east)+(-@PX@,@LY@)$) {lower};
     %% Internal switch wires: dotted X (4-way split), each input → both outputs.
     \draw[line width=0.4pt, color=black!50, densely dotted]
         (#1-uin.east) -- (#1-uout.west);
@@ -1179,6 +1132,15 @@ TEX_GATE_DEF = r"""
         (#1-lin.east) -- (#1-uout.west);
 }
 """
+for _token, _value in {
+        '@GW@': GATE_WIDTH, '@GH@': GATE_HEIGHT,
+        '@CXX@': GATE_WIDTH - 0.32,               # compass center
+        '@CY@': PORT_DY['control'],
+        '@UY@': PORT_DY['upper'], '@LY@': PORT_DY['lower'],
+        '@PX@': PORT_IN_DX + PORT_W / 2,          # switch-port box center
+}.items():
+    TEX_GATE_DEF = TEX_GATE_DEF.replace(_token, f'{_value:.2f}')
+del _token, _value
 _TEX_POSTAMBLE = r"""
 \end{tikzpicture}
 \end{document}
@@ -1218,16 +1180,26 @@ def emit_tex(circuit: Circuit, L: Layout, routes: list[Route],
         out.append(rf"\fgate{{{gname}}}{{{title}}}{{{angle_text}}}"
                    rf"{{{x:.2f}}}{{{y:.2f}}}{{{_deg:.1f}}}")
 
-    # Delays.
+    # Delays. A note above the box shows a phase plate's phase.
+    delay_notes = circuit.topology['topo'].get('delay_notes', {})
     for dname, (cx, cy) in L.delay_xy.items():
         out.append(rf"\node[delay] ({dname}) at ({cx:.2f},{cy:.2f}) {{{math_label(dname)}}};")
+        note = None
+        if angle_overrides is not None and dname in angle_overrides:
+            note = angle_overrides[dname]
+        elif dname in delay_notes:
+            note = delay_notes[dname]
+        if note is not None:
+            # below the box: above would collide with the group label
+            out.append(rf"\node[anchor=north, inner sep=1.5pt] "
+                       rf"at ({cx:.2f},{cy - DELAY_HEIGHT / 2:.2f}) "
+                       rf"{{\scriptsize {format_angle(note)}}};")
 
     # Particles.
     for pname, (cx, cy) in L.particle_xy.items():
-        sign_int = circuit.topology['topo']['particle_starts'][pname][1]
+        sign_int = circuit.topology['topo']['particle_signs'][pname]
         sign_char = '+' if sign_int > 0 else '-'
-        sub = subscript(pname)
-        stem = pname[:len(pname) - len(sub)] if sub else pname
+        stem, sub = split_name(pname)
         if len(stem) > 2:
             stem = stem[0]   # a long name would burst the particle circle
         label = math_label(stem + sub, prefix=sign_char)
@@ -1247,25 +1219,25 @@ def math_label(name: str, prefix: str = '') -> str:
     """A name as a math-mode label with trailing digits subscripted:
     'g1' → $g_1$, 'S2' → $S_2$, 'B' → $B$ — the one convention for gates,
     delay boxes, and particles alike."""
-    sub = subscript(name)
-    stem = (name[:len(name) - len(sub)] if sub else name).replace('_', r'\_')
+    stem, sub = split_name(name)
+    stem = stem.replace('_', r'\_')
     body = rf"{stem}_{{{sub}}}" if sub else stem
     return rf"${prefix}{body}$"
 
 
-def subscript(name: str) -> str:
-    """Extract the trailing digit(s) of a name like 'g3' or 'p2' for $g_3$.
+def split_name(name: str) -> tuple[str, str]:
+    """(stem, trailing digits) of a name like 'g3' → ('g', '3').
 
-    Returns an empty string if the name has no trailing digits (so a gate
-    named 'g' renders as $g$ rather than $g_g$).
-    """
+    The digits become the label's subscript; a name with no trailing
+    digits keeps its whole self as the stem (so a gate named 'g' renders
+    as $g$ rather than $g_g$)."""
     digits = ''
     for ch in reversed(name):
         if ch.isdigit():
             digits = ch + digits
         else:
             break
-    return digits
+    return (name[:len(name) - len(digits)] if digits else name), digits
 
 def format_angle(angle) -> str:
     """Format the angle for the gate header."""
@@ -1275,15 +1247,19 @@ def format_angle(angle) -> str:
     # Degree signs and pi-bearing expressions render in math mode: '°'
     # (which pdflatex can't take raw) becomes ^\circ wherever it appears
     # — labels like 'pi/6 (30.0°)' carry it mid-string — and literal
-    # spaces survive as explicit math-mode spaces.
-    if '°' in s or any(c in s for c in 'pi*/+-^') or '\\' in s:
+    # spaces survive as explicit math-mode spaces. NOTE: 'pi*/+-^' is a
+    # CHARACTER SET (a lone 'p' or 'i' matches), not the substring 'pi';
+    # every numeric label is already caught by the '°' test, so this
+    # branch effectively fires only for symbolic specs.
+    if '°' in s or 'φ' in s or any(c in s for c in 'pi*/+-^') or '\\' in s:
         cleaned = (tex_math_clean(s).replace('°', r'^{\circ}')
                    .replace(' ', r'\ '))
         return f'${cleaned}$'
     return tex_escape(s)
 
 def tex_math_clean(s: str) -> str:
-    return s.replace('pi', r'\pi').replace('*', r'\cdot ')
+    return (s.replace('pi', r'\pi').replace('*', r'\cdot ')
+            .replace('φ', r'\varphi '))
 
 def tex_escape(s: str) -> str:
     return s.replace('_', r'\_').replace('&', r'\&').replace('%', r'\%').replace('#', r'\#').replace('$', r'\$')
@@ -1293,6 +1269,35 @@ def tex_escape(s: str) -> str:
 # Compile
 # --------------------------------------------------------------------------
 
+def _have(tool: str, missing_msg: str) -> bool:
+    """Whether `tool` is on PATH, printing the standard message if not."""
+    if shutil.which(tool):
+        return True
+    print(f"circuits_diagram: {missing_msg}", file=sys.stderr)
+    return False
+
+
+def _run_pdflatex(tex_source: str, tmp_dir: Path) -> Path | None:
+    """Compile tex_source in tmp_dir; the PDF's path, or None on failure."""
+    tex_path = tmp_dir / 'diagram.tex'
+    tex_path.write_text(tex_source, encoding='utf-8')
+    try:
+        result = subprocess.run(
+            ['pdflatex', '-interaction=nonstopmode', '-halt-on-error',
+             '-output-directory', str(tmp_dir), str(tex_path)],
+            capture_output=True, timeout=20,
+        )
+    except subprocess.TimeoutExpired:
+        print("circuits_diagram: pdflatex timed out", file=sys.stderr)
+        return None
+    pdf_path = tmp_dir / 'diagram.pdf'
+    if not pdf_path.exists():
+        print("circuits_diagram: pdflatex failed", file=sys.stderr)
+        print(result.stdout.decode('utf-8', errors='replace')[-2000:], file=sys.stderr)
+        return None
+    return pdf_path
+
+
 def compile_tex(tex_source: str, dpi: int) -> Image.Image | None:
     """Run pdflatex on the source, then convert PDF→PNG via ImageMagick.
 
@@ -1301,30 +1306,15 @@ def compile_tex(tex_source: str, dpi: int) -> Image.Image | None:
     installs of pdf2svg on this system. ImageMagick handles the conversion
     via its embedded Ghostscript delegate.
     """
-    if not shutil.which('pdflatex'):
-        print("circuits_diagram: pdflatex not on PATH; skipping diagram", file=sys.stderr)
+    if not _have('pdflatex', 'pdflatex not on PATH; skipping diagram'):
         return None
-    if not shutil.which('magick'):
-        print("circuits_diagram: ImageMagick (magick) not on PATH; skipping diagram", file=sys.stderr)
+    if not _have('magick', 'ImageMagick (magick) not on PATH; skipping diagram'):
         return None
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
-        tex_path = tmp_dir / 'diagram.tex'
-        tex_path.write_text(tex_source, encoding='utf-8')
-        try:
-            result = subprocess.run(
-                ['pdflatex', '-interaction=nonstopmode', '-halt-on-error',
-                 '-output-directory', str(tmp_dir), str(tex_path)],
-                capture_output=True, timeout=20,
-            )
-        except subprocess.TimeoutExpired:
-            print("circuits_diagram: pdflatex timed out", file=sys.stderr)
-            return None
-        pdf_path = tmp_dir / 'diagram.pdf'
-        if not pdf_path.exists():
-            print("circuits_diagram: pdflatex failed", file=sys.stderr)
-            print(result.stdout.decode('utf-8', errors='replace')[-2000:], file=sys.stderr)
+        pdf_path = _run_pdflatex(tex_source, tmp_dir)
+        if pdf_path is None:
             return None
         png_path = tmp_dir / 'diagram.png'
         try:
@@ -1363,6 +1353,7 @@ def cache_key(circuit: Circuit,
                   sorted((g, d.get('angle'), d.get('deg'))
                          for g, d in parsed.gates.items()),
                   parsed.stage_gates,
+                  sorted(circuit.topology['topo'].get('delay_notes', {}).items()),
                   sorted((angle_overrides or {}).items(), key=lambda kv: kv[0])))
     h = hashlib.sha1(ident.encode()).hexdigest()[:12]
     safe_fig = ''.join(c if (c.isalnum() or c in '-_') else '_' for c in circuit.fig)
@@ -1372,6 +1363,19 @@ def cache_key(circuit: Circuit,
 # --------------------------------------------------------------------------
 # Public API
 # --------------------------------------------------------------------------
+
+def _prepare(circuit: Circuit,
+             angle_overrides: dict[str, object] | None) -> tuple[str, str]:
+    """Layout, route, and emit: (tex, cache_stem). Layout and routing are
+    cheap; only pdflatex is worth caching, and keying the stem on the
+    emitted TeX means a change to the layout or wire-router code
+    invalidates stale cached images automatically."""
+    layout = compute_layout(circuit)
+    routes = route_wires(circuit, layout)
+    tex = emit_tex(circuit, layout, routes, angle_overrides=angle_overrides)
+    tex_hash = hashlib.sha1(tex.encode()).hexdigest()[:10]
+    return tex, f'{cache_key(circuit, angle_overrides)}_{tex_hash}'
+
 
 def render_diagram(circuit: Circuit, dpi: int = 150,
                    angle_overrides: dict[str, object] | None = None) -> Image.Image | None:
@@ -1387,16 +1391,8 @@ def render_diagram(circuit: Circuit, dpi: int = 150,
     if circuit.topology is None:
         return None
 
-    # Layout and routing are cheap; only pdflatex is worth caching. Keying
-    # on the emitted TeX (not just the inputs) means a change to the layout
-    # or wire-router code invalidates stale images automatically.
-    layout = compute_layout(circuit)
-    routes = route_wires(circuit, layout)
-    tex = emit_tex(circuit, layout, routes, angle_overrides=angle_overrides)
-
-    cache_key_val = cache_key(circuit, angle_overrides)
-    tex_hash = hashlib.sha1(tex.encode()).hexdigest()[:10]
-    cached = CACHE_DIR / f"{cache_key_val}_{tex_hash}_{dpi}.png"
+    tex, stem = _prepare(circuit, angle_overrides)
+    cached = CACHE_DIR / f"{stem}_{dpi}.png"
     if cached.exists():
         try:
             return Image.open(cached).copy()
@@ -1441,13 +1437,8 @@ def render_diagram_svg(circuit: Circuit,
     """
     if circuit.topology is None:
         return None
-    layout = compute_layout(circuit)
-    routes = route_wires(circuit, layout)
-    tex = emit_tex(circuit, layout, routes, angle_overrides=angle_overrides)
-
-    cache_key_val = cache_key(circuit, angle_overrides)
-    tex_hash = hashlib.sha1(tex.encode()).hexdigest()[:10]
-    cached = CACHE_DIR / f"{cache_key_val}_{tex_hash}.svg"
+    tex, stem = _prepare(circuit, angle_overrides)
+    cached = CACHE_DIR / f"{stem}.svg"
     if not cached.exists():
         try:
             CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -1457,7 +1448,8 @@ def render_diagram_svg(circuit: Circuit,
         if not compile_tex_to_file(tex, cached):
             return None
     try:
-        return _uniquify_svg_ids(cached.read_text(encoding='utf-8'), tex_hash)
+        # the stem's tail is the per-diagram TeX hash — a stable id tag
+        return _uniquify_svg_ids(cached.read_text(encoding='utf-8'), stem[-10:])
     except Exception:
         cached.unlink(missing_ok=True)
         return None
@@ -1482,9 +1474,9 @@ def render_diagram_to_file(circuit: Circuit, out_path: Path | str,
     suffix = out_path.suffix.lower()
 
     if suffix in ('.pdf', '.svg'):
-        layout = compute_layout(circuit)
-        routes = route_wires(circuit, layout)
-        tex = emit_tex(circuit, layout, routes, angle_overrides=angle_overrides)
+        # deliberately uncached: writing to a caller-named path must write
+        # every time (the CLI overwrites its output on repeat runs)
+        tex, _ = _prepare(circuit, angle_overrides)
         return compile_tex_to_file(tex, out_path)
 
     img = render_diagram(circuit, dpi=dpi, angle_overrides=angle_overrides)
@@ -1502,32 +1494,17 @@ def compile_tex_to_file(tex_source: str, out_path: Path) -> bool:
     """Compile TeX → PDF and write to `out_path`. If the path is .svg, run
     pdf2svg as a final step. Returns True on success.
     """
-    if not shutil.which('pdflatex'):
-        print("circuits_diagram: pdflatex not on PATH", file=sys.stderr)
+    if not _have('pdflatex', 'pdflatex not on PATH'):
         return False
     suffix = out_path.suffix.lower()
-    if suffix == '.svg' and not shutil.which('pdf2svg'):
-        print("circuits_diagram: pdf2svg not on PATH; install it to save SVG",
-              file=sys.stderr)
+    if suffix == '.svg' and not _have(
+            'pdf2svg', 'pdf2svg not on PATH; install it to save SVG'):
         return False
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
-        tex_path = tmp_dir / 'diagram.tex'
-        tex_path.write_text(tex_source, encoding='utf-8')
-        try:
-            result = subprocess.run(
-                ['pdflatex', '-interaction=nonstopmode', '-halt-on-error',
-                 '-output-directory', str(tmp_dir), str(tex_path)],
-                capture_output=True, timeout=20,
-            )
-        except subprocess.TimeoutExpired:
-            print("circuits_diagram: pdflatex timed out", file=sys.stderr)
-            return False
-        pdf_path = tmp_dir / 'diagram.pdf'
-        if not pdf_path.exists():
-            print("circuits_diagram: pdflatex failed", file=sys.stderr)
-            print(result.stdout.decode('utf-8', errors='replace')[-2000:], file=sys.stderr)
+        pdf_path = _run_pdflatex(tex_source, tmp_dir)
+        if pdf_path is None:
             return False
 
         if suffix == '.pdf':

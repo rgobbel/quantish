@@ -31,6 +31,7 @@ the single source of truth for how the measurement angles enter.
 """
 import logging
 import random
+from collections import Counter
 from copy import deepcopy
 
 import quantish.qnumber as qn
@@ -94,6 +95,32 @@ def classify(point, two_stage: bool) -> str:
     return 'diff'
 
 
+def epr_tally(result_space, tally: Counter, two_stage: bool) -> dict:
+    """Same/diff counts for EPR-style models over a Monte Carlo tally,
+    using classify's outcome convention (plain position after two
+    measurement stages, position⊕sign after one)."""
+    by_key = {p.key: p for p in result_space.index.values()}
+    counts = {'same': 0, 'diff': 0, 'uncoupled': 0}
+    for key, n in tally.items():
+        point = by_key.get(key)
+        if point is None:
+            continue
+        counts[classify(point, two_stage)] += n
+    return counts
+
+
+def log_epr(label: str, counts: dict, predicted=None):
+    coupled = counts['same'] + counts['diff']
+    if coupled == 0:
+        log.info(f'   EPR ({label}): no coupled trials')
+        return
+    predstr = f', predicted={float(predicted):.4f}' if predicted is not None else ''
+    log.info(f"   EPR ({label}): same={counts['same']}, diff={counts['diff']}, "
+             f"uncoupled={counts['uncoupled']}, "
+             f"discrepancy rate={counts['diff'] / coupled:.4f}{predstr}")
+    log.info(' ')
+
+
 # --------------------------------------------------------------------------
 # The Bell/CHSH experiment: a 3×3 sweep over the three sweep angles.
 # --------------------------------------------------------------------------
@@ -127,8 +154,10 @@ def run_pair(sim, theta1, theta2, n_trials: int = 0, rng=None) -> dict:
     (when n_trials > 0), 'analytical' = sin²(θ1−θ2), and 'classical' — the
     linear hidden-variable prediction 2|θ1−θ2|/π.
     """
+    # local imports: montecarlo imports this module at top level, so the
+    # reverse direction must stay deferred (and Simulation likewise)
     from quantish.simulation import Simulation
-    from quantish.montecarlo import epr_tally, sample_terminal
+    from quantish.montecarlo import sample_terminal
     theta1 = qify(theta1)
     theta2 = qify(theta2)
     two_stage = is_two_stage(sim)

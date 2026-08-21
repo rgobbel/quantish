@@ -24,7 +24,7 @@ Columns, left to right:
   nothing coming out of it.
 
 configuration-space points appear in the canonical display order (gate, then port with
-upper first, then sign with + first — sim.cs_point_sort_key). Cancelled
+upper first, then sign with + first — display.cs_point_sort_key). Cancelled
 and zero-weight configuration-space points do not appear at all. Gates are implicit: the
 focus is stages and their results.
 """
@@ -34,7 +34,8 @@ import math as m
 from collections import defaultdict
 from pathlib import Path
 
-from quantish.config_space import ConfigSpace, ConfigSpacePoint, GatePort
+from quantish.config_space import ConfigSpace, GatePort
+from quantish.display import cs_point_sort_key
 from quantish.simulation import Simulation
 from quantish.qnumber import probability, to_float
 import quantish.qnumber as qn
@@ -98,7 +99,7 @@ class NetworkGraph:
             layers[p.step].append(p)
         steps = sorted(layers.keys())
         for step in steps:
-            layers[step].sort(key=sim.cs_point_sort_key)
+            layers[step].sort(key=lambda p: cs_point_sort_key(sim, p))
 
         control_wired = {str(dst).split('.')[0]
                          for dst in sim.links.values()
@@ -233,7 +234,7 @@ class NetworkGraph:
                 if settles(p):
                     col_glyphs[ci + 1].append((p, 'settled'))
         for glyphs in col_glyphs:
-            glyphs.sort(key=lambda g: sim.cs_point_sort_key(g[0]))
+            glyphs.sort(key=lambda g: cs_point_sort_key(sim, g[0]))
 
         # the final column is redundant when it repeats the last stage
         # column exactly (nothing died there); keep it only when it differs

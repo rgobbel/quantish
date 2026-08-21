@@ -1,6 +1,4 @@
-import cmath
 import logging
-import math
 from collections import defaultdict
 from addict import Addict
 import networkx as nx
@@ -18,28 +16,10 @@ class Simulation:
     def __init__(self, config):
         self.config = config
         self.title = config.title
-        self.symbolic = config.get('symbolic', False)
         self.precision = config.get('string_precision', 2)
-        self.sample = config.get('sample', False)
         self.n_samples = config.get('n_samples', 0)
-        # Model variables, usable by name in any angle/weight expression
-        # ('(q5 + q6) - theta2'). Built in declaration order so a variable
-        # may reference the ones above it; names that sympify already
-        # binds (pi, I, rad, ...) are rejected — they would shadow.
-        self.qvars = {}
-        for vname, vval in config.variables.items():
-            if qn.reserved_name(vname):
-                raise ValueError(
-                    f"variable '{vname}' shadows a builtin math name")
-            self.qvars[vname] = qify(vval, self.qvars)
-        # A delay gate has exactly one port (control), so links may name it
-        # bare — 'd5: d6' — with the '.control' implied.
-        _delays = set(config.get('delay_gates', []))
-        def _canon(end):
-            return f'{end}{SEP}control' if end in _delays else end
-        self.links = {_canon(src): _canon(dst)
-                      for src, dst in config.links.items()}
-        self.sources = {v: k for k, v in self.links.items()}
+        self.load_variables(config)
+        self.canonicalize_links(config)
         self.validate_wiring(config)
         self.simplified_links = simplify_graph(self.links)
         self.graph_roots = [node for node, degree in self.simplified_links.in_degree() if degree == 0]
@@ -66,43 +46,77 @@ class Simulation:
         self.all_points = None
         log.debug(' ')
         self.load_elements(config)
-        # The zero-in-degree nodes of the link graph must be exactly the
-        # declared particles — as SETS: YAML declaration order and graph
-        # insertion order are both arbitrary and must never matter.
-        _roots = set(self.graph_roots)
-        _pnames = set(self.particles.keys())
-        if _roots != _pnames:
-            raise ValueError(
-                f'model links are inconsistent with its particles: '
-                f'link-graph roots {sorted(_roots)} vs particles {sorted(_pnames)} '
-                f'(unfed non-particles: {sorted(_roots - _pnames)}; '
-                f'particles that are link targets: {sorted(_pnames - _roots)})')
+        self.check_roots()
         log.debug(' ')
         # diagrams use their own grouping when declared, else the run stages
         self.diagram_groups = (self.normalize_groups(config.get('diagram_groups'))
                                or self.declared_run_stages)
-        # Gates wired only through their control port are pure pass-throughs
-        # (delays): diagrams render them as simple boxes instead of full
-        # Fredkin gates.
-        _ports_used = defaultdict(set)
-        for _src, _dst in self.links.items():
-            for _end in (_src, _dst):
-                _parts = _end.split(SEP)
-                if len(_parts) == 2:
-                    _ports_used[_parts[0]].add(_parts[1])
-        self.pass_through_gates = {g for g in self.gates.keys()
-                                   if _ports_used.get(g) == {'control'}}
+        self.find_pass_through_gates()
         self.gates = self.fredkin_gates | self.delay_gates
-        log_seq('self.qvars', self.qvars, logging.DEBUG)
-        log_seq('self.gates', self.gates, logging.DEBUG)
-        log_seq('self.particles', self.particles, logging.DEBUG)
+        self.log_model(logging.DEBUG)
+
+    def load_variables(self, config):
+        """Model variables, usable by name in any angle/weight expression
+        ('(q5 + q6) - theta2'). Built in declaration order so a variable
+        may reference the ones above it; names that sympify already
+        binds (pi, I, rad, ...) are rejected — they would shadow."""
+        self.qvars = {}
+        for vname, vval in config.variables.items():
+            if qn.reserved_name(vname):
+                raise ValueError(
+                    f"variable '{vname}' shadows a builtin math name")
+            self.qvars[vname] = qify(vval, self.qvars)
+
+    def canonicalize_links(self, config):
+        """A delay gate has exactly one port (control), so links may name it
+        bare — 'd5: d6' — with the '.control' implied. Canonicalize both
+        link endpoints and build the reverse (sources) map."""
+        delays = set(config.get('delay_gates', []))
+
+        def canon(end):
+            return f'{end}{SEP}control' if end in delays else end
+
+        self.links = {canon(src): canon(dst)
+                      for src, dst in config.links.items()}
+        self.sources = {v: k for k, v in self.links.items()}
+
+    def check_roots(self):
+        """The zero-in-degree nodes of the link graph must be exactly the
+        declared particles — as SETS: YAML declaration order and graph
+        insertion order are both arbitrary and must never matter."""
+        roots = set(self.graph_roots)
+        pnames = set(self.particles.keys())
+        if roots != pnames:
+            raise ValueError(
+                f'model links are inconsistent with its particles: '
+                f'link-graph roots {sorted(roots)} vs particles {sorted(pnames)} '
+                f'(unfed non-particles: {sorted(roots - pnames)}; '
+                f'particles that are link targets: {sorted(pnames - roots)})')
+
+    def find_pass_through_gates(self):
+        """Gates wired only through their control port are pure
+        pass-throughs (delays): diagrams render them as simple boxes
+        instead of full Fredkin gates."""
+        ports_used = defaultdict(set)
+        for src, dst in self.links.items():
+            for end in (src, dst):
+                parts = end.split(SEP)
+                if len(parts) == 2:
+                    ports_used[parts[0]].add(parts[1])
+        self.pass_through_gates = {g for g in self.gates.keys()
+                                   if ports_used.get(g) == {'control'}}
+
+    def log_model(self, loglevel):
+        log_seq('self.qvars', self.qvars, loglevel)
+        log_seq('self.gates', self.gates, loglevel)
+        log_seq('self.particles', self.particles, loglevel)
         log_seq('run stages',
                 [[str(self.gates[gate]) for gate in gates]
                  for gates in [stage for stage in self.run_stages]],
-                logging.DEBUG, enum_items=True)
+                loglevel, enum_items=True)
         linkages = [f'{str(n)} -> {", ".join(list(self.simplified_links.successors(n))) or "NULL"}'
                     for n in nx.topological_sort(self.simplified_links)]
-        log_seq('downstream links', linkages, logging.DEBUG)
+        log_seq('downstream links', linkages, loglevel)
 
     @staticmethod
     def normalize_groups(groups):
@@ -195,7 +209,8 @@ class Simulation:
                 raise ValueError(
                     f"gate '{gname}' declares no angle "
                     f"(found keys: {sorted(gval.keys())})")
-            new_gate = FredkinGate(gname, qify(angle, self.qvars))
+            new_gate = FredkinGate(gname, qify(angle, self.qvars),
+                                   phase=qify(gval.get('phase', 0), self.qvars))
             self.fredkin_gates[gname] = new_gate
             self.gates[gname] = new_gate
         for dgname in config.get('delay_gates', []):
@@ -250,149 +265,3 @@ class Simulation:
         log.debug(' ')
         log.debug('DONE!')
         return result_space, all_points
-
-    def port_summary(self, step, port, end='origin'):
-        """Formatted per-particle summary of the amplitudes at `port` over
-        the configuration-space points at `step`, one line per particle:
-
-            p1+: 0.56, p1-: 0.19 | Σ: 0.75 ∠+30º
-
-        The per-sign values are marginal probabilities (Σ|w|²). Σ is the
-        aggregate: the two signed component amplitudes summed as complex
-        numbers, shown as squared magnitude and phase — the port's
-        wire-weight view. end='origin' summarizes what exited the port,
-        end='endpoint' what is arriving at it. None when nothing matches
-        (or symbolic weights with free symbols)."""
-        if self.all_points is None:
-            return None
-        probs = defaultdict(lambda: defaultdict(float))   # pname -> sign -> Σ|w|²
-        amps = defaultdict(complex)                       # pname -> Σ of configuration-space point weights
-        try:
-            for point in self.all_points.index.values():
-                if point.step != step or point.cancelled:
-                    continue
-                for pname, coord in point.coords.items():
-                    where = (coord.position.origin if end == 'origin'
-                             else coord.position.endpoint)
-                    if where == port:
-                        probs[pname][str(coord.sign)] += float(point.probability)
-                        amps[pname] += complex(point.weight)
-        except (TypeError, ValueError):
-            return None  # symbolic weights with free symbols
-        if not probs:
-            return None
-        lines = []
-        for pname in sorted(probs.keys()):
-            sign_parts = ', '.join(
-                f'{pname}{sign}: {prob:.{self.precision}f}'
-                for sign, prob in sorted(probs[pname].items(), reverse=True))
-            agg = amps[pname]
-            phase_deg = math.degrees(cmath.phase(agg)) if abs(agg) > 1e-12 else 0.0
-            lines.append(f'{sign_parts}\nΣ: {abs(agg) ** 2:.{self.precision}f} '
-                         f'∠{phase_deg:+.0f}º')
-        return '\n'.join(lines)
-
-    def gate_io(self):
-        """Per-step gate traffic: a list of rows {step, gate, port, input,
-        output} for every gate port that saw a particle — inputs are what
-        was arriving at the port in the previous step's configuration-space points (coordinate
-        endpoints), outputs what exited it when the gate fired (coordinate
-        origins), both in port_summary format."""
-        rows = []
-        if self.all_points is None:
-            return rows
-        for i, stage in enumerate(self.run_stages):
-            step = i + 1
-            for gname in stage:
-                for wire in ('control', 'upper', 'lower'):
-                    port = GatePort(gname, wire)
-                    arriving = self.port_summary(step - 1, port, end='endpoint')
-                    leaving = self.port_summary(step, port, end='origin')
-                    if arriving is None and leaving is None:
-                        continue
-                    rows.append({'step': step, 'gate': gname, 'port': wire,
-                                 'input': arriving or '—',
-                                 'output': leaving or '—'})
-        return rows
-
-    # display ordering of a gate's ports: the switch wires the book's
-    # figures read top-down, then the pass-through control
-    PORT_DISPLAY_ORDER = {'upper': 0, 'lower': 1, 'control': 2}
-
-    def coord_sort_key(self, coord):
-        """Canonical display order for one particle coordinate: gate (in
-        logical evaluation order), then port (upper, lower, control), then
-        particle name, then sign (+ before −). Yields e.g.
-        p3+@g4.upper, p3+@g4.lower, p1+@g7.upper, p1-@g7.upper, ..."""
-        where = coord.position.origin or coord.position.endpoint
-        gate = where.gate if where is not None else None
-        port = where.port if where is not None else None
-        return (self.gate_step.get(gate, len(self.run_stages) + 1),
-                self.run_order.index(gate) if gate in self.run_order
-                else len(self.run_order),
-                self.PORT_DISPLAY_ORDER.get(port, len(self.PORT_DISPLAY_ORDER)),
-                coord.name,
-                -int(coord.sign))
-
-    def cs_point_sort_key(self, point):
-        """Canonical display order for a whole configuration-space point: compare configuration-space points by
-        their coordinates taken in coord_sort_key order, so rows group by
-        gate, then port (upper first), then sign (+ first)."""
-        return tuple(sorted(self.coord_sort_key(c) for c in point.coords.values()))
-
-    def port_particle_amps(self, step, port, end='origin'):
-        """Per-particle summed amplitude (qnumber Complex) at `port` over
-        the configuration-space points at `step`. end='origin' sums what exited the
-        port, end='endpoint' what is arriving at it. Empty dict when
-        nothing matches."""
-        amps = {}
-        if self.all_points is None:
-            return amps
-        for point in self.all_points.index.values():
-            if point.step != step or point.cancelled:
-                continue
-            for pname, coord in point.coords.items():
-                where = (coord.position.origin if end == 'origin'
-                         else coord.position.endpoint)
-                if where == port:
-                    amps[pname] = (amps[pname] + point.weight
-                                   if pname in amps else point.weight)
-        return amps
-
-    def amp_value_str(self, pname, amp):
-        """Display block for one particle's summed amplitude at a port:
-
-            p1 +0.75,+0.43i
-            Pr: 0.75 (0.56+0.19) ∠+30º
-
-        Line 1: the amplitude as a signed (real, imaginary) pair, the
-        imaginary part suffixed i. Line 2: the combined probability, its
-        decomposition into real- and imaginary-part contributions, and
-        the phase in degrees. (In this circuit family the real part is
-        the plus-sign component and the imaginary part the minus-sign
-        component.)"""
-        prec = self.precision
-        re_v = qn.to_float(amp.real)
-        im_v = qn.to_float(amp.imag)
-        pr = qn.to_float(qn.probability(amp))
-        pr_re = qn.to_float(qn.probability(amp.real))
-        pr_im = qn.to_float(qn.probability(amp.imag))
-        deg = qn.to_float(amp.phase.degrees)
-        return (f'{pname} {re_v:+.{prec}f},{im_v:+.{prec}f}i\n'
-                f'Pr: {pr:.{prec}f} ({pr_re:.{prec}f}+{pr_im:.{prec}f}) ∠{deg:+.0f}º')
-
-    def pos_value_str(self, pos):
-        """Display string for a gate output port after a run: one
-        amp_value_str block per particle present. Returns None when
-        nothing exited there."""
-        parts = pos.split(SEP)
-        if len(parts) != 2:
-            return None
-        gname, gport = parts
-        step = self.gate_step.get(gname)
-        if step is None:
-            return None
-        amps = self.port_particle_amps(step, GatePort(gname, gport))
-        if not amps:
-            return None
-        return '\n'.join(self.amp_value_str(p, amps[p]) for p in sorted(amps))

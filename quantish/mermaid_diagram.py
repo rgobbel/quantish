@@ -1,16 +1,28 @@
-import logging
 from pathlib import Path
 
-
+from quantish.display import pos_value_str
 from quantish.simulation import Simulation
-from quantish.util import SEP, angle_label, parse_position, sstr, wstr
+from quantish.util import SEP, angle_label, parse_position
 import quantish.qnumber as qn
 import python_mermaid.diagram as pmd
 import python_mermaid.node as pm
-from collections import namedtuple, defaultdict
+from collections import namedtuple
 import re
-import math as m
 import time
+
+def mmdc_cmd():
+    """The mermaid-cli command, with our puppeteer config when present.
+
+    Homebrew's mermaid-cli pins an exact headless-Chrome version that
+    breaks on every upgrade; puppeteer-config.json points it at the
+    installed Google Chrome instead.
+    """
+    cmd = ['mmdc']
+    pconfig = Path(__file__).resolve().parents[1] / 'puppeteer-config.json'
+    if pconfig.exists():
+        cmd += ['-p', str(pconfig)]
+    return cmd
+
 
 DiagramFields = namedtuple('DiagramFields', ('field', 'label'))
 
@@ -45,23 +57,6 @@ gate_fields = {'upper': DiagramFields(field='upper', label='UPPER'),
 #     final_chart = (points + labels).properties(
 #         title='Quantish Weights')
 #     return final_chart
-
-def short_config(point, key=None):
-    """Compact one-line label for a configuration-space point's coordinates: sign, gate, and the
-    port initial for each particle, e.g. '+g2c|+g2l|+g3u'. Coordinates
-    appear in particle-name order unless a sort key (e.g.
-    sim.coord_sort_key) is supplied."""
-    coords = point.coords.values()
-    if key is not None:
-        coords = sorted(coords, key=key)
-    parts = []
-    for coord in coords:
-        port = coord.position.origin or coord.position.endpoint
-        if port is None:
-            parts.append(f'{sstr(coord.sign)}?')
-        else:
-            parts.append(f'{sstr(coord.sign)}{port.gate}{(port.port or "c")[0]}')
-    return '|'.join(parts)
 
 
 def make_gate_node(sim, gname, inout, wire, mermaid_nodes, show_outputs=True):
@@ -99,7 +94,7 @@ def make_gate_node(sim, gname, inout, wire, mermaid_nodes, show_outputs=True):
         content = f'{gcontent}{entry_annotation()}'
         src = sim.sources.get(position)
         if show_outputs and src is not None and SEP in src:
-            src_value = sim.pos_value_str(src)
+            src_value = pos_value_str(sim, src)
             if src_value is not None:
                 content = f'{gcontent}:\n{src_value}'
         make1(graph_node_id, content)
@@ -108,7 +103,7 @@ def make_gate_node(sim, gname, inout, wire, mermaid_nodes, show_outputs=True):
         # TODO(roadmap: Mermaid after-diagrams): mark the sampled/selected
         # output once port values come from final-world marginals.
         selected = False
-        out_value_str = sim.pos_value_str(out_pos) if show_outputs else None
+        out_value_str = pos_value_str(sim, out_pos) if show_outputs else None
         cs = '' if not show_outputs else (out_value_str
                                           if out_value_str is not None else 'None')
         # sinks only exist for ports that actually carry a value
@@ -122,7 +117,7 @@ def make_gate_node(sim, gname, inout, wire, mermaid_nodes, show_outputs=True):
         else:
             make1(graph_node_id, f'{gcontent}', bold=selected)
     elif inout == '':
-        out_value_str = sim.pos_value_str(position) if show_outputs else None
+        out_value_str = pos_value_str(sim, position) if show_outputs else None
         occupied = out_value_str is not None
         cs = '' if not show_outputs else (out_value_str if occupied else 'None')
         if (show_outputs and position not in sim.links.keys() and occupied):
@@ -195,6 +190,9 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
                 # degrees appended; a numeric one shows degrees only
                 _angle = angle_label(sim.config.gates[gname].angle,
                                      gate.theta.degrees)
+                _phase = sim.config.gates[gname].get('phase')
+                if _phase is not None:
+                    _angle += ' φ=' + angle_label(_phase, gate.phase.degrees)
                 gg.header = f'subgraph {gname}["{gname}: {_angle}"]'
                 ggi = gg.add_subgraph(f'{gname}.input')
                 ggi.header = f'subgraph {gname}.input[input]'

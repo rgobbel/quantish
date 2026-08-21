@@ -1,7 +1,6 @@
 import logging
 
 import quantish.qnumber as qn
-from quantish.angle import Angle
 from quantish.qnumber import qify, Complex, Real
 from quantish.util import Sign, OTHER
 
@@ -9,21 +8,26 @@ log = logging.getLogger('quantish')
 
 class FredkinGate:
     """A quantish Fredkin gate: an angle plus the four precomputed weight
-    factors of the switch-wire split. Gates are stateless — the runner in
-    config_space.py asks for factors per configuration-space point via
-    switch_factors()."""
+    components of the switch-wire split. Gates are stateless — the runner
+    in config_space.py asks for components per configuration-space point
+    via switch_components().
 
-    def __init__(self, name:str, theta:Real=0):
+    The optional *phase* rotates the weight of EVERY particle traversing
+    the gate by e^{iφ} — switch-wire particles via the split components
+    (multiplied through below), control-wire pass-throughs via
+    phase_factor in the runner (config_space.particle_splits). A phase
+    never changes a magnitude, so an angle-0 gate with a phase, entered
+    through its control wire, is a pure phase plate: one particle in,
+    same particle out, weight rotated by φ in the complex plane."""
+
+    def __init__(self, name:str, theta:Real=0, phase:Real=0):
         self.name = name
+        # radians, kept exactly as given (no normalization into [0, 2π),
+        # so an angle entered as -30º displays as -30º, not 330º)
         self.theta = qify(theta)
+        self.phase = qify(phase)
         if type(self) is DelayGate:
             return
-        if type(self.theta) is Angle:
-            self.atheta = self.theta
-            self.theta = self.theta.radians
-        else:
-            self.atheta = Angle(self.theta, unit='radians')
-            self.theta = self.atheta.radians
         self.twist = self.theta - qn.PI_fn()/2
 
         self.cos_theta = self.theta.cos
@@ -40,13 +44,26 @@ class FredkinGate:
         self.mcos_sin_twist = -qn.I_fn() * self.cos_twist * self.sin_twist
         self.sin2_twist = Complex(self.sin_twist**2)
 
+        if not qn.zerop(self.phase):
+            self.phase_factor = Complex(1).rotate(self.phase)   # e^{iφ}
+            self.cos2_theta = self.cos2_theta * self.phase_factor
+            self.cos_sin_theta = self.cos_sin_theta * self.phase_factor
+            self.mcos_sin_theta = self.mcos_sin_theta * self.phase_factor
+            self.sin2_theta = self.sin2_theta * self.phase_factor
+            self.cos2_twist = self.cos2_twist * self.phase_factor
+            self.cos_sin_twist = self.cos_sin_twist * self.phase_factor
+            self.mcos_sin_twist = self.mcos_sin_twist * self.phase_factor
+            self.sin2_twist = self.sin2_twist * self.phase_factor
+
     def report_type(self): ## HACK TO AVOID A DEPENDENCY LOOP
         return 'FredkinGate'
 
     def __repr__(self):
-        return f'{self.name}({self.atheta.degrees:.2f}º)'
+        if qn.zerop(self.phase):
+            return f'{self.name}({self.theta.degrees:.2f}º)'
+        return f'{self.name}({self.theta.degrees:.2f}º, φ={self.phase.degrees:.2f}º)'
 
-    def switch_factors(self, port:str, sign:Sign, control_present:bool):
+    def switch_components(self, port:str, sign:Sign, control_present:bool):
         """
         The four-way split for a particle entering switch wire *port* with
         *sign*, in the book's component order c2a, c2b, c3a, c3b

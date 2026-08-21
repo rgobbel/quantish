@@ -1,9 +1,10 @@
 """The double-slit demo's textbook relations."""
+import math
 import unittest
 
 import quantish.qnumber as qn
 from quantish.qnumber import CalcMode
-from quantish.double_slit import screen_curve
+from quantish.double_slit import pixel_probability, screen_curve
 
 
 class TestDoubleSlit(unittest.TestCase):
@@ -28,6 +29,13 @@ class TestDoubleSlit(unittest.TestCase):
         # central bright fringe at the screen center (equal path lengths)
         mid = len(c['both']) // 2
         self.assertAlmostEqual(c['both'][mid], max(c['both']), places=9)
+
+    def test_pixel_follows_the_cos_law(self):
+        # remerge + sign sorter: P(S) = (1 + cos phi)/2, exact per engine run
+        for degrees in (0, 60, 90, 120, 180):
+            phi = math.radians(degrees)
+            self.assertAlmostEqual(pixel_probability(phi),
+                                   (1 + math.cos(phi)) / 2, places=12)
 
     def test_observation_restores_classical_sum(self):
         c = self.curves()

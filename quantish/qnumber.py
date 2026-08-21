@@ -6,9 +6,9 @@ from functools import reduce
 from operator import mul
 import math as m
 import cmath as cm
+import scipy.special as sci
 import re as rex
 from typing import Any, Callable, TypeIs, cast
-import scipy.special as sci
 
 log = logging.getLogger('quantish')
 
@@ -90,9 +90,7 @@ def issym(x) -> TypeIs[sym.Basic]:
 
 otherv = lambda x: x.v if isq(x) else x
 
-DEBUG = False
 
-Modes = ['Symbolic', 'Float']
 
 def to_float(x) -> float:
     try:
@@ -104,16 +102,19 @@ def to_float(x) -> float:
             raise
     return result
 
+
+# sympy's sympify overloads only declare the strict= keyword; rational= is
+# accepted at runtime but rejected by the type stubs, hence this typed alias.
+_sympify = cast(Callable[..., sym.Expr], sym.sympify)
+
 def to_native(x):
+    """A Python-native value for x, which might be complex or might be
+    real: float when possible, complex otherwise."""
     try:
         result = float(x)
     except TypeError:
         result = complex(x)
     return result
-
-# sympy's sympify overloads only declare the strict= keyword; rational= is
-# accepted at runtime but rejected by the type stubs, hence this typed alias.
-_sympify = cast(Callable[..., sym.Expr], sym.sympify)
 
 def qify(x, env: dict | None = None) -> 'Complex':
     """Parse x into a Q number. `env` is an optional {name: value} table
@@ -154,10 +155,13 @@ def reserved_name(name: str) -> bool:
     """True when `name` is one of the builtins usable in expressions."""
     return name in RESERVED_NAMES
 
+
+
+
 def exact(x) -> 'Real':
     """Parse/wrap x into the exact representation, independent of the
-    global CalcMode. Canonical stored values (e.g. GUI angles) use this;
-    conversion into the active mode happens at the edges via to_mode()."""
+    global CalcMode. Canonical stored values use this; conversion into
+    the active mode happens at the edges via to_mode()."""
     if isq(x):
         x = x.v
     if isinstance(x, float):
@@ -203,6 +207,7 @@ def softmax(vec):
     else: fn = Complex
     return [fn(x) for x in sm]
 
+
 ANumber = int | float | complex | sym.Mul | sym.Integer | sym.Float | sym.Expr
 
 class Complex(n.Number):
@@ -238,9 +243,6 @@ class Complex(n.Number):
                     n_value = int(n_value)
                 self._value = n_value
 
-    # @classmethod
-    def rotate(self, theta):
-        return self.newme(self._value * (I * qify(theta))).exp
 
     def newme(self, x):
         return self.__class__(x)
@@ -254,9 +256,6 @@ class Complex(n.Number):
         # argument" (e.g. copying a config whose gate angles are Reals).
         return (self._value,)
 
-    def same(self, other):
-        result = type(self) is type(other)
-        return result
 
     @property
     def v(self):
@@ -266,6 +265,19 @@ class Complex(n.Number):
     def mm(self):
         if isnative(self._value): return 'Float'
         else: return 'Symbolic'
+
+
+
+
+
+    def rotate(self, theta):
+        """This value rotated by theta radians: self · e^(iθ).
+        (The pre-cleanup version computed e^(iθ·self) — a bug.)"""
+        return self * (qify(theta) * I).exp
+
+    def same(self, other):
+        result = type(self) is type(other)
+        return result
 
     def to_mode(self, mode=None):
         """Return an equivalent number in the given (default: current) mode."""
@@ -292,14 +304,15 @@ class Complex(n.Number):
 
     @property
     def is_bare_numeric(self):
-        """True for plain numbers ('45', '1/2', 'sqrt(2)') — input the GUI
-        may legitimately reinterpret through the deg/rad toggle. Values
+        """True for plain numbers ('45', '1/2', 'sqrt(2)') — input a GUI
+        may legitimately reinterpret through a deg/rad toggle. Values
         containing pi, free symbols, or function calls (acos(4/5)) are
         already radians by convention."""
         if isnative(self._value):
             return True
         v = self._value
         return not (v.has(sym.pi) or v.free_symbols or v.atoms(sym.Function))
+
 
     def __repr__(self):
         return f'Complex({self._value}, {self.mm})'
@@ -312,6 +325,16 @@ class Complex(n.Number):
             return self._value.__format__(format_spec)
         except RecursionError:
             return str(self._value)
+
+    def display(self, precision: int = 2) -> str:
+        """Compact display: fixed-precision 're+imj' for float-backed
+        values, the exact expression for symbolic ones — so Symbolic-mode
+        logs and reprs stay float-free."""
+        v = self._value
+        if isnative(v):
+            c = complex(v)
+            return f'{c.real:.{precision}f}{c.imag:+.{precision}f}j'
+        return str(v)
 
     def __complex__(self):
         return complex(self._value)
@@ -567,13 +590,9 @@ def prod(it):
         return Real(0)
     return reduce(mul, it)
 
-ZERO = Real(0)
 
-def runtest(x, y):
-    try:
-        return x % y
-    except TypeError as e:
-        log.error(e)
+
+ZERO = Real(0)
 
 def PI_fn(mode=None):
     global PI
@@ -602,9 +621,9 @@ def E_fn(mode=None):
     if mode is None:
         mode = CALC_MODE
     if mode == 'Float':
-        ret = Complex(1j, mode)
+        ret = Real(m.e, mode)
     else:
-        ret =  Complex(sym.E, mode)
+        ret = Real(sym.E, mode)
     E = ret
     return ret
 
@@ -639,9 +658,23 @@ def zerop(x):
     Symbolic mode: x simplifies to exactly 0 (no fuzzy threshold). Expressions
     that contain free symbols and don't reduce to a literal zero return False —
     we can't claim a symbolic weight is zero unless sympy can prove it.
+
+    The answer is cached on Q-number instances (they are immutable by
+    convention and created under the mode they are used in): the Symbolic
+    test runs sympy.simplify, and the same few objects — e.g. a gate's
+    four split components — get re-tested for every configuration-space
+    point of every stage.
     """
     if isq(x):
-        x = x.v
+        cached = getattr(x, '_zerop', None)
+        if cached is None:
+            cached = x._zerop = _zerop(x.v)
+        return cached
+    return _zerop(x)
+
+
+def _zerop(x) -> bool:
+    """The uncached mode-aware zero test on an unwrapped value."""
     if CalcMode.default() == 'Float':
         return not enough(abs(x), ZERO_THRESHOLD)
     if issym(x):

@@ -38,21 +38,22 @@ Model files live in the `models/` directory, split by book edition: `gr2006/` (2
 Run tests using:
 
 ```bash
-python -m pytest tests/
+uv run pytest
 ```
 
 Run a single test file:
 
 ```bash
-python -m pytest tests/test_gate.py
+uv run pytest tests/test_wiring.py
 ```
 
-Note: pytest is not currently in dependencies - may need to be added if running tests.
+pytest (with pytest-subtests) is in the dev dependency group; `uv sync`
+installs it.
 
 ### Configuration
 
 Configuration is split between:
-- `models/common.yaml`: Default settings (loaded by default with `--use-common`)
+- `models/defaults.yaml`: Default settings (loaded by default with `--use-defaults`)
 - Individual model files: Specific experiment configurations
 
 ## Architecture
@@ -65,77 +66,82 @@ Configuration is split between:
    - Manages particles, gates, and the overall state
 
 2. **FredkinGate** (`quantish/gate.py`)
-   - Implements quantum Fredkin gates with rotation angles
-   - Three input wires: control, upper, lower
-   - Performs complex rotations on particle weights using trigonometric scaling
-   - Multiple `cpair` calculation methods available (cpair, cpair_alt, cpair0, cpair1, cpair2)
-   - The `alternative_measure` config option selects which method to use
+   - A measurement angle plus the four precomputed split components
+   - Three wires: control, upper, lower
+   - `switch_components()` yields the four-way split for a switch-wire
+     particle — component values fixed by the angle, destinations swapped
+     by control presence or a minus sign
+   - Optional `phase` (an extension beyond the book's gates): every
+     traversing particle's weight is rotated by e^(iφ) — switch-wire
+     particles via the components, control pass-throughs via
+     `phase_factor` in the runner. An angle-0 gate with a phase, entered
+     through its control wire, is a pure phase plate (the double-slit
+     demo's path-length difference)
 
 3. **Particle** (`quantish/particle.py`)
-   - Represents quantum-like particles with:
-     - Complex-valued weights
-     - Sign (+1 or -1)
-     - Name and unique ID
-   - Supports merging particles via addition
-   - Tracks probability (magnitude squared of weight)
+   - A particle: name, complex-valued initial weight, sign (+1 or -1)
+   - `PKey` is the hashable (name, sign) identity used in coordinates
 
 4. **QNumber System** (`quantish/qnumber.py`)
    - Unified number representation supporting both symbolic (SymPy) and numeric (float/complex) modes
    - The `CalcMode.mode` global variable controls whether to use 'Symbolic' or 'Float'
-   - Complex, Real, and Angle classes wrap SymPy or native Python types
+   - Complex and Real wrap SymPy or native Python types (angles are
+     plain Reals in radians, un-normalized; `Real.degrees` converts)
    - Used throughout the codebase for all mathematical operations
 
-5. **Sink** (`quantish/sink.py`)
-   - Collects output particles from gates
-   - Can merge particles based on configuration (combine_signs, combine_names)
-   - Filters particles by presence_threshold
+5. **Configuration Space** (`quantish/config_space.py`)
+   - `GatePort`/`Position`/`PCoordinate`: where each particle is
+   - `ConfigSpacePoint` and the `ConfigSpace` store (merge-on-add =
+     interference)
+   - `ConfigSpaceRunner`: the engine — per stage, each configuration-space
+     point expands to the cartesian product of its particles' splits
 
-6. **Configuration Space** (`quantish/config_space.py`)
-   - Defines wire types: control, upper, lower
-   - GateState tracks gate inputs/outputs during simulation
+6. **Display helpers** (`quantish/display.py`)
+   - Presentation over a finished Simulation: port value blocks (Mermaid),
+     the gate-traffic table (app), and the canonical display sort keys
 
 ### Data Flow
 
-1. **Initialization**: Load YAML config → create Particles and FredkinGates → establish Links between particles/gates
-2. **Topological Sort**: Determine execution order of gates based on particle flow
-3. **Propagation**: For each gate in order:
-   - Gather input particles on control/upper/lower wires
-   - Apply gate transformation (cpair rotation)
-   - Forward output particles to next gates or sinks
-4. **Sampling Mode** (optional): Run multiple iterations, randomly sampling from probability distributions
-5. **Output**: Final particle states, statistics, and optional Mermaid diagrams
+1. **Initialization**: Load YAML config → validate wiring → build
+   Particles and FredkinGates → schedule stages from the model's
+   `run_stages` (checked against the link topology)
+2. **Propagation**: stage by stage, every configuration-space point
+   expands to the cartesian product of its particles' alternatives
+   (pass-through, or the four-way switch split); successors with
+   identical coordinates merge by adding weights (interference), and
+   points whose weights cancel are dropped
+3. **Sampling Mode** (optional): Monte Carlo draws from the final
+   superposition (terminal) or stage-by-stage world-lines (path)
+4. **Output**: final configuration-space points, statistics, and optional
+   TikZ/Mermaid/weight-evolution diagrams
 
 ### YAML Configuration Structure
 
 Model files define:
 - `title`: Experiment name
-- `phases`: Logical grouping of gates
+- `run_stages`: named execution stages (every linked gate must appear)
+- `diagram_groups` (optional): display grouping when it differs from
+  `run_stages`
 - `variables`: Symbolic constants (angles, weights) using YAML anchors
 - `particles`: Initial particles with weight and sign
-- `gates`: Fredkin gates with rotation angles
+- `gates`: Fredkin gates with rotation angles (and optionally a `phase`)
 - `links`: Connectivity graph (particle/gate outputs → gate inputs)
 
-Configuration options (usually in common.yaml):
+Configuration options (usually in defaults.yaml):
 - `symbolic`: true/false for math mode
-- `merge`: Control particle merging behavior
-- `normalize_weights`: Normalize before/after measurement
-- `probability_threshold`: Thresholds for control/forwarding/presence
-- `sample`: Enable sampling mode
+- `string_precision`: decimal places in displays
+- `sample` / `n_samples`: enable sampling mode
+- `epr_stats`: collect EPR statistics (the fig4.17 models set it)
 
 ### Important Patterns
 
 1. **Math Mode**: The system can operate in symbolic (exact) or numeric (float) mode. Set via `CalcMode.mode` at startup based on config.
 
-2. **Particle Names**: Track lineage through transformations using '>' separator (e.g., "p1>g1.upper>g3.control")
+2. **Positions**: a particle's position is a `Position(origin, endpoint)` pair of gate ports, displayed like `g1.upper_out>g3.control_in`; `SEP` ('.') separates gate and port in link strings
 
-3. **Gate Wiring**: Gates have three wires (control, upper, lower). Control determines whether upper/lower outputs are straight or swapped.
+3. **Gate Wiring**: Gates have three wires (control, upper, lower). Control determines whether upper/lower outputs are straight or swapped; a delay gate is used via its control wire only and passes particles through unchanged.
 
-4. **Probability Thresholds**: Multiple thresholds control behavior:
-   - `control`: Whether superposed control particle is "present"
-   - `forwarding`: Drop particles below this probability
-   - `presence`: Don't add particles to sinks below this
-
-5. **Merging**: Particles can be merged before measurement or forwarding based on sign and/or name
+4. **Interference**: configuration-space points with identical coordinates merge by adding weights; points whose weights cancel to zero are dropped (and marked `cancelled`).
 
 ## File Organization
 
@@ -145,19 +151,21 @@ Configuration options (usually in common.yaml):
   - `simulation.py`: Simulation engine
   - `gate.py`: Fredkin gate implementation
   - `particle.py`: Particle representation
-  - `qnumber.py`, `calc_mode.py`, `angle.py`: Unified number system
-  - `config_space.py`: configuration-space points, gate state, wire definitions
+  - `qnumber.py`, `angle.py`: Unified number system
+  - `config_space.py`: configuration-space points and the stage engine
+  - `display.py`: presentation helpers over a finished Simulation
   - `epr.py`: EPR experiment sweeps and statistics
   - `montecarlo.py`: Monte Carlo sampling mode
   - `mermaid_diagram.py`, `network_graph.py`, `tikz_diagram.py`: Diagrams
-  - `double_slit.py`, `marimo_helpers.py`: Notebook support
-  - `util.py`: Utilities (logging, parsing, etc.)
+  - `double_slit.py`: the double-slit demo's engine side
+  - `util.py`: shared constants (SEP, wires, Sign) and small helpers
 - `models/`: YAML configuration files for experiments
   - `defaults.yaml`: Default configuration
   - `gr2006/`, `gr2026/`, `extras/`: per-edition book figures and non-book circuits (see `models/README.md`)
-- `tests/`: Unit tests
-- `notebooks/`: Jupyter/exploratory notebooks
-- `HIDEME/`: Historical/experimental code (ignore)
+- `tests/`: Unit tests (golden states, wiring validation, EPR, Monte
+  Carlo, variables, double slit)
+- `notebooks/`: the marimo apps (`quantish_app.py`, `double_slit_app.py`)
+- `HIDEME/`: Historical/experimental code and archived dead code (ignore)
 
 ## Notes for Development
 

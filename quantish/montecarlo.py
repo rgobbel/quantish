@@ -24,7 +24,9 @@ path
 """
 import logging
 import random
-from collections import Counter, defaultdict
+from collections import Counter
+
+from quantish.epr import epr_tally, expected_discrepancy, is_two_stage, log_epr
 
 log = logging.getLogger('quantish')
 
@@ -79,21 +81,6 @@ def sample_paths(initial_point, n_steps: int, n_trials: int,
     return tally, dead_ends
 
 
-def epr_tally(result_space, tally: Counter, two_stage: bool) -> dict:
-    """Same/diff counts for EPR-style models, using the outcome convention
-    from quantish.epr (plain position after two measurement stages,
-    position⊕sign after one)."""
-    from quantish.epr import classify
-    by_key = {p.key: p for p in result_space.index.values()}
-    counts = {'same': 0, 'diff': 0, 'uncoupled': 0}
-    for key, n in tally.items():
-        point = by_key.get(key)
-        if point is None:
-            continue
-        counts[classify(point, two_stage)] += n
-    return counts
-
-
 def log_tally(label: str, tally: Counter, predicted: dict, n_trials: int):
     log.info(f'{label}:')
     log.info(f'   {"observed":>10} {"frequency":>10} {"predicted":>10}   configuration')
@@ -116,7 +103,6 @@ def run_monte_carlo(sim, n_trials: int, mode: str = 'both', seed=None) -> dict:
     distribution, per-mode tallies, and (for epr_stats models) same/diff
     counts.
     """
-    from quantish.epr import expected_discrepancy, is_two_stage
     if sim.result_space is None:
         sim.run()
     rng = random.Random(seed)
@@ -152,14 +138,3 @@ def run_monte_carlo(sim, n_trials: int, mode: str = 'both', seed=None) -> dict:
 
     return results
 
-
-def log_epr(label: str, counts: dict, predicted=None):
-    coupled = counts['same'] + counts['diff']
-    if coupled == 0:
-        log.info(f'   EPR ({label}): no coupled trials')
-        return
-    predstr = f', predicted={float(predicted):.4f}' if predicted is not None else ''
-    log.info(f"   EPR ({label}): same={counts['same']}, diff={counts['diff']}, "
-             f"uncoupled={counts['uncoupled']}, "
-             f"discrepancy rate={counts['diff'] / coupled:.4f}{predstr}")
-    log.info(' ')

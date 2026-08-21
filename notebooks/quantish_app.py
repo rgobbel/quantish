@@ -64,11 +64,12 @@ def initialization():
     logging.getLogger('quantish').setLevel(logging.WARNING)
 
     from quantish.config_space import GatePort
+    from quantish.display import coord_sort_key, cs_point_sort_key, gate_io
     from quantish.epr import run_epr_experiment, supports_epr
     from quantish.gate import FredkinGate
     from quantish.montecarlo import run_monte_carlo
     from quantish.simulation import Simulation
-    from quantish.mermaid_diagram import diagram, short_config
+    from quantish.mermaid_diagram import diagram
     from quantish.network_graph import NetworkGraph
 
     REPO_DIR = Path(__file__).resolve().parents[1]
@@ -78,6 +79,9 @@ def initialization():
         CalcMode,
         FredkinGate,
         GatePort,
+        coord_sort_key,
+        cs_point_sort_key,
+        gate_io,
         MODELS_TOP,
         NetworkGraph,
         Simulation,
@@ -90,7 +94,6 @@ def initialization():
         qn,
         run_epr_experiment,
         run_monte_carlo,
-        short_config,
         supports_epr,
         yaml,
     )
@@ -236,7 +239,7 @@ def _(build_sim, mo, mode_pick, model_pick, run_btn):
         if sim is None:
             return mo.md('_press **▶ Run simulation** to compute results '
                          'with the settings above_')
-        angles = ', '.join(f'{g}={float(gate.atheta.degrees):.1f}º'
+        angles = ', '.join(f'{g}={float(gate.theta.degrees):.1f}º'
                            for g, gate in sim.fredkin_gates.items())
         return mo.md(
             f"Ran **{sim.title}** ({mode_pick.value} mode) — {angles}; "
@@ -306,7 +309,7 @@ def _(NetworkGraph, mo, sim):
 
 
 @app.cell(hide_code=True)
-def _(GatePort, math_weight, md_table, mo, qn, short_config, sim):
+def _(GatePort, coord_sort_key, cs_point_sort_key, math_weight, md_table, mo, qn, sim):
     mo.stop(sim is None)  # nothing to show until ▶ Run
     # Tabular twin of the weight-evolution graph: per stage, one row per
     # parent→child branch — the input configuration-space point and its weight, the
@@ -315,7 +318,7 @@ def _(GatePort, math_weight, md_table, mo, qn, short_config, sim):
     # branch w ≠ point w, interfering branches merged into that configuration-space point.
     def _():
         def label(p):
-            return f'`{short_config(p, key=sim.coord_sort_key).replace("|", " ")}`'
+            return f'`{p.short_config(key=lambda c: coord_sort_key(sim, c)).replace("|", " ")}`'
 
         def particle_cell(w, parent, contrib):
             # A merged configuration-space point stores only its FIRST branch's per-particle
@@ -364,7 +367,7 @@ def _(GatePort, math_weight, md_table, mo, qn, short_config, sim):
             by_step.setdefault(pt.step, []).append(pt)
         sections = {}
         for step in sorted(by_step):
-            points = sorted(by_step[step], key=sim.cs_point_sort_key)
+            points = sorted(by_step[step], key=lambda p: cs_point_sort_key(sim, p))
             if step == 0:
                 sections['Step 0 — initial configuration-space point'] = mo.md(md_table(
                     ['configuration-space point', 'weight $w$'],
@@ -376,7 +379,7 @@ def _(GatePort, math_weight, md_table, mo, qn, short_config, sim):
             for w in points:
                 out_label = label(w) + (' _(cancelled)_' if w.cancelled else '')
                 branches = sorted(w.contributions.items(),
-                                  key=lambda kv: sim.cs_point_sort_key(kv[0]))
+                                  key=lambda kv: cs_point_sort_key(sim, kv[0]))
                 if len(branches) == 1:
                     parent, contrib = branches[0]
                     rows.append((label(parent),
@@ -450,19 +453,19 @@ def _(diagram, mermaid_zoom, mo, sim, zoomable):
 
 
 @app.cell(hide_code=True)
-def _(math_weight, md_table, mo, phase_deg, short_config, sim):
+def _(coord_sort_key, cs_point_sort_key, math_weight, md_table, mo, phase_deg, sim):
     mo.stop(sim is None)  # nothing to show until ▶ Run
     # Worlds sorted canonically: gate (in evaluation order), then port
     # (upper before lower), then sign (+ before −); the configuration
     # label's coordinates are reordered to match.
     def _():
         rows = [(
-            f'`{short_config(p, key=sim.coord_sort_key).replace("|", " ")}`',
+            f'`{p.short_config(key=lambda c: coord_sort_key(sim, c)).replace("|", " ")}`',
             math_weight(p.weight, prec=3),
             f'${float(p.probability):.4f}$',
             f'${phase_deg(p.weight):+.1f}º$',
         ) for p in sorted(sim.result_space.index.values(),
-                          key=sim.cs_point_sort_key)]
+                          key=lambda p: cs_point_sort_key(sim, p))]
         return mo.accordion({'## Final configuration-space points\n': mo.md(md_table(
             ['configuration', 'weight $w$', r'$\lvert w\rvert^2$', 'phase'],
             rows))})
@@ -490,7 +493,7 @@ def _(md_table, mo, sim):
                 entry[1] += prob
         rows = [(f'`{key}`', f'{entry[1]:.4f}')
                 for key, entry in sorted(acc.items(),
-                                         key=lambda kv: sim.coord_sort_key(kv[1][0]))]
+                                         key=lambda kv: coord_sort_key(sim, kv[1][0]))]
         return mo.accordion({
             '## Marginal probabilities (one coordinate at a time)':
                 mo.md(r'Each row sums $\lvert w\rvert^2$ over every final configuration-space point '
@@ -516,7 +519,7 @@ def _(md_table, mo, sim):
         rows = [(row['step'], row['gate'], row['port'],
                  row['input'].replace('\n', '<br>'),
                  row['output'].replace('\n', '<br>'))
-                for row in sim.gate_io()]
+                for row in gate_io(sim)]
         return mo.accordion({
             '## Gate inputs and outputs by step':
                 mo.md(md_table(['step', 'gate', 'port', 'input', 'output'], rows))
@@ -1124,7 +1127,7 @@ def _(Addict, MODELS_TOP, Simulation, mo, model_pick, yaml):
         base_sim = Simulation(load_config(model_pick.value))
         names = list(base_sim.fredkin_gates.keys())
         angles = mo.state({
-            g: {'deg': round(centered(float(gate.atheta.degrees)) * 2) / 2,
+            g: {'deg': round(centered(float(gate.theta.degrees)) * 2) / 2,
                 'expr': str(base_config.gates[g].angle)}
             for g, gate in base_sim.fredkin_gates.items()})
         # the model's variables, so typed expressions can use them by name

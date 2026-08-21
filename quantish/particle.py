@@ -6,7 +6,7 @@ conditions parsed from the model YAML, and labels for diagrams.
 from collections import namedtuple
 
 from quantish.qnumber import Complex, probability
-from quantish.util import Sign, sstr, wstr
+from quantish.util import Sign
 
 CompositeKey = namedtuple('CompositeKey', ['name', 'sign'])
 
@@ -25,7 +25,7 @@ class Particle:
         self.precision = precision
 
     def __repr__(self):
-        return f'{sstr(self.sign)}{self.name}'
+        return f'{self.sign}{self.name}'
 
     @property
     def pkey(self):
@@ -35,10 +35,3 @@ class Particle:
     def probability(self):
         return probability(self.weight)
 
-    def ps(self, short=False, name_only=False):
-        """Decorated display string: sign, name, weight, probability."""
-        nstr = self.name.split('>')[0] if (short or name_only) else self.name
-        if name_only:
-            return nstr
-        return (f'{sstr(self.sign)}{nstr}'
-                f'({wstr(self.weight, precision=self.precision)}|{self.probability:.{self.precision}f})')

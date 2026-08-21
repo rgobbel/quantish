@@ -25,7 +25,7 @@ import quantish.qnumber as qn
 from quantish.gate import FredkinGate
 from quantish.qnumber import Complex, probability
 from quantish.particle import PKey
-from quantish.util import SEP, Sign, wstr
+from quantish.util import SEP, Sign
 
 log = logging.getLogger('quantish')
 
@@ -137,10 +137,42 @@ class ConfigSpacePoint:
         return probability(self.weight)
 
     def __repr__(self):
-        return f'{self.key}:{wstr(self.weight)}'
+        return f'{self.key}:{self.weight.display()}'
 
     def __hash__(self):
         return self.key.__hash__()
+
+    def stage_str(self, stage_gates=None) -> str:
+        """Log display for this point: its weight plus only the coordinates
+        that matter this stage — particles feeding a stage gate, or already
+        moved from their origin. (The full key is unambiguous but drowns the
+        reader in not-yet-moving particles.)"""
+        def relevant(coord):
+            if coord.position.origin is not None:
+                return True
+            endpoint = coord.position.endpoint
+            return (stage_gates is not None and endpoint is not None
+                    and endpoint.gate in stage_gates)
+        coords = ([c for c in self.coords.values() if relevant(c)]
+                  or list(self.coords.values()))
+        return f'{"|".join(str(c) for c in coords)}:{self.weight.display()}'
+
+    def short_config(self, key=None) -> str:
+        """Compact one-line label for this point's coordinates: sign, gate,
+        and the port initial for each particle, e.g. '+g2c|+g2l|+g3u'.
+        Coordinates appear in particle-name order unless a sort key (e.g.
+        display.coord_sort_key with the sim bound) is supplied."""
+        coords = self.coords.values()
+        if key is not None:
+            coords = sorted(coords, key=key)
+        parts = []
+        for coord in coords:
+            port = coord.position.origin or coord.position.endpoint
+            if port is None:
+                parts.append(f'{coord.sign}?')
+            else:
+                parts.append(f'{coord.sign}{port.gate}{(port.port or "c")[0]}')
+        return '|'.join(parts)
 
 
 class ConfigSpace:
@@ -165,7 +197,7 @@ class ConfigSpace:
         original_weight =  existing.weight
         existing.weight = existing.weight + point.weight
         log.debug(f'      MERGE {point.key}: '
-                  f'{wstr(original_weight, precision=2)} + {wstr(point.weight, precision=2)} -> {wstr(existing.weight, precision=2)}')
+                  f'{original_weight.display()} + {point.weight.display()} -> {existing.weight.display()}')
         existing.predecessors |= point.predecessors
         for pred, contrib in point.contributions.items():
             if pred in existing.contributions:
@@ -192,68 +224,17 @@ class ConfigSpace:
         self.index[f'{point.step}#{point.key}'] = point
 
 
-def _weight_is_zero(w) -> bool:
-    """Zero test for a merged configuration-space point weight that has already been through
-    qn.simplify, cheap in Symbolic mode: structural zero, then a fast
-    numeric probe that proves NON-zero for almost every point; only
-    near-zero candidates pay for the exact confirmation (qn.zerop, which
-    runs sympy.simplify again)."""
-    if qn.CalcMode.default() == 'Float':
-        return qn.zerop(w)
-    v = w.v if qn.isq(w) else w
-    if v == 0:
-        return True
-    try:
-        if abs(complex(v.evalf(15))) > 1e-9:
-            return False
-    except (TypeError, ValueError):
-        pass
-    return qn.zerop(w)
-
-
 class ConfigSpaceRunner:
     def __init__(self, sim=None):
         self.sim = sim
-        # Branch factors are the gates' precomputed constants (cos²θ, ...):
-        # the same few objects recur for every configuration-space point, so their zero-checks
-        # (sympy.simplify each, in Symbolic mode) are cached by identity.
-        self._factor_zero_cache = {}
-
-    def _factor_is_zero(self, factor) -> bool:
-        key = id(factor)
-        if key not in self._factor_zero_cache:
-            self._factor_zero_cache[key] = qn.zerop(factor)
-        return self._factor_zero_cache[key]
-
-    def __repr__(self):
-        return f'{self.sim.gates.keys()}'
 
     def control_present(self, cs_point: ConfigSpacePoint, gname: str) -> bool:
         """Whether some particle of this configuration-space point occupies gname's control
-        input (see the positional note in particle_factors: control
+        input (see the positional note in particle_splits: control
         presence is per configuration-space point)."""
         control_port = GatePort(gname, 'control')
         return any(c.position.endpoint == control_port
                    for c in cs_point.coords.values())
-
-    def stage_control_info(self, Q: ConfigSpace, stage_gates) -> dict:
-        """For each stage gate whose control input is occupied: where the
-        occupant came from and the merged probability |Σ weights|² of the
-        configuration-space points that put it there — display data, per
-        configuration-space point, for the
-        CONTROL log line."""
-        info = {}
-        for gname in stage_gates:
-            control_port = GatePort(gname, 'control')
-            amp, source = None, None
-            for cs_point in Q.index.values():
-                for coord in cs_point.coords.values():
-                    if coord.position.endpoint == control_port:
-                        amp = cs_point.weight if amp is None else amp + cs_point.weight
-                        source = coord.position.origin or coord.name
-            if amp is not None:
-                info[gname] = (source, qn.to_float(probability(amp)))
-        return info
 
     def link_dest(self, origin: GatePort) -> GatePort:
         """Where a particle leaving on *origin* lands next: the linked input
@@ -276,55 +257,44 @@ class ConfigSpaceRunner:
             return [(coord, None)]
         gate = stage_gates[endpoint.gate]
         if gate.report_type() == 'DelayGate' or endpoint.port in (None, 'control'):
-            # control wires (and delay gates) pass the particle straight through
+            # control wires (and delay gates) pass the particle straight
+            # through — untouched, unless the gate carries a phase, which
+            # every traversing particle picks up (the pure-phase-plate
+            # use; see FredkinGate)
             origin = GatePort(gate.name, endpoint.port)
             dest = self.link_dest(origin)
             new_coord = PCoordinate(pname, coord.sign, Position(origin=origin, endpoint=dest))
-            return [(new_coord, None)]
+            component = None if qn.zerop(gate.phase) else gate.phase_factor
+            return [(new_coord, component)]
         # switch wire: the four-way split of §4.2.3. Control presence is
         # positional PER CONFIGURATION-SPACE POINT — some *other* particle
-        # of this configuration-space point
-        # sits on this gate's control input — regardless of that particle's
-        # sign. Within one configuration-space point occupancy is boolean; the amplitude side
-        # of "how present" the control is lives entirely in the
-        # configuration-space point
-        # weights. A computed control input that comes out zero still behaves
-        # as absent, because zero-amplitude occupancies never reach here:
-        # zero components are skipped below, and configuration-space points whose weights
-        # cancel are dropped before the next stage runs — so no surviving CS
-        # point has a particle on that control. A superposed control is a mix
-        # of configuration-space points with and without the occupancy, each routed
-        # accordingly, and the outputs interfere downstream. (An aggregate
-        # amplitude test would be wrong under entanglement: configuration-space points sharing
-        # this occupancy but differing elsewhere may sum to zero at the port
-        # while each is genuinely controlled.)
+        # of this configuration-space point sits on this gate's control
+        # input — regardless of that particle's sign. Within one
+        # configuration-space point occupancy is boolean; the amplitude
+        # side of "how present" the control is lives entirely in the
+        # configuration-space point weights. A computed control input that
+        # comes out zero still behaves as absent, because zero-amplitude
+        # occupancies never reach here: zero components are skipped below,
+        # and configuration-space points whose weights cancel are dropped
+        # before the next stage runs — so no surviving point has a
+        # particle on that control. A superposed control is a mix of
+        # configuration-space points with and without the occupancy, each
+        # routed accordingly, and the outputs interfere downstream. (An
+        # aggregate amplitude test would be wrong under entanglement:
+        # configuration-space points sharing this occupancy but differing
+        # elsewhere may sum to zero at the port while each is genuinely
+        # controlled.)
         control_present = self.control_present(cs_point, gate.name)
         alternatives = []
-        for out_port, out_sign, factor in gate.switch_factors(endpoint.port, coord.sign,
-                                                              control_present):
-            if self._factor_is_zero(factor):
+        for out_port, out_sign, component in gate.switch_components(
+                endpoint.port, coord.sign, control_present):
+            if qn.zerop(component):
                 continue  # a zero-weight branch can never contribute
             origin = GatePort(gate.name, out_port)
             dest = self.link_dest(origin)
             alternatives.append(
-                (PCoordinate(pname, out_sign, Position(origin=origin, endpoint=dest)), factor))
+                (PCoordinate(pname, out_sign, Position(origin=origin, endpoint=dest)), component))
         return alternatives
-
-    @staticmethod
-    def cs_point_str(cs_point: ConfigSpacePoint, stage_gates=None) -> str:
-        """Log display for a configuration-space point: its weight plus only the coordinates
-        that matter this stage — particles feeding a stage gate, or already
-        moved from their origin. (The full key is unambiguous but drowns the
-        reader in not-yet-moving particles.)"""
-        def relevant(coord):
-            if coord.position.origin is not None:
-                return True
-            endpoint = coord.position.endpoint
-            return (stage_gates is not None and endpoint is not None
-                    and endpoint.gate in stage_gates)
-        coords = ([c for c in cs_point.coords.values() if relevant(c)]
-                  or list(cs_point.coords.values()))
-        return f'{"|".join(str(c) for c in coords)}:{wstr(cs_point.weight)}'
 
     def run(self, initial_point: ConfigSpacePoint) -> tuple[ConfigSpace, ConfigSpace]:
         """Advance the quantish state through every stage.
@@ -363,7 +333,7 @@ class ConfigSpaceRunner:
                 controlled = ', '.join(
                     f'{control_info[g][0]}->{g} Pr {control_info[g][1]:.2f}'
                     for g in stage_gates if self.control_present(cs_point, g))
-                log.debug(f'   {self.cs_point_str(cs_point, stage_gates)} '
+                log.debug(f'   {cs_point.stage_str(stage_gates)} '
                           f'-> {len(branches)} successor{"" if len(branches) == 1 else "s"}'
                           f'{" CONTROL: " + controlled if controlled else ""}')
                 for successor_tuple, weight in branches:
@@ -376,11 +346,11 @@ class ConfigSpaceRunner:
                         moved = [(coord, component) for coord, component in successor_tuple
                                  if component is not None]
                         arrivals = ' | '.join(
-                            f'{coord.pkey}@{coord.position.origin} {wstr(component)}'
+                            f'{coord.pkey}@{coord.position.origin} {component.display()}'
                             for coord, component in moved)
-                        calc = ' × '.join([wstr(cs_point.weight)]
-                                          + [wstr(component) for _, component in moved])
-                        log.debug(f'      {arrivals}; weight: {calc} = {wstr(weight)}')
+                        calc = ' × '.join([cs_point.weight.display()]
+                                          + [component.display() for _, component in moved])
+                        log.debug(f'      {arrivals}; weight: {calc} = {weight.display()}')
                     successor = ConfigSpacePoint(step + 1, [coord for coord, _ in successor_tuple],
                                                  weight, predecessors={cs_point})
                     successor.contributions = {cs_point: successor.weight}
@@ -399,10 +369,12 @@ class ConfigSpaceRunner:
             # the step's final output, last thing before the total so the
             # trace reads top-to-bottom into the result
             if log.isEnabledFor(logging.DEBUG):
+                # local import: display imports this module (GatePort)
+                from quantish.display import cs_point_sort_key
                 log.debug(f'   step {step} result: {len(Q_next.index)} configuration-space point(s)')
                 for point in sorted(Q_next.index.values(),
-                                    key=sim.cs_point_sort_key):
-                    log.debug(f'      {point.key}: {wstr(point.weight)}')
+                                    key=lambda p: cs_point_sort_key(sim, p)):
+                    log.debug(f'      {point.key}: {point.weight.display()}')
             self.check_total_probability(Q_next, step)
             for point in Q_next.index.values():
                 all_points.record(point)
@@ -418,3 +390,25 @@ class ConfigSpaceRunner:
         log.debug(f'   total probability after step {step}: {total:.6f}')
         if abs(total - 1) > 1e-6:
             log.warning(f'   TOTAL PROBABILITY AFTER STEP {step} IS {total}, EXPECTED 1')
+
+    # ---- debug-log display helpers (nothing below affects a run) ----
+
+    def stage_control_info(self, Q: ConfigSpace, stage_gates) -> dict:
+        """For each stage gate whose control input is occupied: where the
+        occupant came from and the merged probability |Σ weights|² of the
+        configuration-space points that put it there — display data for
+        the CONTROL log line (one entry per stage gate)."""
+        info = {}
+        for gname in stage_gates:
+            control_port = GatePort(gname, 'control')
+            amp, source = None, None
+            for cs_point in Q.index.values():
+                for coord in cs_point.coords.values():
+                    if coord.position.endpoint == control_port:
+                        amp = cs_point.weight if amp is None else amp + cs_point.weight
+                        source = coord.position.origin or coord.name
+            if amp is not None:
+                info[gname] = (source, qn.to_float(probability(amp)))
+        return info
+
+

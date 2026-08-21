@@ -17,7 +17,6 @@ diagram_groups:
 
 sample: false
 n_samples: 100
-measure_discrepancy: true
 epr_stats: true
 
 variables:

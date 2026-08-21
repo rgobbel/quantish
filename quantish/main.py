@@ -12,37 +12,26 @@ from addict import Addict
 import quantish.qnumber as qn
 from quantish.qnumber import CalcMode
 from quantish.simulation import Simulation
-from quantish.util import QLogger, flat_list, zerop, show_points
-from quantish.mermaid_diagram import diagram
+from quantish.util import QLogger, flat_list, show_points
+from quantish.mermaid_diagram import diagram, mmdc_cmd
 from quantish.network_graph import NetworkGraph
 
 log = None
 
-def mmdc_cmd():
-    """The mermaid-cli command, with our puppeteer config when present.
-
-    Homebrew's mermaid-cli pins an exact headless-Chrome version that
-    breaks on every upgrade; puppeteer-config.json points it at the
-    installed Google Chrome instead.
-    """
-    cmd = ['mmdc']
-    pconfig = Path(__file__).resolve().parents[1] / 'puppeteer-config.json'
-    if pconfig.exists():
-        cmd += ['-p', str(pconfig)]
-    return cmd
-
-
-def write_points_to_csv(name, particle_names, points:list):
-    with open(f'{name}.csv', 'w') as out_csv:
+def write_points_to_csv(path, sim, space):
+    """One row per configuration-space point: step, each particle's sign and
+    position, then the point's weight and probability."""
+    with open(path, 'w') as out_csv:
         fieldnames = ['step']
-        for p in particle_names:
-            fieldnames += [f'{p}.sign', f'{p}.position']
+        for p in sim.particles.values():
+            fieldnames += [f'{p.name}.sign', f'{p.name}.position']
         fieldnames += ['weight', 'probability']
         writer = csv.writer(out_csv, delimiter=',')
         writer.writerow(fieldnames)
-        for v in points:
-            writer.writerow(
-                [v.step] + flat_list([[coord.sign, coord.position] for coord in v.coords.values()] + [v.weight, v.probability]))
+        for v in space.index.values():
+            writer.writerow([v.step] + flat_list(
+                [[pcoord.pkey.sign, pcoord.position] for pcoord in v.coords.values()]
+                + [v.weight, v.probability]))
 
 
 def main():
@@ -94,8 +83,6 @@ def main():
                              'final superposition, path walks one world-line per trial')
     parser.add_argument('--mc-seed', type=int, default=None, help='Monte Carlo RNG seed')
     parser.add_argument('--epr-stats', action='store_true', help='Run statistics on EPR experiment model (book figure 4.16)')
-    parser.add_argument('--measure-discrepancy', action='store_true',
-                        help='Measure discrepancy for EPR experiment. Assumes a network consistent with book figure 4.16')
     parser.add_argument('--full-stats', action='store_true', help='Include particle names and probabilities in results')
     args = parser.parse_args()
     # append rather than with_suffix: model names like fig4.17 have a
@@ -122,7 +109,6 @@ def main():
     qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
     qn.I = qn.I_fn()
     qn.PI = qn.PI_fn()
-    config.config_path = args.config
     if args.loglevel is not None:
         loglevel = args.loglevel.upper()
     elif 'loglevel' in config.keys():
@@ -148,8 +134,6 @@ def main():
         config.sample = True
         config.n_samples = args.n_samples
     log.info(f'QUANTISH PHYSICS SIMULATION STARTING: {config["title"]} at {time.asctime()}')
-    if args.measure_discrepancy: config.measure_discrepancy = True
-    elif 'measure_discrepancy' not in config.keys(): config.measure_discrepancy  = False
     log.info(f"{'SYMBOLIC' if symbolic else 'FLOATING POINT'} MODE")
     if log.getEffectiveLevel() == logging.DEBUG:
         log.debug(f'ARGS:')
@@ -192,30 +176,14 @@ def main():
     if args.simulate:
         result_space, all_points = sim.run()
         if args.csv_output is not None:
-            with open(f'{args.csv_output}_results.csv', 'w') as result_csv:
-                fieldnames = ['step']
-                for p in sim.particles.values():
-                    fieldnames += [f'{p.name}.sign', f'{p.name}.position']
-                fieldnames += ['weight', 'probability']
-                writer = csv.writer(result_csv, delimiter=',')
-                writer.writerow(fieldnames)
-                for v in result_space.index.values():
-                    writer.writerow([v.step] + flat_list([[pcoord.pkey.sign, pcoord.position] for pcoord in v.coords.values()] + [v.weight, v.probability]))
-            with open(f'{args.csv_output}_all.csv', 'w') as all_csv:
-                fieldnames = ['step']
-                for p in sim.particles.values():
-                    fieldnames += [f'{p.name}.sign', f'{p.name}.position']
-                fieldnames += ['weight', 'probability']
-                writer = csv.writer(all_csv, delimiter=',')
-                writer.writerow(fieldnames)
-                for v in all_points.index.values():
-                    writer.writerow([v.step] + flat_list([[pcoord.pkey.sign, pcoord.position] for pcoord in v.coords.values()] + [v.weight, v.probability]))
+            write_points_to_csv(f'{args.csv_output}_results.csv', sim, result_space)
+            write_points_to_csv(f'{args.csv_output}_all.csv', sim, all_points)
 
         steps = result_space.max_step
         has_run = True
         final_points = [v for v in result_space.index.values()
                         if v.step == steps
-                        and not zerop(v.weight)]
+                        and not qn.zerop(v.weight)]
         log.info(f'finished after {steps} steps, {len(result_space.index)} total points in final config space, {len(final_points)} points from last step')
         log.info(' ')
         if len(final_points) > 0:
