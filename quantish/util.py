@@ -145,6 +145,15 @@ def symbolic_angle(spec):
         return spec
 
 
+def angle_label(spec, degrees, degree_sign='º'):
+    """Diagram label for a gate angle: a symbolic spec shows verbatim
+    with its value in degrees appended, 'pi/6 (30.0º)'; a numeric spec
+    shows just the degrees."""
+    symbolic = symbolic_angle(spec)
+    deg = f'{float(degrees):.1f}{degree_sign}'
+    return f'{symbolic} ({deg})' if symbolic is not None else deg
+
+
 def wangle(weight:Complex):
     # if weight == 0:
     #     return f'{angstr(0)}'

@@ -32,7 +32,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from quantish.util import SEP, WIRES, symbolic_angle
+from quantish.util import SEP, WIRES, angle_label
 
 
 # --------------------------------------------------------------------------
@@ -72,12 +72,11 @@ def spec_from_simulation(sim, fig: str = None) -> DiagramSpec:
     _pass_through = sorted(getattr(sim, 'pass_through_gates', set()))
     delay_names = list(sim.delay_gates.keys()) + _pass_through
     # A symbolic angle spec ('pi/6', 'rad(30)', 'theta1') labels the gate
-    # verbatim; a numeric one labels it in degrees.
+    # verbatim with its degrees appended; a numeric one shows degrees only.
     def angle_text(gname):
-        symbolic = symbolic_angle(config.gates[gname].angle)
-        if symbolic is not None:
-            return symbolic
-        return f'{float(sim.fredkin_gates[gname].atheta.degrees):.1f}°'
+        return angle_label(config.gates[gname].angle,
+                           sim.fredkin_gates[gname].atheta.degrees,
+                           degree_sign='°')
 
     gates = {gname: {'angle': angle_text(gname),
                      'deg': float(sim.fredkin_gates[gname].atheta.degrees)}
@@ -1273,13 +1272,14 @@ def format_angle(angle) -> str:
     s = str(angle)
     if not s or s == '0':
         return r'$0^{\circ}$'
-    # The GUI renders degree values with a trailing '°'; pdflatex can't
-    # take that character raw, so convert it to math-mode \circ.
-    if s.endswith('°'):
-        return f"${tex_math_clean(s[:-1])}^{{\\circ}}$"
-    # Wrap pi-bearing strings in math mode.
-    if any(c in s for c in 'pi*/+-^') or '\\' in s:
-        return f"${tex_math_clean(s)}$"
+    # Degree signs and pi-bearing expressions render in math mode: '°'
+    # (which pdflatex can't take raw) becomes ^\circ wherever it appears
+    # — labels like 'pi/6 (30.0°)' carry it mid-string — and literal
+    # spaces survive as explicit math-mode spaces.
+    if '°' in s or any(c in s for c in 'pi*/+-^') or '\\' in s:
+        cleaned = (tex_math_clean(s).replace('°', r'^{\circ}')
+                   .replace(' ', r'\ '))
+        return f'${cleaned}$'
     return tex_escape(s)
 
 def tex_math_clean(s: str) -> str:
