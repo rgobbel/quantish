@@ -166,7 +166,7 @@ def _(mo):
 
     Calculations within models often produce very small values, and floating-point roundoff errors can compound, appreciably affecting final results. Models can be run using exact values using symbolic arithmetic. In order to take best advantage of symbolic math, input values (i.e., gate angles) should be specified symbolically (e.g., "pi/6" rather than "30.0º"), angle values can be in the form of expressions parsable by SymPy, such as "rad(30)", which is equivalent to "pi/6".
 
-    Symbolic math is much slower than floating-point, so model execution in Symbolic mode may take several seconds.
+    Symbolic math is much slower than floating-point, so model execution in Symbolic mode may take several seconds, especially for large models like the EPR setup.
     """)
     return
 
@@ -530,7 +530,7 @@ def _(md_table, mo, sim):
 def _(mo):
     mo.md(r"""
     ## Monte Carlo sampling
-    Optional sampled trials on top of the exact run above. Two modes:
+    Optional sampled trials on top of the exact run above. Monte Carlo sampling can be run in either or both of two modes:
 
     - **terminal** — each trial draws one final configuration-space point from the
       evolved superposition with probability $\lvert w\rvert^2$. This is
@@ -541,7 +541,7 @@ def _(mo):
       time, picking a successor in proportion to the amplitude it
       received. That yields a world-line story per trial, but choosing
       per stage amounts to *collapsing at every stage*: where configuration-space points
-      interfere, path statistics legitimately diverge from the
+      interfere, path statistics will diverge from the
       exact values — the divergence measures how much interference
       matters.
     """)
@@ -806,6 +806,8 @@ def _(mo):
     (straight), $c_{3a} = w\sin^2\theta$,
     $c_{3b} = -i\,w\sin\theta\cos\theta$ (cross); $c_2 = c_{2a}+c_{2b}$,
     $c_3 = c_{3a}+c_{3b}$. A minus-sign particle swaps the roles.
+
+    **Note:** Individual components can be selected by clicking on either their vectors on the chart or their entry in the legend. Shift-click toggles a component's selected state.
     """)
     return
 
