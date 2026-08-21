@@ -151,12 +151,18 @@ def sample_hits(xs: list[float], intensities: list[float], n: int,
     one particle at a time. How many of the n actually land is the
     intensity's integral over the screen (blocking a slit absorbs about
     half the volley, so those rasters fill half as fast)."""
-    total = sum(intensities)
-    if total <= 0:
+    if sum(intensities) <= 0:
         return []
-    screen_w = (xs[-1] - xs[0]) if len(xs) > 1 else 2.0
-    landing = min(n, round(n * (total / len(intensities)) * screen_w))
     bin_w = (xs[-1] - xs[0]) / (len(xs) - 1) if len(xs) > 1 else 0.02
-    picks = rng.choices(range(len(xs)), weights=intensities, k=landing)
+    # The endpoint pixels represent half-width bins at the screen edges,
+    # so they carry half weight (the trapezoidal rule). A plain mean
+    # would count one edge twice: with f fringes both edges are bright
+    # (f even) or dark (f odd), skewing the landing fraction to
+    # (81±1)/81 instead of exactly 1.
+    weights = list(intensities)
+    weights[0] /= 2
+    weights[-1] /= 2
+    landing = min(n, round(n * sum(weights) * bin_w))
+    picks = rng.choices(range(len(xs)), weights=weights, k=landing)
     return [(xs[i] + rng.uniform(-bin_w / 2, bin_w / 2), rng.random())
             for i in picks]
