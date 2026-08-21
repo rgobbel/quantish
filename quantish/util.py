@@ -143,31 +143,8 @@ def log_seq(name:str, items:Iterable, loglevel=logging.INFO, enum_items=False):
             if type(v) in (list, tuple):
                 v = ', '.join(v)
             item = ': '.join([str(x) for x in [k, v]])
-            # log.log(loglevel, f'   {f"({i}) " if enum_items else ""}{item}')
         else:
             if type(item) in (list, tuple):
                 item = ', '.join(item)
         log.log(loglevel, f'   {f"{i}. " if enum_items else ""}{item}')
-    # if enum_items:
-    #     for i, item in enumerate(items):
-    #         if isinstance(item, Iterable):
-    #             k, v = item
-    #             if isinstance(v, Iterable):
-    #                 v = ', '.join(v)
-    #             log.log(loglevel, f'   {f"({i}) " if enum_items else ""}{k}: {v}')
-    #         else:
-    #             if isinstance(item, Iterable):
-    #                 item = ', '.join(item)
-    #             log.log(loglevel, f'   {f"({i}) " if enum_items else ""}{item}')
-    # else:
-    #     for item in items:
-    #         if isinstance(item, Iterable):
-    #             k, v = item
-    #             if isinstance(v, Iterable):
-    #                 v = ', '.join(v)
-    #             log.log(loglevel, f'   {k}: {v}')
-    #         else:
-    #             if isinstance(item, Iterable):
-    #                 item = ', '.join(item)
-    #             log.log(loglevel, f'   {item}')
     log.log(loglevel, ' ')

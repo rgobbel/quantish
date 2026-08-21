@@ -43,6 +43,7 @@ links:
 # --- g0 --> g1
    g0.control: g1.control
    g0.upper:   g1.upper
+# the omitted lower wire is the point of this figure:
 #   g0.lower: g1.lower
 # --- g1, origin --> g4, origin --> g4
    g1.control: g2.control

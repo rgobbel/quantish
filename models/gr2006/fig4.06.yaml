@@ -23,5 +23,4 @@ links:
    p1: g1.upper
 
    g1.control: g2.control
-#   g1.upper: g1_upper
    g1.lower: g2.lower

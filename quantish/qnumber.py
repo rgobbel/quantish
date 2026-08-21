@@ -59,7 +59,6 @@ class CalcMode(metaclass=CalcModeMeta):
         return set_calc_mode(new_mode)
 
 
-# realtype = lambda x: type(x) in (int, float)
 def realtype(x) -> TypeIs[int | float]:
     if isq(x):
         x = x.v

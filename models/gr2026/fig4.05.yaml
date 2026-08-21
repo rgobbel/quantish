@@ -25,4 +25,5 @@ links:
 
    g1.control: g2.control
    g1.upper: g2.upper
+# the omitted lower wire is the point of this figure:
 #   g1.lower: g2.lower

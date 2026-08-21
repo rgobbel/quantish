@@ -45,6 +45,7 @@ links:
 # --- g1, origin --> g4, origin --> g4
    g1.control: d1
    g1.upper:   d3
+# the base figure's direct wiring, replaced by the delays above:
 #   g1.control: g2.control
 #   g1.upper: g2.upper
    g1.lower:   g4.control

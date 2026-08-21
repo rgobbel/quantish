@@ -232,8 +232,9 @@ def _(mo):
 def _(mo):
     def _():
         mtext = mo.md(r"""
-        - **fringes**&#42; ($f$) controls how many bright-dark cycles fit across
-          the screen when both slits are open.
+        - **fringes**&#42; ($f$) controls how many bright fringes fit across
+          the screen when both slits are open (odd values only, so the
+          screen edges always sit on dark fringes).
         - **screen resolution** controls the granularity of each raster display.
         - **particles per volley** controls how many simulated particles will be fired at the apparatus with each press of **fire particles**.
         - **fire particles** does just that: it fires a volley at each of the four conditions shown, and displays every particle that reaches the screen. Not all of them do: blocking a slit absorbs about half the volley, so those rasters fill half as fast (the hit counts in the titles keep score).
@@ -250,7 +251,10 @@ def _(mo):
         the open-slits intensity
         $\mathcal{I}(x) = \tfrac{1}{2}\bigl(1 + \cos(f\pi x)\bigr)$ shows
         exactly $f$ bright fringes, the central one pinned at $x = 0$
-        where the two paths match. In a real apparatus this one number
+        where the two paths match. Only odd values are offered: the
+        screen edges sit at phase $\pm f\pi$, so an even count would put
+        half a bright fringe at each edge and the pattern would read as
+        $f$ dark fringes instead. In a real apparatus this one number
         stands in for the slit geometry: the phase difference there is about
         $2\pi d x / (\lambda L)$ for slit separation $d$, wavelength
         $\lambda$, and screen distance $L$, so wider spacing, a shorter
@@ -266,7 +270,7 @@ def _(mo):
         return mtext, ftext
 
     _mtext, _ftext = _()
-    fringes = mo.ui.slider(1, 8, step=1, value=3, label='fringes',
+    fringes = mo.ui.slider(steps=[1, 3, 5, 7, 9], value=3, label='fringes',
                            show_value=True)
     n_points = mo.ui.slider(41, 161, step=20, value=81,
                             label='screen resolution', show_value=True)

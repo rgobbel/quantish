@@ -30,33 +30,6 @@ gate_fields = {'upper': DiagramFields(field='upper', label='UPPER'),
                'lower': DiagramFields(field='lower', label='LOWER'),
                'control': DiagramFields(field='control', label='CONTROL')}
 
-# def argand(plot_data, cats):
-#     size = 350
-#     print(f'plot_data={plot_data}, cats={cats}')
-#     plot_frame = pd.DataFrame({
-#         'parallel': plot_data[:,0],
-#         'perpendicular': plot_data[:,1],
-#         'component': cats})
-#     base = alt.Chart(plot_frame)
-#     points = base.mark_rule().encode(
-#         x2=alt.datum(0.0),
-#         x=alt.X('parallel', axis=alt.Axis(title='Parallel'),
-#                 scale=alt.Scale(domain=[-1.1,1.1])),
-#         y2=alt.datum(0.0),
-#         y=alt.Y('perpendicular', axis=alt.Axis(title='Perpendicular'),
-#                 scale=alt.Scale(domain=[-1.1,1.1])),
-#         color='component:N').properties(width=size, height=size)
-#     labels = base.mark_text(
-#         align='left',
-#         baseline='middle',
-#         dx=7).encode(
-#         x='parallel:Q',
-#         y='perpendicular:Q',
-#         color='component:N')
-#
-#     final_chart = (points + labels).properties(
-#         title='Quantish Weights')
-#     return final_chart
 
 
 def make_gate_node(sim, gname, inout, wire, mermaid_nodes, show_outputs=True):
@@ -162,11 +135,6 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
         particle_node.content = f'{pname}{psign}'
         mermaid_nodes[pname] = particle_node
         diag.add_nodes([particle_node])
-    # for delay_name, delay_gate in sim.delay_gates.items():
-    #     dgcontent = 'D'
-    #     dgnode = pm.Node(id=delay_name)
-    #     dgnode.content = dgcontent
-    #     mermaid_nodes[delay_name] = dgnode
     for group_name, gate_group in sim.diagram_groups.items():
         stage_id = f'{group_name}_stage'
         pg = diag.add_subgraph(stage_id)

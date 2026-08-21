@@ -1,7 +1,6 @@
 title: Figure 4.12
 
 variables:
-   zero: &zero '0j'
    one: &one '1+0j'
    r60: &r60 '0.5+0.87j'
    q1: &q1 'rad(15)'
@@ -17,7 +16,6 @@ run_stages:
    measure_2: [g4]
 
 particles:
-#   c: {sign: 1, weight: *zero}
    p1: {sign: 1, weight: *one}
    p2: {sign: 1, weight: *one}
    p3: {sign: 1, weight: *one}
@@ -29,13 +27,13 @@ gates:
    g4: {angle: 0}
 
 links:
-#   c: g1.control
    p1: g1.upper
    p2: g3.upper
    p3: g4.upper
 
    g1.control: g2.control
    g1.upper: g2.upper
+# the omitted lower wire is the point of this figure:
 #   g1.lower: g2.lower
 
    g2.upper: g3.control

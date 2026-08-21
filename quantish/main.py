@@ -280,9 +280,6 @@ def main():
                 else:
                     log.info('no coupled worlds at p3@g4.upper')
 
-                # run_paths(sim.initial_point, final_points, sim.n_samples, sim)
-
-
 
             if config.sample and sim.n_samples > 0:
                 from quantish.montecarlo import run_monte_carlo

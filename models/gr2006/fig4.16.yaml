@@ -6,7 +6,6 @@ run_stages:
    split: [g5, g6]
 
 variables:
-   zero: &zero "0+0j"
    one: &one "1+0j"
    minus_one: &minus_one "-1+0j"
    cweight: &cweight "1"
@@ -32,8 +31,6 @@ variables:
    cw: &cw "0"
 
 particles:
-#   control1: {sign: 1, weight: *zero}
-#   control2: {sign: 1, weight: *zero}
    p1: {sign: 1, weight: *one}
    p2: {sign: 1, weight: *one}
    p3: {sign: 1, weight: *one}
@@ -47,8 +44,6 @@ gates:
    g6: {angle: *q20}
 
 links:
-#   control1: g1.control
-#   control2: g2.control
    p1: g1.upper
    p2: g2.lower
    p3: g3.upper
