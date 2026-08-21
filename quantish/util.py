@@ -132,6 +132,19 @@ class QLogger(StreamHandler):
         super().emit(record)
         super().flush()
 
+def symbolic_angle(spec):
+    """The display form of a gate-angle spec when it is symbolic ('pi/6',
+    'rad(30)', 'theta1'): the expression verbatim. None when the spec is
+    numeric (callers show degrees instead)."""
+    if not isinstance(spec, str):
+        return None
+    try:
+        float(spec)
+        return None
+    except ValueError:
+        return spec
+
+
 def wangle(weight:Complex):
     # if weight == 0:
     #     return f'{angstr(0)}'

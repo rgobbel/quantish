@@ -1,0 +1,50 @@
+/* Styles for double_slit_app.py, wired up via marimo.App(css_file=...).
+   Tweak sizes and colors here; a <style> tag emitted from a cell is
+   sanitized away by marimo, which is why that approach did nothing.
+
+   All prose renders in black instead of the theme's gray. The theme
+   colors text through CSS variables, so the overrides need !important.
+   (Tuned for the light theme.) */
+.prose,
+.prose p, .prose li, .prose td, .prose th,
+.prose strong, .prose em, .prose summary,
+.prose h1, .prose h2, .prose h3, .prose h4,
+.prose .katex,
+.markdown,
+.markdown p, .markdown li, .markdown td, .markdown th,
+.markdown .katex {
+    color: #000 !important;
+}
+
+/* Explanation tables: slightly larger headers and KaTeX. */
+.prose table thead th,
+.markdown table thead th {
+    font-size: 1.1em;
+}
+
+.prose table .katex,
+.markdown table .katex {
+    font-size: 1.1em;
+}
+
+/* Book-style footnote under the parameter list: a small clickable
+   marker line that expands to the note text. */
+.qfootnote {
+    max-width: 46em;
+}
+
+.qfootnote summary {
+    font-size: 0.78em;
+    color: #000;
+    cursor: pointer;
+}
+
+.qfootnote details {
+    font-size: 1.0em;
+}
+
+/* Marimo caps cell output at 610px and scrolls inside the cell; let the
+   simulation-results panels render at full height instead. */
+.output-area {
+    max-height: none !important;
+}

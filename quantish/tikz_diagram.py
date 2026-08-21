@@ -32,7 +32,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from quantish.util import SEP, WIRES
+from quantish.util import SEP, WIRES, symbolic_angle
 
 
 # --------------------------------------------------------------------------
@@ -71,7 +71,15 @@ def spec_from_simulation(sim, fig: str = None) -> DiagramSpec:
     # both are pure pass-throughs, drawn as small boxes
     _pass_through = sorted(getattr(sim, 'pass_through_gates', set()))
     delay_names = list(sim.delay_gates.keys()) + _pass_through
-    gates = {gname: {'angle': str(config.gates[gname].angle),
+    # A symbolic angle spec ('pi/6', 'rad(30)', 'theta1') labels the gate
+    # verbatim; a numeric one labels it in degrees.
+    def angle_text(gname):
+        symbolic = symbolic_angle(config.gates[gname].angle)
+        if symbolic is not None:
+            return symbolic
+        return f'{float(sim.fredkin_gates[gname].atheta.degrees):.1f}°'
+
+    gates = {gname: {'angle': angle_text(gname),
                      'deg': float(sim.fredkin_gates[gname].atheta.degrees)}
              for gname in sim.fredkin_gates.keys()
              if gname not in sim.pass_through_gates}

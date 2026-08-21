@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 from quantish.simulation import Simulation
-from quantish.util import SEP, parse_position, sstr, wstr
+from quantish.util import SEP, parse_position, sstr, symbolic_angle, wstr
 import quantish.qnumber as qn
 import python_mermaid.diagram as pmd
 import python_mermaid.node as pm
@@ -191,7 +191,11 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
                 pg.add_nodes([gn])
             else:
                 gg = pg.add_subgraph(gname)
-                gg.header = f'subgraph {gname}["{gname}: {float(gate.theta.degrees):.1f}º"]'
+                # a symbolic angle spec labels the gate verbatim; a
+                # numeric one labels it in degrees
+                _angle = (symbolic_angle(sim.config.gates[gname].angle)
+                          or f'{float(gate.theta.degrees):.1f}º')
+                gg.header = f'subgraph {gname}["{gname}: {_angle}"]'
                 ggi = gg.add_subgraph(f'{gname}.input')
                 ggi.header = f'subgraph {gname}.input[input]'
                 ggo = gg.add_subgraph(f'{gname}.output')

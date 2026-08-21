@@ -1,0 +1,10 @@
+/* Styles for quantish_app.py, wired up via marimo.App(css_file=...).
+   A <style> tag emitted from a cell is sanitized away by marimo, so
+   app-wide styling belongs here.
+
+   Marimo caps cell output at 610px and scrolls inside the cell; let the
+   graphical results (TikZ, weight evolution, Mermaid) render at full
+   height instead. */
+.output-area {
+    max-height: none !important;
+}

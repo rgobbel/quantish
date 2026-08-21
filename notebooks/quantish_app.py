@@ -12,11 +12,11 @@ Run with:  marimo edit notebooks/quantish_app.py   (or `marimo run` to serve)
 import marimo
 
 __generated_with = "0.24.0"
-app = marimo.App(width="full")
+app = marimo.App(width="full", css_file="quantish_app.css")
 
 
 @app.cell(hide_code=True)
-def imports():
+def initialization():
     import cmath
     import logging
     import math
@@ -204,59 +204,11 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(
-    CalcMode,
-    Simulation,
-    angles_get,
-    base_env,
-    gate_names,
-    load_config,
-    math,
-    mo,
-    mode_pick,
-    model_pick,
-    qn,
-):
-    # Model construction is cheap and needs no ▶ Run: cells that only need
-    # the loaded model (the EPR sweep) depend on sim_model; cells that show
-    # run results depend on sim (gated on the button, next cell).
-    def build_sim():
-        def angle_for(g):
-            cur = angles_get()[g]
-            if cur['expr']:
-                # keep the expression a STRING: the Simulation loader
-                # qifies it against the model's variables, so names like
-                # theta1 stay live and the EPR sweep's variable rebinding
-                # (run_pair) still has something to rebind. Qifying here
-                # would freeze the current value into the gate.
-                qn.qify(cur['expr'], base_env)  # validate early, clear error
-                return cur['expr']
-            return math.radians(cur['deg'])
-
-        CalcMode.default(mode_pick.value)
-        qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
-        config = load_config(model_pick.value)
-        for g in gate_names:
-            config.gates[g].angle = angle_for(g)
-        return Simulation(config)
-
-    try:
-        sim_model = build_sim()
-    except Exception as exc:  # noqa: BLE001 — old-format models raise all sorts
-        mo.stop(True, mo.md(
-            f"**{model_pick.value.stem} failed to load** — probably "
-            f"an old-format model.\n\n```\n{exc}\n```"))
-    return build_sim, sim_model
-
-
-@app.cell(hide_code=True)
-def _(mo, mode_pick, model_pick, run_btn, build_sim):
-    # Gated on the button: changing sliders/text/model/mode marks results
-    # stale (this message) but leaves the previous results visible below.
-    mo.stop(not run_btn.value,
-            mo.md('_settings changed — press **▶ Run simulation** to (re)compute; '
-                  'results below are from the previous run_'))
-
+def _(build_sim, mo, mode_pick, model_pick, run_btn):
+    # Gated on the button. Rather than mo.stop (whose descendants all
+    # display "this cell wasn't run because an ancestor was stopped"),
+    # sim is None until the button is pressed, and each results cell
+    # silently renders nothing while it is.
     def _():
         try:
             run = build_sim()
@@ -266,9 +218,12 @@ def _(mo, mode_pick, model_pick, run_btn, build_sim):
             mo.stop(True, mo.md(
                 f"**{model_pick.value.stem} failed to run**\n\n```\n{exc}\n```"))
 
-    sim = _()
+    sim = _() if run_btn.value else None
 
     def _():
+        if sim is None:
+            return mo.md('_press **▶ Run simulation** to compute results '
+                         'with the settings above_')
         angles = ', '.join(f'{g}={float(gate.atheta.degrees):.1f}º'
                            for g, gate in sim.fredkin_gates.items())
         return mo.md(
@@ -301,16 +256,16 @@ def _(mo):
 
 @app.cell(hide_code=True)
 def _(mo, sim, tikz_zoom, zoomable):
+    mo.stop(sim is None)  # nothing to show until ▶ Run
     # Depends on sim, so it refreshes on every Run (runs are now explicit,
     # so the pdflatex cost is paid once per Run, not per slider move).
     # SVG, not PNG: vector output stays crisp at any zoom.
     def _():
         from quantish.tikz_diagram import render_diagram_svg, spec_from_simulation
         try:
-            overrides = {g: f'{float(gate.atheta.degrees):.1f}°'
-                         for g, gate in sim.fredkin_gates.items()}
-            svg = render_diagram_svg(spec_from_simulation(sim),
-                                     angle_overrides=overrides)
+            # gate labels come from the sim's config: symbolic angle
+            # expressions display verbatim, numeric ones as degrees
+            svg = render_diagram_svg(spec_from_simulation(sim))
             if svg is None:
                 return mo.md('_TikZ render unavailable (needs pdflatex + pdf2svg)_')
             return mo.Html(svg)
@@ -324,6 +279,7 @@ def _(mo, sim, tikz_zoom, zoomable):
 
 @app.cell(hide_code=True)
 def _(NetworkGraph, mo, sim):
+    mo.stop(sim is None)  # nothing to show until ▶ Run
     # native Altair: live SVG with tooltips, pans/zooms itself. Shown
     # directly — mo.ui.altair_chart injects a selection param, which
     # Vega-Lite rejects on layered charts that carry configure_* options.
@@ -339,6 +295,7 @@ def _(NetworkGraph, mo, sim):
 
 @app.cell(hide_code=True)
 def _(GatePort, math_weight, md_table, mo, qn, short_config, sim):
+    mo.stop(sim is None)  # nothing to show until ▶ Run
     # Tabular twin of the weight-evolution graph: per stage, one row per
     # parent→child branch — the input configuration-space point and its weight, the
     # per-particle components the gate applied (cos²θ, ±i·sinθcosθ, sin²θ),
@@ -448,6 +405,8 @@ def _(GatePort, math_weight, md_table, mo, qn, short_config, sim):
 
 @app.cell(hide_code=True)
 def _(diagram, mermaid_zoom, mo, sim, zoomable):
+    mo.stop(sim is None)  # nothing to show until ▶ Run
+
     def _():
         # The generated source carries no theme, and mo.mermaid's own
         # theme choice is unreadable on nested subgraphs — so pin the
@@ -480,6 +439,7 @@ def _(diagram, mermaid_zoom, mo, sim, zoomable):
 
 @app.cell(hide_code=True)
 def _(math_weight, md_table, mo, phase_deg, short_config, sim):
+    mo.stop(sim is None)  # nothing to show until ▶ Run
     # Worlds sorted canonically: gate (in evaluation order), then port
     # (upper before lower), then sign (+ before −); the configuration
     # label's coordinates are reordered to match.
@@ -501,6 +461,7 @@ def _(math_weight, md_table, mo, phase_deg, short_config, sim):
 
 @app.cell(hide_code=True)
 def _(md_table, mo, sim):
+    mo.stop(sim is None)  # nothing to show until ▶ Run
     # Marginal in the statistics sense: each row sums |w|² over every
     # final configuration-space point containing that coordinate — the chance of finding that
     # particle, with that sign, at that port, regardless of where the
@@ -535,6 +496,7 @@ def _(md_table, mo, sim):
 
 @app.cell(hide_code=True)
 def _(md_table, mo, sim):
+    mo.stop(sim is None)  # nothing to show until ▶ Run
     # Per-step gate traffic: what arrived at each port (previous step's
     # coordinate endpoints) and what left it (that step's origins), with
     # per-sign probabilities and the aggregate Σ (|Σ|² and phase).
@@ -602,6 +564,7 @@ def _(
     run_monte_carlo,
     sim,
 ):
+    mo.stop(sim is None)  # nothing to sample until ▶ Run
     mo.stop(not mc_button.value, mo.md('_press **Run Monte Carlo** to sample_'))
 
     def _():
@@ -644,7 +607,7 @@ def _(mo):
     mo.md(r"""
     ## The Einstein-Podolsky-Rosen / Bell Experiment
 
-    The EPR experiment user interface is hidden until a suitable model such as Figure 4.17 is loaded.
+    The EPR experiment user interface is hidden until a suitable model (e.g. Figure 4.17) is loaded.
     """)
     return
 
@@ -976,8 +939,9 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(mo, sim):
-    mo.accordion(sim.__dict__, multiple=True, lazy=True)
+def _(mo, model_pick, sim):
+    mo.stop(sim is None)  # nothing to show until ▶ Run
+    mo.accordion({str(model_pick.value.stem): mo.accordion(sim.__dict__, multiple=True, lazy=True)})
     return
 
 
@@ -987,6 +951,52 @@ def _(mo):
     ## Support Code
     """)
     return
+
+
+@app.cell(hide_code=True)
+def _(
+    CalcMode,
+    Simulation,
+    angles_get,
+    base_env,
+    gate_names,
+    load_config,
+    math,
+    mo,
+    mode_pick,
+    model_pick,
+    qn,
+):
+    # Model construction is cheap and needs no ▶ Run: cells that only need
+    # the loaded model (the EPR sweep) depend on sim_model; cells that show
+    # run results depend on sim (gated on the button, next cell).
+    def build_sim():
+        def angle_for(g):
+            cur = angles_get()[g]
+            if cur['expr']:
+                # keep the expression a STRING: the Simulation loader
+                # qifies it against the model's variables, so names like
+                # theta1 stay live and the EPR sweep's variable rebinding
+                # (run_pair) still has something to rebind. Qifying here
+                # would freeze the current value into the gate.
+                qn.qify(cur['expr'], base_env)  # validate early, clear error
+                return cur['expr']
+            return math.radians(cur['deg'])
+
+        CalcMode.default(mode_pick.value)
+        qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
+        config = load_config(model_pick.value)
+        for g in gate_names:
+            config.gates[g].angle = angle_for(g)
+        return Simulation(config)
+
+    try:
+        sim_model = build_sim()
+    except Exception as exc:  # noqa: BLE001 — old-format models raise all sorts
+        mo.stop(True, mo.md(
+            f"**{model_pick.value.stem} failed to load** — probably "
+            f"an old-format model.\n\n```\n{exc}\n```"))
+    return build_sim, sim_model
 
 
 @app.cell(hide_code=True)
@@ -1018,7 +1028,7 @@ def _(mo):
     # designated default; a new collection falls back to first-by-name
     last_collection_get, last_collection_set = mo.state('gr2026')
     last_models_get, last_models_set = mo.state(
-        {'extras': 'AIM_Figure12', 'gr2006': 'fig4.16', 'gr2026': 'fig4.17'})
+        {'extras': 'AIM_Figure12', 'gr2006': 'fig4.04', 'gr2026': 'fig4.04'})
     return (
         last_collection_get,
         last_collection_set,
@@ -1263,16 +1273,17 @@ def _(cmath, mo, qn):
         # Width-based zoom: widen an inner container and make the media
         # fill it. CSS zoom fails here because mo.image and Mermaid SVGs
         # are max-width-clamped to the container — the clamp scales along
-        # with the zoom, so only the caption text grew.
+        # with the zoom, so only the caption text grew. Full height, no
+        # inner vertical scrolling; zoomed-in content scrolls sideways.
         return mo.Html(
-            f'<div style="overflow:auto; max-height:85vh">'
+            f'<div style="overflow-x:auto">'
             f'<div class="qzoom" style="width:{factor * 100:.0f}%">'
             f'<style>.qzoom img, .qzoom svg '
             f'{{ width:100% !important; max-width:none !important; '
             f'height:auto !important; }}</style>'
             f'{mo.as_html(obj).text}</div></div>')
 
-    return inline_png, latex_weight, math_weight, md_table, phase_deg, zoomable
+    return latex_weight, math_weight, md_table, phase_deg, zoomable
 
 
 @app.cell(hide_code=True)

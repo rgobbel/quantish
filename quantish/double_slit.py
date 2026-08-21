@@ -5,32 +5,40 @@ of a recombining gate. Blocking a slit is diverting away one of the output wires
 (figures 4.13 in the 2006 edition, 4.14 in the 2026 numbering). Here the apparatus is just the
 barrier:
 
-    p1 -> g1 (split, theta_s) -> upper arm  = slit 1
-                              -> lower arm  = slit 2
+    p1 -> g1 (split, theta_s) -> upper switch output = left slit  (S1)
+                              -> lower switch output = right slit (S2)
 
-and the flight from the slits to a screen position x is idealized (the
-slits are infinitely narrow, so there is no diffraction envelope). Each
-screen pixel acts as a remerge gate *matched* to the split — in quantish,
-interference only ever happens at a recombining gate (fig 4.13: splits
-at rate sin^2(Q1-Q2)) — so each arm's sign components (the split rule's
-same-sign and flipped-sign pieces) are summed coherently into one arm
-amplitude, exact from the engine's configuration-space points; the path-length difference
-to x enters as a relative phase between the arms; and arms interfere
-only within a class of configuration-space points that agree in every *other* particle:
+The slit boxes S1/S2 and the blocks B1/B2 are delay gates: a particle is
+routed in through their single control input and passes through
+unchanged. The flight from the slits to a screen position x is idealized
+(the slits are infinitely narrow, so there is no diffraction envelope).
+Each screen pixel acts as a remerge gate *matched* to the split; in
+quantish, interference only ever happens at a recombining gate
+(fig 4.13: splits at rate sin^2(Q1-Q2)). So each slit's sign components
+(the split rule's same-sign and flipped-sign pieces) are summed
+coherently into one amplitude per slit, exact from the engine's
+configuration-space points; the path-length difference to x enters as a
+relative phase between the slits; and slits interfere only within an
+interference group: a set of configuration-space points that agree in
+every *other* particle. The screen intensity at x is
 
-    I(x) = sum over classes |sum over arms a_arm * e^(i*phi_arm(x))|^2
+    I(x) = sum over groups |sum over slits a_slit * e^(i*phi_slit(x))|^2
 
 The three regimes then need no case analysis:
 
-- 'both': one class, two arms -> the cross term oscillates with x:
+- 'both': one group, two slits -> the cross term oscillates with x:
   fringes, peaking at 4x the single-slit intensity, zero at the darks.
-- 'slit1'/'slit2': the barrier absorbs the other arm -> one amplitude,
+- 'slit1'/'slit2': the barrier absorbs the other path -> one amplitude,
   |a|^2, flat (infinitely narrow slit: no envelope).
-- 'observed': a which-way recorder particle (fig 4.15's lesson) rides the
-  lower arm; its position differs between the arm classes, so the arms
-  can no longer share a class and the cross term vanishes: fringes wash
-  out, I = |a_u|^2 + |a_l|^2 = the classical sum, with nothing blocking
-  either path.
+- 'observed': a which-way recorder particle (fig 4.15's lesson). The wire
+  to the right slit passes through gate g4's control input on its way to
+  S2; a control input never changes the particle traversing it, but its
+  occupancy decides whether g4 swaps its switch wires, so the recorder
+  particle p2's exit wire records which slit p1 used. p2's position then
+  differs between the two slits' groups, so they can no longer share a
+  group and the cross term vanishes: fringes wash out,
+  I = |a_left|^2 + |a_right|^2 = the classical sum, with nothing
+  blocking either path.
 
 The sweep cannot be a gate angle because quantish has no pure phase-shifter.
 Any gate offset delta multiplies single-path throughput by cosine-squared
@@ -47,27 +55,28 @@ from collections import Counter
 
 from addict import Addict
 
-DEFAULT_THETA_S = math.radians(45.0)  # split angle (equal arms)
+DEFAULT_THETA_S = math.radians(45.0)  # split angle (equal slit amplitudes)
 
 MODES = ('both', 'slit1', 'slit2', 'observed')
 
-# The engine's crossed arm amplitude carries a fixed -pi/2 phase relative
-# to the straight one; this propagation offset on the lower arm cancels it
-# so equal path lengths (screen center) give the central bright fringe.
+# The engine's crossed switch output carries a fixed -pi/2 phase relative
+# to the straight one; this propagation offset on the right slit cancels
+# it so equal path lengths (screen center) give the central bright fringe.
 _CROSS_PHASE = math.pi / 2
 
 
 def slit_config(mode: str = 'both',
                 theta_s: float = DEFAULT_THETA_S) -> Addict:
     """The whole apparatus up to (but not including) the flight to a screen
-    position — it does not depend on x. Each arm ends at the slit plane:
-    slit n is the box Sn (S1 for the upper arm, S2 for the lower), and a
-    blocked slit n is the block Bn in its place (the book's "diversion
-    away", fig 4.14). 'observed' couples a recorder particle to the lower
-    arm (an angle-0 gate used via its control wire) on the way to S2. The
-    boxes are pass-throughs (delay gates): they change no amplitudes, but
-    they make each mode's circuit — and its diagram — show where the arms
-    actually end up."""
+    position; it does not depend on x. Each switch output of g1 ends at
+    the slit plane: the upper output at the left slit (box S1), the lower
+    at the right slit (S2), and a blocked slit n has the block Bn in its
+    place (the book's "diversion away", fig 4.14). 'observed' routes the
+    right slit's wire through the control input of the angle-0 gate g4 on
+    its way to S2, with the recorder particle p2 on g4's switch wires.
+    The boxes are pass-throughs (delay gates), entered through their
+    control input: they change no amplitudes, but they make each mode's
+    circuit, and its diagram, show where the wires actually end up."""
     if mode not in MODES:
         raise ValueError(f'unknown mode {mode!r}; expected one of {MODES}')
     gates = {'g1': {'angle': theta_s}}
@@ -99,33 +108,35 @@ def slit_sim(mode: str = 'both', theta_s: float = DEFAULT_THETA_S):
     return Simulation(slit_config(mode, theta_s))
 
 
-# Which slit each arm passes through; particles ending at a block (B1/B2)
-# never reach the screen.
-_ARM_OF_BOX = {'S1': 'upper', 'S2': 'lower'}
+# The switch wire feeding each slit box; particles ending at a block
+# (B1/B2) never reach the screen.
+_WIRE_OF_BOX = {'S1': 'upper', 'S2': 'lower'}
 
 
-def arm_amplitudes(mode: str = 'both',
-                   theta_s: float = DEFAULT_THETA_S) -> list[dict[str, complex]]:
-    """One exact engine run; returns per-class {arm: amplitude} dicts,
-    arm in ('upper', 'lower'). A class is a distinct assignment of every
-    particle other than p1 — amplitudes interfere only within a class.
-    Each arm's two sign components sum coherently (the matched-remerge
-    idealization; see the module docstring); arms ending at the barrier
-    are absorbed and contribute nothing."""
+def slit_amplitudes(mode: str = 'both',
+                    theta_s: float = DEFAULT_THETA_S) -> list[dict[str, complex]]:
+    """One exact engine run; returns one {wire: amplitude} dict per
+    interference group, wire in ('upper', 'lower') naming the switch
+    output that feeds the slit (upper = left slit, lower = right). An
+    interference group is a distinct assignment of every particle other
+    than p1; amplitudes interfere only within a group. Each slit's two
+    sign components sum coherently (the matched-remerge idealization; see
+    the module docstring); anything ending at a block is absorbed and
+    contributes nothing."""
     sim = slit_sim(mode, theta_s)
     sim.run()
-    classes: dict[tuple, dict[str, complex]] = {}
+    groups: dict[tuple, dict[str, complex]] = {}
     for point in sim.result_space.index.values():
         origin = point.coords['p1'].position.origin
-        arm = _ARM_OF_BOX.get(origin.gate)
-        if arm is None:          # ended at the barrier: absorbed
+        wire = _WIRE_OF_BOX.get(origin.gate)
+        if wire is None:         # ended at a block: absorbed
             continue
         key = tuple((name, str(coord.pkey.sign), str(coord.position))
                     for name, coord in sorted(point.coords.items())
                     if name != 'p1')
-        by_arm = classes.setdefault(key, {})
-        by_arm[arm] = by_arm.get(arm, 0j) + complex(point.weight.v)
-    return list(classes.values())
+        by_wire = groups.setdefault(key, {})
+        by_wire[wire] = by_wire.get(wire, 0j) + complex(point.weight.v)
+    return list(groups.values())
 
 
 def screen_positions(n_points: int) -> list[float]:
@@ -135,18 +146,19 @@ def screen_positions(n_points: int) -> list[float]:
 
 def screen_curve(n_points: int, fringes: float, mode: str = 'both',
                  theta_s: float = DEFAULT_THETA_S) -> tuple[list[float], list[float]]:
-    """(positions, intensities) across the screen. The lower arm's path
-    difference sweeps `fringes` pattern periods over the screen; blocked
-    arms end at the barrier inside the circuit and contribute nothing."""
-    classes = arm_amplitudes(mode, theta_s)
+    """(positions, intensities) across the screen. The right slit's path
+    difference sweeps `fringes` pattern periods over the screen; a blocked
+    slit's wire ends at its block inside the circuit and contributes
+    nothing."""
+    groups = slit_amplitudes(mode, theta_s)
     xs = screen_positions(n_points)
     intensities = []
     for x in xs:
         phase = {'upper': 0.0, 'lower': fringes * math.pi * x + _CROSS_PHASE}
         total = 0.0
-        for amps in classes:
-            summed = sum(amp * cmath.exp(1j * phase[arm])
-                         for arm, amp in amps.items())
+        for amps in groups:
+            summed = sum(amp * cmath.exp(1j * phase[wire])
+                         for wire, amp in amps.items())
             total += abs(summed) ** 2
         intensities.append(total)
     return xs, intensities
