@@ -25,11 +25,25 @@ uv sync
 
 Or with pip: `pip install -e .` in a fresh virtual environment.
 
-Optional external tools, only needed for some diagram outputs:
+### External tools for the circuit diagrams
 
-- `pdflatex` and `pdf2svg` — TikZ circuit diagrams (the app shows a note
-  instead if they're missing)
-- ImageMagick (`magick`) — PNG export of TikZ diagrams
+The TikZ circuit diagrams (shown in both apps and available from the
+CLI) are rendered with `pdflatex` and converted with `pdf2svg`. Without
+them the apps still run, but the diagram panels show a "render
+unavailable" note instead. The LaTeX install must include TikZ/PGF and
+the `standalone` document class:
+
+- Debian/Ubuntu (including Jetson boards):
+  `sudo apt install texlive-latex-base texlive-latex-extra
+  texlive-fonts-recommended texlive-fonts-extra pdf2svg`
+  (a verified-working set; `texlive-latex-base` + `pdf2svg` alone is
+  not enough)
+- macOS: MacTeX, or BasicTeX plus `sudo tlmgr install standalone`;
+  then `brew install pdf2svg`
+
+Also optional:
+
+- ImageMagick (`magick`) — PNG export of TikZ diagrams from the CLI
 - `mmdc` (mermaid-cli) — rendering Mermaid diagrams to SVG/PDF from the CLI
 
 ## The interactive app
