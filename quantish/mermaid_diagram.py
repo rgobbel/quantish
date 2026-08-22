@@ -2,7 +2,8 @@ from pathlib import Path
 
 from quantish.display import pos_value_str
 from quantish.simulation import Simulation
-from quantish.util import SEP, angle_label, parse_position
+from quantish.util import (SEP, angle_label, math_to_unicode,
+                           parse_position, subscript_digits)
 import quantish.qnumber as qn
 import python_mermaid.diagram as pmd
 import python_mermaid.node as pm
@@ -118,6 +119,13 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
         return (sim.gates[gname].report_type() == 'DelayGate'
                 or gname in getattr(sim, 'pass_through_gates', set()))
 
+    _wire_labels = getattr(sim, 'wire_labels', {})
+
+    def wire_label(source):
+        # the model's label for the wire leaving `source` (the book's
+        # w₂, w₂ₐ... names), shown as the mermaid edge label
+        return subscript_digits(_wire_labels.get(source, ''))
+
     mermaid_nodes = {}
     if has_run:
         title = f'{sim.title} after run at {time.asctime()}'
@@ -134,11 +142,31 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
         # mermaid "markdown string" (backticks inside the quotes) so the
         # bold/italics render instead of showing literal asterisks.
         caption_node = pmd.Node(id='model_caption')
-        text = sim.caption.replace('"', '#quot;')
+        # $...$ math has no renderer here: convert to unicode subscripts
+        text = math_to_unicode(sim.caption).replace('"', '#quot;')
         if any(marker in text for marker in ('*', '_')):
             text = f'`{text}`'
         caption_node.content = text
         diag.add_nodes([caption_node])
+
+    def stub_anchor(node_id, label):
+        # the outer end of a labeled stub wire: a Mermaid edge needs a
+        # node at both ends, so the wire ends at a box that is invisible
+        # except for the label text itself (the custom shape smuggles in
+        # a style line, as the bold HACK does). Carrying the label HERE,
+        # not on the edge, keeps it at the stub's outer end, outside the
+        # gate box — as the TikZ diagrams place it.
+        shape_name = f'{node_id}_invis'
+        base = pm.NODE_SHAPES['normal']
+        pm.NODE_SHAPES[shape_name] = pm.NodeShape(
+            start=base.start,
+            end=base.end + f'\nstyle {node_id} fill:transparent,'
+                           f'stroke:transparent')
+        node = pmd.Node(node_id, shape=shape_name)
+        node.content = subscript_digits(label)
+        mermaid_nodes[node.id] = node
+        diag.add_nodes([node])
+        return node
 
     for particle_name, particle in sim.particles.items():
         pname = particle_name.split('<')[0]
@@ -148,6 +176,13 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
         particle_node.content = f'{pname}{psign}'
         mermaid_nodes[pname] = particle_node
         diag.add_nodes([particle_node])
+
+    # null-INPUT stub anchors join the model here, with the particles:
+    # ELK honors model order, so they must precede the gates to be laid
+    # out on the left, feeding in like the particles do
+    for _key, _label in _wire_labels.items():
+        if _key.startswith('>'):
+            stub_anchor(f'{_key[1:]}_nullin', _label)
     for group_name, gate_group in sim.diagram_groups.items():
         stage_id = f'{group_name}_stage'
         pg = diag.add_subgraph(stage_id)
@@ -169,11 +204,13 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
                 gg = pg.add_subgraph(gname)
                 # a symbolic angle spec labels the gate verbatim with its
                 # degrees appended; a numeric one shows degrees only
-                _angle = angle_label(sim.config.gates[gname].angle,
-                                     gate.theta.degrees)
+                _angle = subscript_digits(
+                    angle_label(sim.config.gates[gname].angle,
+                                gate.theta.degrees))
                 _phase = sim.config.gates[gname].get('phase')
                 if _phase is not None:
-                    _angle += ' φ=' + angle_label(_phase, gate.phase.degrees)
+                    _angle += ' φ=' + subscript_digits(
+                        angle_label(_phase, gate.phase.degrees))
                 gg.header = f'subgraph {gname}["{gname}: {_angle}"]'
                 ggi = gg.add_subgraph(f'{gname}.input')
                 ggi.header = f'subgraph {gname}.input[input]'
@@ -207,7 +244,9 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
             ctrl_source_parts = parse_position(ctrl_source_name)
             if type(ctrl_source_parts) is str:
                 ctrl_input_node = mermaid_nodes[ctrl_source_name]
-                mermaid_links.append(pmd.Link(ctrl_input_node, ctrl_gate_node))
+                mermaid_links.append(pmd.Link(
+                    ctrl_input_node, ctrl_gate_node,
+                    message=wire_label(ctrl_source_name)))
         dest_node = None
         if control_pos in sim.links.keys():
             dest = sim.links[control_pos]
@@ -227,7 +266,8 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
             # value-less sinks aren't created; .get covers empty ports
             dest_node = mermaid_nodes.get(f'{control_pos}_SINK')
         if dest_node is not None:
-            mermaid_links.append(pmd.Link(ctrl_gate_node, dest_node))
+            mermaid_links.append(pmd.Link(ctrl_gate_node, dest_node,
+                                          message=wire_label(control_pos)))
         if is_delay(gate_name): continue
         for switch_set in ('upper', 'lower'):
             switch_pos = f'{gate_name}{SEP}{switch_set}'
@@ -239,7 +279,9 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
                     input_pos = parse_position(switch_input)
                     if type(input_pos) is str:
                         switch_input_node = mermaid_nodes[switch_input]
-                        mermaid_links.append(pmd.Link(switch_input_node, switch_node))
+                        mermaid_links.append(pmd.Link(
+                            switch_input_node, switch_node,
+                            message=wire_label(switch_input)))
                 elif inout == 'out':
                     dest_node = None
                     if switch_pos in sim.links.keys():
@@ -257,7 +299,35 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
                     elif has_run:
                         dest_node = mermaid_nodes.get(f'{switch_pos}_SINK')
                     if dest_node is not None:
-                        mermaid_links.append(pmd.Link(switch_node, dest_node))
+                        mermaid_links.append(pmd.Link(
+                            switch_node, dest_node,
+                            message=wire_label(switch_pos)))
+
+    # Labeled null-input/output stubs, drawn only because a label asks
+    # for them (input anchors were created up with the particles for
+    # left-side placement; output anchors join last, landing rightmost).
+    # A labeled unlinked output whose value SINK exists after a run
+    # already shows its label on that sink's edge above.
+    for key, stub_label in _wire_labels.items():
+        into = key.startswith('>')
+        port = key[1:] if into else key
+        if (not into and port in sim.links) or SEP not in port:
+            continue
+        gname, wname = port.split(SEP)
+        if is_delay(gname):
+            port_node = mermaid_nodes.get(gname)
+        elif wname == 'control':
+            port_node = mermaid_nodes.get(port)
+        else:
+            port_node = mermaid_nodes.get(f'{port}_{"in" if into else "out"}')
+        if port_node is None:
+            continue
+        if into:
+            anchor = mermaid_nodes[f'{port}_nullin']
+            mermaid_links.append(pmd.Link(anchor, port_node))
+        elif f'{port}_SINK' not in mermaid_nodes:
+            anchor = stub_anchor(f'{port}_nullout', stub_label)
+            mermaid_links.append(pmd.Link(port_node, anchor))
 
     diag.add_links(mermaid_links)
     diag.graph.header = 'flowchart LR\n'

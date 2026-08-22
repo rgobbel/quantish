@@ -5,10 +5,12 @@ title: Figure 4.9
 # revised draft. With Q1 != Q2 the second gate no longer undoes the first:
 # states split at rate sin²(Q1−Q2).
 
+caption: Here, the angles $Q_1$ and $Q_2$ may differ
+
 variables:
    one: &one "1+0j"
-   q1: 'rad(30)'
-   q2: 'rad(45)'
+   Q1: 'rad(30)'
+   Q2: 'rad(45)'
 
 run_stages:
    split1: [g1]
@@ -18,8 +20,8 @@ particles:
    p1: {sign: 1, weight: *one}
 
 gates:
-   g1: {angle: q1}
-   g2: {angle: q2}
+   g1: {angle: Q1}
+   g2: {angle: Q2}
 
 links:
    p1: g1.upper
@@ -27,3 +29,16 @@ links:
    g1.control: g2.control
    g1.upper: g2.upper
    g1.lower: g2.lower
+
+# the book's wire-segment names: w2 carries p1, a = between the gates,
+# b = after g2; '>' marks an empty input, an unlinked port an empty output
+wire_labels:
+   '>g1.control': w1
+   p1: w2
+   '>g1.lower': w3
+   g1.control: w1a
+   g1.upper: w2a
+   g1.lower: w3a
+   g2.control: w1b
+   g2.upper: w2b
+   g2.lower: w3b

@@ -1,4 +1,5 @@
 import logging
+import re
 from enum import IntEnum
 from typing import Iterable
 
@@ -89,6 +90,28 @@ def angle_label(spec, degrees, degree_sign='º'):
     symbolic = symbolic_angle(spec)
     deg = f'{float(degrees):.1f}{degree_sign}'
     return f'{symbolic} ({deg})' if symbolic is not None else deg
+
+
+_SUBSCRIPT_DIGITS = str.maketrans('0123456789', '₀₁₂₃₄₅₆₇₈₉')
+
+def subscript_digits(s: str) -> str:
+    """Digits directly after letters become unicode subscripts, as in the
+    book's labels: q5 → q₅, theta2 → theta₂. For plain-text surfaces
+    (Mermaid labels); the TikZ renderer does the same in TeX math."""
+    return re.sub(r'(?<=[A-Za-z])(\d+)',
+                  lambda mt: mt.group(1).translate(_SUBSCRIPT_DIGITS), s)
+
+
+def math_to_unicode(s: str) -> str:
+    """$...$ math segments in caption text rendered as plain unicode:
+    $Q_1$ → Q₁, $Q_{12}$ → Q₁₂. For surfaces with no LaTeX rendering
+    (Mermaid labels, chart titles); mo.md surfaces render the math
+    itself and don't need this."""
+    def _segment(m):
+        return re.sub(r'_\{?(\w+)\}?',
+                      lambda t: t.group(1).translate(_SUBSCRIPT_DIGITS),
+                      m.group(1))
+    return re.sub(r'\$([^$]+)\$', _segment, s)
 
 
 

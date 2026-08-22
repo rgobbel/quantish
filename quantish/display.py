@@ -14,7 +14,7 @@ from collections import defaultdict
 
 import quantish.qnumber as qn
 from quantish.config_space import GatePort
-from quantish.util import SEP
+from quantish.util import SEP, math_to_unicode
 
 log = logging.getLogger('quantish')
 
@@ -39,7 +39,10 @@ _MD_MARKERS = [(re.compile(r'\*\*(.+?)\*\*'), r'\1'),
 
 def strip_markdown(text: str) -> str:
     """Plain text from lightly-Markdown'd text (model captions):
-    bold/italic/code markers removed, content kept."""
+    bold/italic/code markers removed, content kept, $...$ math turned
+    into unicode subscripts (before marker-stripping, so the underscores
+    in $Q_1$ never read as italics)."""
+    text = math_to_unicode(text)
     for pattern, repl in _MD_MARKERS:
         text = pattern.sub(repl, text)
     return text

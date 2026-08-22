@@ -8,7 +8,7 @@ from quantish.config_space import (Position, GatePort, PCoordinate,
                                      ConfigSpacePoint, ConfigSpaceRunner)
 import quantish.qnumber as qn
 from quantish.qnumber import qify, Complex
-from quantish.util import SEP, flat_list, simplify_graph, log_seq
+from quantish.util import SEP, WIRES, flat_list, simplify_graph, log_seq
 
 log = logging.getLogger('quantish')
 
@@ -86,6 +86,40 @@ class Simulation:
         self.links = {canon(src): canon(dst)
                       for src, dst in config.links.items()}
         self.sources = {v: k for k, v in self.links.items()}
+
+        # Optional wire labels (the book's w₂, w₂ₐ, ... segment names).
+        # A key names the LINK the label sits on, with the same
+        # delay-name sugar as links:
+        #   'p1' / 'g1.upper'  — the link leaving that source; an output
+        #                        port with no link is a labeled stub
+        #                        wire out to a sink
+        #   '>g1.lower'        — the empty (null) input INTO that port,
+        #                        drawn as a labeled stub wire in
+        ports = {f'{g}{SEP}{w}'
+                 for g in set(config.gates or []) | delays
+                 for w in WIRES}
+        self.wire_labels = {}
+        problems = []
+        for key, label in dict(config.get('wire_labels', {})).items():
+            if key.startswith('>'):
+                port = canon(key[1:])
+                if port not in ports:
+                    problems.append(f"'>{key[1:]}' names no gate port")
+                elif port in self.sources:
+                    problems.append(
+                        f"'>{key[1:]}' has an incoming link — label its "
+                        f"source ('{self.sources[port]}') instead")
+                else:
+                    self.wire_labels[f'>{port}'] = str(label)
+            else:
+                src = canon(key)
+                if src in self.links or src in ports:
+                    self.wire_labels[src] = str(label)
+                else:
+                    problems.append(f"'{key}' is neither a link source "
+                                    f"nor a gate port")
+        if problems:
+            raise ValueError('bad wire_labels:\n  ' + '\n  '.join(problems))
 
     def check_roots(self):
         """The zero-in-degree nodes of the link graph must be exactly the

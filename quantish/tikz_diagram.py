@@ -96,6 +96,10 @@ def spec_from_simulation(sim, fig: str = None) -> DiagramSpec:
     particle_signs = {src: int(sim.particles[src].sign)
                       for src in links if src in particles}
 
+    # wire labels (the book's w₂, w₂ₐ... segment names), keyed by
+    # canonical link source; the router attaches them to routes
+    wire_labels = dict(getattr(sim, 'wire_labels', {}))
+
     # A pass-through gate that carries a phase is a phase plate: annotate
     # its box with the phase (an angle_overrides entry for the box name
     # replaces the annotation text).
@@ -132,6 +136,7 @@ def spec_from_simulation(sim, fig: str = None) -> DiagramSpec:
             'topo': {
                 'particle_signs': particle_signs,
                 'delay_notes': delay_notes,
+                'wire_labels': wire_labels,
             },
             'engine_steps': engine_steps,
         },
@@ -166,6 +171,7 @@ PORT_W = 1.1                # port / delay box width
 CONTROL_HALF_W = PORT_W / 2
 DELAY_COL_WIDTH = PORT_W    # a column of only delay boxes is just that wide
 DELAY_COL_GAP = 0.45        # gap beside a delay-only (inline-box) column
+WIRE_STUB_LEN = 0.75        # how far a labeled stub wire reaches beyond the gate body
 
 # Port-row y-offsets, measured from the gate's *top* (north anchor). The
 # two header rows (name, angle) sit above the control row. Upper and
@@ -315,6 +321,10 @@ def compute_layout(circuit: Circuit) -> Layout:
     # Bounding box.
     xs = [PARTICLE_OFFSET_X - 0.5]
     ys = [0.0]
+    # labeled null-input/output stub wires extend beyond the port edges
+    for endpoint in stub_endpoints(circuit, L):
+        xs.append(endpoint[0])
+        ys.append(endpoint[1])
     for x, y in L.gate_xy.values():
         xs.extend([x, x + GATE_WIDTH]); ys.extend([y, y - GATE_HEIGHT])
     for x, y in L.delay_xy.values():
@@ -380,6 +390,48 @@ def stage_ys(parsed, stage_gates, top,  gate_stride, delay_stride) -> list[float
 def height(parsed, name: str) -> float:
     return DELAY_HEIGHT if name in parsed.delay_gates else GATE_HEIGHT
 
+def labeled_stubs(circuit: Circuit, L: Layout):
+    """The labeled null-input/output stub wires: (points, label) pairs.
+    A wire_labels key '>g.port' is an empty input (stub drawn INTO the
+    port); a key naming an output port with no link is an empty output
+    (stub drawn out toward its implicit sink)."""
+    parsed = circuit.topology['parsed']
+    for key, label in circuit.topology['topo'].get('wire_labels', {}).items():
+        into = key.startswith('>')
+        port = key[1:] if into else key
+        if not into and port in parsed.links:
+            continue                     # an ordinary link, not a stub
+        if SEP not in port:
+            continue                     # particle source: never a stub
+        gname, wname = port.split(SEP)
+        if gname in L.gate_xy:
+            left = L.gate_xy[gname][0]
+            right = left + GATE_WIDTH
+        elif gname in L.delay_xy:
+            left = L.delay_xy[gname][0] - CONTROL_HALF_W
+            right = L.delay_xy[gname][0] + CONTROL_HALF_W
+        else:
+            continue
+        px, py = port_xy(L, gname, wname, 'in' if into else 'out')
+        # every stub's outer end sits the same distance beyond the gate
+        # body, so control and switch stubs line up; the wire itself runs
+        # from there to the port (crossing the frame, as linked wires do).
+        # Labels anchor over the outer half, clear of the gate body.
+        if into:
+            outer = left - WIRE_STUB_LEN
+            yield [(outer, py), (px, py)], label, ((outer + left) / 2, py)
+        else:
+            outer = right + WIRE_STUB_LEN
+            yield [(px, py), (outer, py)], label, ((right + outer) / 2, py)
+
+
+def stub_endpoints(circuit: Circuit, L: Layout):
+    """The outer endpoints of the labeled stubs (for the bounding box)."""
+    for points, _, _ in labeled_stubs(circuit, L):
+        yield points[0] if points[0][0] < points[1][0] else points[1]
+        yield points[-1]
+
+
 def source_port_y(parsed, L: Layout, name: str) -> float | None:
     """The y of the wire feeding delay box `name`: its source port's row,
     resolved through chains of already-placed boxes (columns are laid out
@@ -422,8 +474,12 @@ def port_xy(L: Layout, gate_name: str, port: str, side: str) -> tuple[float, flo
 
 @dataclass
 class Route:
-    """A single wire's polyline path: list of (x, y) waypoints."""
+    """A single wire's polyline path: list of (x, y) waypoints, plus the
+    model's optional label for this wire (the book's w₂, w₂ₐ... names)."""
     points: list[tuple[float, float]] = field(default_factory=list)
+    label: str | None = None
+    # where to draw the label; None = above the longest horizontal's midpoint
+    label_at: tuple[float, float] | None = None
 
 
 def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
@@ -727,8 +783,11 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
 
     sorted_links = sorted(parsed.links.items(), key=flexibility_key)
 
+    wire_labels = circuit.topology['topo'].get('wire_labels', {})
+
     for src, dst in sorted_links:
         cur_link[0] = (src, dst)
+        w_label = wire_labels.get(src)
         s_xy = src_xy(L, src, particles, delays)
         d_xy, d_col = dst_xy_col(circuit, L, dst, delays)
         if s_xy is None or d_xy is None:
@@ -745,7 +804,7 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
                 and not hit_horizontal(sy, sx + 0.01, dx - 0.01, exclude=skip_set)
                 and horizontal_blocked(sy, sx, dx) is None
                 and not reserve_blocked(sy, sx, dx)):
-            routes.append(Route([(sx, sy), (dx, dy)]))
+            routes.append(Route([(sx, sy), (dx, dy)], label=w_label))
             add_horizontal(sy, sx, dx)
             continue
 
@@ -804,7 +863,7 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
             break
 
         if two_step is not None:
-            routes.append(Route(two_step))
+            routes.append(Route(two_step, label=w_label))
             # Record both stubs as occupied horizontals.
             add_horizontal(sy, sx, two_step[1][0])
             add_horizontal(dy, two_step[2][0], dx)
@@ -980,11 +1039,16 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
             (d_cx, lane_y),
             (d_cx, dy),
             (dx, dy),
-        ]))
+        ], label=w_label))
         # Record all three horizontal segments of the route.
         add_horizontal(sy, sx, cx)
         add_horizontal(lane_y, cx, d_cx)
         add_horizontal(dy, d_cx, dx)
+
+    # Labeled null-input/output stubs: short wires drawn only because a
+    # label asks for them (the book's empty w₁/w₃ inputs, w₂ᵦ outputs).
+    for points, label, label_at in labeled_stubs(circuit, L):
+        routes.append(Route(points, label=label, label_at=label_at))
     return routes
 
 def src_xy(L: Layout, src: str, particles: set, delays: set):
@@ -1211,9 +1275,35 @@ def emit_tex(circuit: Circuit, L: Layout, routes: list[Route],
             continue
         coords = " -- ".join(f"({px:.2f},{py:.2f})" for px, py in r.points)
         out.append(rf"\draw[wire] {coords};")
+        if r.label:
+            # the wire's label (the book's w₂, w₂ₐ... names) sits above
+            # the midpoint of the route's longest horizontal segment —
+            # unless the route pins a spot (stubs anchor outside the gate)
+            if r.label_at is not None:
+                mx, my = r.label_at
+            else:
+                best = None
+                for (x1, y1), (x2, y2) in zip(r.points, r.points[1:]):
+                    if abs(y1 - y2) < 0.01 and (best is None
+                                                or abs(x2 - x1) > best[0]):
+                        best = (abs(x2 - x1), (x1 + x2) / 2, y1)
+                mx, my = (best[1], best[2]) if best is not None else (None, None)
+            if mx is not None:
+                out.append(rf"\node[anchor=south, inner sep=1.5pt] "
+                           rf"at ({mx:.2f},{my:.2f}) "
+                           rf"{{\scriptsize {wire_label_tex(r.label)}}};")
 
     out.append(_TEX_POSTAMBLE)
     return "\n".join(out)
+
+
+def wire_label_tex(label: str) -> str:
+    """A wire label as math with everything after the leading letters
+    subscripted, matching the book: 'w2' → $w_{2}$, 'w2a' → $w_{2a}$."""
+    m = re.fullmatch(r'([A-Za-z]+)(\d\w*)', label)
+    if m:
+        return rf"${m.group(1)}_{{{m.group(2)}}}$"
+    return rf"${tex_math_clean(label)}$"
 
 def math_label(name: str, prefix: str = '') -> str:
     """A name as a math-mode label with trailing digits subscripted:
@@ -1258,6 +1348,10 @@ def format_angle(angle) -> str:
     return tex_escape(s)
 
 def tex_math_clean(s: str) -> str:
+    # digits directly after letters are subscripts, as in the book's
+    # labels: q5 → q_{5}, Q1 → Q_{1} (function calls like rad(30) are
+    # untouched — their digits follow a paren, not a letter)
+    s = re.sub(r'(?<=[A-Za-z])(\d+)', r'_{\1}', s)
     return (s.replace('pi', r'\pi').replace('*', r'\cdot ')
             .replace('φ', r'\varphi '))
 
@@ -1354,6 +1448,7 @@ def cache_key(circuit: Circuit,
                          for g, d in parsed.gates.items()),
                   parsed.stage_gates,
                   sorted(circuit.topology['topo'].get('delay_notes', {}).items()),
+                  sorted(circuit.topology['topo'].get('wire_labels', {}).items()),
                   sorted((angle_overrides or {}).items(), key=lambda kv: kv[0])))
     h = hashlib.sha1(ident.encode()).hexdigest()[:12]
     safe_fig = ''.join(c if (c.isalnum() or c in '-_') else '_' for c in circuit.fig)

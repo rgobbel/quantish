@@ -129,6 +129,13 @@ Model files define:
 - `particles`: Initial particles with weight and sign
 - `gates`: Fredkin gates with rotation angles (and optionally a `phase`)
 - `links`: Connectivity graph (particle/gate outputs → gate inputs)
+- `wire_labels` (optional): the book's wire-segment names, keyed by the
+  link the label sits on ({p1: w2, g1.upper: w2a}). A `'>g.port'` key is
+  an empty (null) input into that port; an unlinked output port's key is
+  an empty output — both draw as labeled stub wires (the null input from
+  a "0" node in Mermaid, the null output to a sink) that exist only
+  because the label asks. Digits after letters render as subscripts
+  (w2a → w₂ₐ-style)
 
 Configuration options (usually in defaults.yaml):
 - `symbolic`: true/false for math mode

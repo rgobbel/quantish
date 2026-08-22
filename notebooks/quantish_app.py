@@ -334,7 +334,7 @@ def _(diagram, mermaid_zoom, mo, sim, zoomable):
         except Exception as exc:  # noqa: BLE001
             return mo.md(f'_Mermaid diagram failed: {exc}_')
 
-    mo.accordion({'## Mermaid circuit diagram including weight values': mo.vstack([
+    mo.accordion({'## Mermaid circuit diagram, including calculated values': mo.vstack([
                mermaid_zoom, zoomable(_(), mermaid_zoom.value)])})
     return
 

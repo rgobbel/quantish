@@ -1,5 +1,8 @@
 title: Quantish EPR Experiment
 
+caption: The coupling stage of the EPR experiment, in which the observations
+   by *p3* at *g3* and *g4* couple *p1* with *p2*.
+
 run_stages:
    prepare: [g1, g2]
    couple: [g3, g4]

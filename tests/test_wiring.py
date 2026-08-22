@@ -38,6 +38,36 @@ class TestWiring(unittest.TestCase):
         self.assertEqual(sim.links['g1.control'], 'd1.control')
         self.assertEqual(sim.delay_gates['d1'].source, 'g1.control')
 
+    def test_wire_labels_load_with_delay_sugar(self):
+        cfg = make_config(wire_labels={'p1': 'w2', 'g1.upper': 'w2a',
+                                       'g1.control': 'w1a'})
+        sim = Simulation(cfg)
+        self.assertEqual(sim.wire_labels['p1'], 'w2')
+        # bare delay names canonicalize the same way links do — but
+        # 'g1.control' is already canonical here
+        self.assertEqual(sim.wire_labels['g1.control'], 'w1a')
+
+    def test_wire_label_on_unknown_source_raises(self):
+        cfg = make_config(wire_labels={'g9.upper': 'w1'})
+        with self.assertRaises(ValueError) as ctx:
+            Simulation(cfg)
+        self.assertIn('g9.upper', str(ctx.exception))
+
+    def test_stub_labels_null_input_and_output(self):
+        # '>' = an empty input; an unlinked output port = a stub to sink
+        cfg = make_config(wire_labels={'>g1.lower': 'w3',
+                                       'g2.upper': 'w2b'})
+        sim = Simulation(cfg)
+        self.assertEqual(sim.wire_labels['>g1.lower'], 'w3')
+        self.assertEqual(sim.wire_labels['g2.upper'], 'w2b')
+
+    def test_null_input_label_on_fed_port_raises(self):
+        # g1.upper is fed by p1: the label belongs on the source
+        cfg = make_config(wire_labels={'>g1.upper': 'w2'})
+        with self.assertRaises(ValueError) as ctx:
+            Simulation(cfg)
+        self.assertIn("label its source", str(ctx.exception))
+
     def test_unlinked_particle_raises(self):
         cfg = make_config()
         cfg.particles.p9.sign = 1
