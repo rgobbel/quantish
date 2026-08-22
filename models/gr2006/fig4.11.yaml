@@ -40,3 +40,16 @@ links:
 
    g2.upper: g3.control
    g2.lower: g4.control
+
+# the book's wire-segment names for the g1-g2 chain (the observer gates
+# g3/g4 are unlabeled in the figure)
+wire_labels:
+   '>g1.control': w1
+   p1: w2
+   '>g1.lower': w3
+   g1.control: w1a
+   g1.upper: w2a
+   g1.lower: w3a
+   g2.control: w1b
+   g2.upper: w2b
+   g2.lower: w3b
