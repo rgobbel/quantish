@@ -78,7 +78,7 @@ class TestEPRConventions(unittest.TestCase):
         CalcMode.default('Float')
         qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
         sim = run_sim('gr2026/fig4.17')
-        # g5's declared angle is q5 = 0; storing the same value as a qnumber
+        # g5's declared angle is Q5 = 0; storing the same value as a qnumber
         # Real exercises the deepcopy path without perturbing the circuit
         # (g7/g8 are owned by run_pair's theta1/theta2 rebinding).
         sim.config.gates['g5'].angle = qn.qify('0')

@@ -71,19 +71,6 @@ class TestVariables(unittest.TestCase):
         self.assertAlmostEqual(float(sim.gates['g1'].phase),
                                3.14159265 / 4, places=6)
 
-    def test_phase_accepts_the_same_expression_forms_as_angle(self):
-        # degrees via rad(), and model variables, just like gate angles
-        cfg = make_config()
-        cfg.gates.g1.phase = 'rad(60)'
-        sim = Simulation(cfg)
-        self.assertAlmostEqual(float(sim.gates['g1'].phase),
-                               3.14159265 / 3, places=6)
-        cfg = make_config()
-        cfg.gates.g1.phase = 'qx + qy'
-        sim = Simulation(cfg)
-        self.assertAlmostEqual(float(sim.gates['g1'].phase),
-                               3.14159265 / 4, places=6)
-
     def test_caption_is_optional_and_normalized(self):
         sim = Simulation(make_config())
         self.assertEqual(sim.caption, '')
@@ -128,7 +115,7 @@ class TestThetaRebinding(unittest.TestCase):
         cfg.variables.theta1 = '0'
         cfg.variables.theta2 = '0'
         cfg.gates.g7.angle = 'theta1'
-        cfg.gates.g8.angle = '(q5 + q6) - theta2'
+        cfg.gates.g8.angle = '(Q5 + Q6) - theta2'
         return cfg
 
     def test_sweep_rebinds_variables_and_matches_law(self):

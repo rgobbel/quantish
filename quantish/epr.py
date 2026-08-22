@@ -14,7 +14,7 @@ The second stage of fig 4.17 plays exactly that role, which is why plain
 position is the outcome there.
 
 The Bell/CHSH experiment sweeps measurement angles (θ1, θ2) over three
-sweep angles {qa=0, qb=π/8, qc=π/4} (or the model's qa/qb/qc variables).
+sweep angles {qa=0, qb=π/8, qc=π/4} (or the model's Qa/Qb/Qc variables).
 "Measuring p1 at θ1 and p2 at θ2" means overriding
 
     two-stage:  g7 = θ1,  g8 = (Q5+Q6) − θ2   (Q5/Q6 keep base values)
@@ -25,7 +25,8 @@ YAML angles of the overridden gates are placeholders.
 
 Models may instead declare `theta1` and `theta2` in their variables and
 reference them by name in the gate expressions (two-stage:
-g7: {angle: theta1}, g8: {angle: '(q5 + q6) - theta2'}); the sweep then
+g7: {angle: Q7} with Q7: 'theta1', g8: {angle: Q8} with
+Q8: '(Q5 + Q6) - theta2'); the sweep then
 rebinds the two variables and never touches the gates, keeping the model
 the single source of truth for how the measurement angles enter.
 """
@@ -165,7 +166,7 @@ def run_pair(sim, theta1, theta2, n_trials: int = 0, rng=None) -> dict:
     if 'theta1' in cfg.variables and 'theta2' in cfg.variables:
         # Variable convention: the model's own gate expressions reference
         # theta1/theta2 by name (e.g. g7: {angle: theta1},
-        # g8: {angle: '(q5 + q6) - theta2'}), so the sweep just rebinds
+        # g8's angle depending on theta2), so the sweep just rebinds
         # the variables and the model stays the single source of truth
         # for how the measurement angles enter the circuit.
         cfg.variables['theta1'] = theta1

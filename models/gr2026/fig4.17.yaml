@@ -25,17 +25,19 @@ variables:
    theta1: '0'
    theta2: '0'
 
-   qa: 'pi/4'
-   qb: 'pi/8'
-   qc: '3 * pi/8'
+   Qa: 'pi/4'
+   Qb: 'pi/8'
+   Qc: '3 * pi/8'
 
-   q1: 'pi/6'
-   q2: 'pi/6'
+   Q1: 'pi/6'
+   Q2: 'pi/6'
 
-   q5: '0'
-   q6: 'pi/4'
-   q7: 'qa'
-   q8: 'qb'
+   Q5: '0'
+   Q6: 'pi/4'
+   # the book's Q7/Q8, expressed through the sweep's detector settings:
+   # the Bell/CHSH machinery rebinds theta1/theta2, and these follow
+   Q7: 'theta1'
+   Q8: '(Q5 + Q6) - theta2'
 
 particles:
    p1: {sign: 1, weight: 1}
@@ -43,14 +45,14 @@ particles:
    p3: {sign: 1, weight: 1}
 
 gates:
-   g1: {angle: q1}
-   g2: {angle: q1}
+   g1: {angle: Q1}
+   g2: {angle: Q1}
    g3: {angle: 0}
    g4: {angle: 0}
-   g5: {angle: q5}
-   g6: {angle: q6}
-   g7: {angle: theta1}
-   g8: {angle: '(q5 + q6) - theta2'}
+   g5: {angle: Q5}
+   g6: {angle: Q6}
+   g7: {angle: Q7}
+   g8: {angle: Q8}
 
 links:
    # particles
