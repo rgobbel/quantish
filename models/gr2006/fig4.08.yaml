@@ -33,4 +33,5 @@ links:
 
    g1.control: g2.control
    g1.upper: g2.upper
-   g1.lower: g2.lower
+# the book diverts the lower wire away (g2's lower input is empty):
+#   g1.lower: g2.lower

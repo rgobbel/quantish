@@ -41,3 +41,9 @@ links:
    g2.control: g3.control
    g2.upper: g3.upper
    g2.lower: g3.lower
+
+# the book labels only the prepare gate's inputs in this figure
+wire_labels:
+   '>g0.control': w1
+   p1: w2
+   '>g0.lower': w3

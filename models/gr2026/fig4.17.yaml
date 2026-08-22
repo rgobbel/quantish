@@ -78,3 +78,19 @@ links:
    g5.lower: g7.lower
    g6.upper: g8.upper
    g6.lower: g8.lower
+
+# the book's wire-segment names for the split/merge stages (the prepare
+# and couple stages are unlabeled in the figure)
+wire_labels:
+   g3.control: w1
+   g1.lower: w2
+   g4.control: w3
+   g2.lower: w4
+   g5.upper: w1a
+   g5.lower: w2a
+   g6.upper: w3a
+   g6.lower: w4a
+   g7.upper: w1b
+   g7.lower: w2b
+   g8.upper: w3b
+   g8.lower: w4b

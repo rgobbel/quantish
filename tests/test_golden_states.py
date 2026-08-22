@@ -39,6 +39,8 @@ WEIGHT_TOLERANCE = 1e-9
 GOLDEN_MODELS = [
     'gr2026/fig4.05',
     'gr2026/fig4.07',
+    'gr2026/fig4.08',
+    'gr2006/fig4.08',
     'gr2026/fig4.09',
     'gr2026/fig4.10',
     'gr2026/fig4.12',

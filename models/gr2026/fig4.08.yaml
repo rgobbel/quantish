@@ -33,4 +33,17 @@ links:
 
    g1.control: g2.control
    g1.upper: g2.upper
-   g1.lower: g2.lower
+# the book diverts the lower wire away (g2's lower input is empty):
+#   g1.lower: g2.lower
+
+# the book's wire-segment names: a = between the gates, b = after g2
+wire_labels:
+   control: w1
+   p1: w2
+   '>g1.lower': w3
+   g1.control: w1a
+   g1.upper: w2a
+   g1.lower: w3a
+   g2.control: w1b
+   g2.upper: w2b
+   g2.lower: w3b
