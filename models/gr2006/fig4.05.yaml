@@ -1,6 +1,6 @@
 title: Figure 4.5
 
-caption: Using the same measurement angle twice in a row causes no further state splitting.
+caption: Using the same measurement angle twice in a row causes no further state-splitting.
 
 variables:
    zero: &zero "0+0j"

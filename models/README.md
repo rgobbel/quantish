@@ -43,9 +43,9 @@ angles), shifting the observation/interference sequence by one:
 | one path diverted, no interference | 4.13 | 4.14 |
 | observation circumvents interference | 4.14 | 4.15 |
 | erasure re-establishes interference | 4.15 | 4.16 |
-| EPR, coupling stage only (g1–g6) | 4.16 | — *(absorbed into 4.17's discussion)* |
-| EPR with second measurement (g1–g8) | 4.17 | 4.17 |
-| EPR config-space view | — | 4.18 *(same circuit as 4.17)* |
+| EPR experiment (g1–g6) | 4.16 | — *(the 2026 draft extends it with g7/g8 into its 4.17)* |
+| EPR with second measurement (g1–g8) | — *(no 2006 figure; `gr2006/fig4.17` backports the 2026 circuit)* | 4.17 |
+| EPR config-space view | 4.17 | 4.18 *(same circuit as the EPR figure)* |
 
 Variant suffixes travel with their figure: `x` variants alter angles or
 wiring, `_full` connects wires the book's figure leaves out, `_delay` adds the
@@ -53,6 +53,7 @@ delay gates the book uses to keep particles synchronized.
 
 Note on fidelity: the EPR models in **both** directories use the corrected
 circuit from the 2026 draft (`p2` enters `g2.lower`). The 2006 printing of
-figure 4.17 contained a wiring error — acknowledged in the revised draft —
-so a faithful transcription of the printed 2006 circuit would not reproduce
-the quantum statistics the text derives.
+its EPR circuit — figure 4.16 there, which preps `g2` at Q1+π/2 — contained
+a wiring error, acknowledged in the revised draft, so a faithful
+transcription of the printed 2006 circuit would not reproduce the quantum
+statistics the text derives.

@@ -1,7 +1,6 @@
 title: Quantish EPR Experiment
 
-caption: "The coupling stage of the EPR experiment: the observations
-   by *p3* at *g3* and *g4* couple *p1* with *p2*."
+caption: The observations by *p3* at *g3* and *g4* couple *p1* with *p2*.
 
 run_stages:
    prepare: [g1, g2]
@@ -17,6 +16,11 @@ variables:
    q15: &q15 "rad(15)"
    q20: &q20 "rad(20)"
    q30: &q30 "rad(30)"
+   # the printed figure's angle names: Q1 on the prepare gates, Q2 on
+   # the splits (the printed g2 showed Q1+pi/2; this model uses the
+   # corrected circuit — see models/README.md)
+   Q1: 'rad(30)'
+   Q2: 'rad(20)'
    q35: &q35 "rad(35)"
    q40: &q40 "rad(40)"
    q45: &q45 "rad(45)"
@@ -39,12 +43,12 @@ particles:
    p3: {sign: 1, weight: *one}
 
 gates:
-   g1: {angle: *q30}
-   g2: {angle: *q30}
+   g1: {angle: Q1}
+   g2: {angle: Q1}
    g3: {angle: 0}
    g4: {angle: 0}
-   g5: {angle: *q20}
-   g6: {angle: *q20}
+   g5: {angle: Q2}
+   g6: {angle: Q2}
 
 links:
    p1: g1.upper
@@ -63,8 +67,7 @@ links:
 
    g4.control: g6.upper
 
-# the wire names of figure 4.17's split stage (this circuit is 4.17
-# without the second measurement); the a-segments dead-end here
+# the printed figure's own wire labels (verified against the 2006 PDF)
 wire_labels:
    g3.control: w1
    g1.lower: w2
