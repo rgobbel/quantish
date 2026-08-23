@@ -785,6 +785,31 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
 
     wire_labels = circuit.topology['topo'].get('wire_labels', {})
 
+    def wire_label_at(src, dst, sy, dy):
+        """Where a wire's label sits. Wires leaving a gate label just
+        past the source body (lining up with any null-output stubs
+        beside them); particle wires label just before the destination
+        (lining up with the null-input stubs). Both use the same
+        half-stub offset the stubs themselves use."""
+        parts = src.split(SEP)
+        if len(parts) == 2:
+            gname = parts[0]
+            if gname in L.gate_xy:
+                right = L.gate_xy[gname][0] + GATE_WIDTH
+            elif gname in L.delay_xy:
+                right = L.delay_xy[gname][0] + CONTROL_HALF_W
+            else:
+                return None
+            return (right + WIRE_STUB_LEN / 2, sy)
+        gname = dst.split(SEP)[0]
+        if gname in L.gate_xy:
+            left = L.gate_xy[gname][0]
+        elif gname in L.delay_xy:
+            left = L.delay_xy[gname][0] - CONTROL_HALF_W
+        else:
+            return None
+        return (left - WIRE_STUB_LEN / 2, dy)
+
     for src, dst in sorted_links:
         cur_link[0] = (src, dst)
         w_label = wire_labels.get(src)
@@ -804,7 +829,8 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
                 and not hit_horizontal(sy, sx + 0.01, dx - 0.01, exclude=skip_set)
                 and horizontal_blocked(sy, sx, dx) is None
                 and not reserve_blocked(sy, sx, dx)):
-            routes.append(Route([(sx, sy), (dx, dy)], label=w_label))
+            routes.append(Route([(sx, sy), (dx, dy)], label=w_label,
+                                label_at=wire_label_at(src, dst, sy, dy)))
             add_horizontal(sy, sx, dx)
             continue
 
@@ -863,7 +889,8 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
             break
 
         if two_step is not None:
-            routes.append(Route(two_step, label=w_label))
+            routes.append(Route(two_step, label=w_label,
+                                label_at=wire_label_at(src, dst, sy, dy)))
             # Record both stubs as occupied horizontals.
             add_horizontal(sy, sx, two_step[1][0])
             add_horizontal(dy, two_step[2][0], dx)
@@ -1039,7 +1066,7 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
             (d_cx, lane_y),
             (d_cx, dy),
             (dx, dy),
-        ], label=w_label))
+        ], label=w_label, label_at=wire_label_at(src, dst, sy, dy)))
         # Record all three horizontal segments of the route.
         add_horizontal(sy, sx, cx)
         add_horizontal(lane_y, cx, d_cx)

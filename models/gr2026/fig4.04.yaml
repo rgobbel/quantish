@@ -1,6 +1,6 @@
 title: Figure 4.4
 
-caption: A classical state with weight *p1* splits into four successors.
+caption: A classical state with weight *$c_1$* splits into four successors.
 
 loglevel: debug
 
@@ -21,20 +21,18 @@ run_stages:
    stage1: [g1]
 
 particles:
-   c1: {sign: 1, weight: *zero}
    p1: {sign: 1, weight: *one}
 
 gates:
    g1: {angle: *q30}
 
 links:
-   c1: g1.control
    p1: g1.upper
 
 # the book's wire-segment names (fig 4.4a): w2 carries p1, w1 the
 # zero-weight control particle; a = the gate's outputs
 wire_labels:
-   c1: w1
+   '>g1.control': w1
    p1: w2
    '>g1.lower': w3
    g1.control: w1a

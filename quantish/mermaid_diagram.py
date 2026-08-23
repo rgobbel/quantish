@@ -6,6 +6,7 @@ from quantish.util import (SEP, angle_label, math_to_unicode,
                            parse_position, subscript_digits)
 import quantish.qnumber as qn
 import python_mermaid.diagram as pmd
+import python_mermaid.link as pml
 import python_mermaid.node as pm
 from collections import namedtuple
 import re
@@ -149,13 +150,18 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
         caption_node.content = text
         diag.add_nodes([caption_node])
 
-    def stub_anchor(node_id, label):
+    # a minimum-length link shape for the output stubs, so the dangling
+    # wires hug their gate instead of stretching a full rank
+    pml.LINK_SHAPES.setdefault('short', '--')
+
+    def stub_anchor(node_id, label=None):
         # the outer end of a labeled stub wire: a Mermaid edge needs a
         # node at both ends, so the wire ends at a box that is invisible
-        # except for the label text itself (the custom shape smuggles in
-        # a style line, as the bold HACK does). Carrying the label HERE,
-        # not on the edge, keeps it at the stub's outer end, outside the
-        # gate box — as the TikZ diagrams place it.
+        # except for its content (the custom shape smuggles in a style
+        # line, as the bold HACK does). OUTPUT stubs carry their label
+        # here — at the outer end, outside the gate box, where an edge
+        # label would land inside the cluster; INPUT stubs get a blank
+        # anchor and carry the label on the edge, which lays out tighter.
         shape_name = f'{node_id}_invis'
         base = pm.NODE_SHAPES['normal']
         pm.NODE_SHAPES[shape_name] = pm.NodeShape(
@@ -163,7 +169,7 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
             end=base.end + f'\nstyle {node_id} fill:transparent,'
                            f'stroke:transparent')
         node = pmd.Node(node_id, shape=shape_name)
-        node.content = subscript_digits(label)
+        node.content = subscript_digits(label) if label else ' '
         mermaid_nodes[node.id] = node
         diag.add_nodes([node])
         return node
@@ -180,9 +186,9 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
     # null-INPUT stub anchors join the model here, with the particles:
     # ELK honors model order, so they must precede the gates to be laid
     # out on the left, feeding in like the particles do
-    for _key, _label in _wire_labels.items():
+    for _key in _wire_labels:
         if _key.startswith('>'):
-            stub_anchor(f'{_key[1:]}_nullin', _label)
+            stub_anchor(f'{_key[1:]}_nullin')
     for group_name, gate_group in sim.diagram_groups.items():
         stage_id = f'{group_name}_stage'
         pg = diag.add_subgraph(stage_id)
@@ -324,10 +330,15 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
             continue
         if into:
             anchor = mermaid_nodes[f'{port}_nullin']
-            mermaid_links.append(pmd.Link(anchor, port_node))
+            mermaid_links.append(pmd.Link(
+                anchor, port_node,
+                message=f'"{subscript_digits(stub_label)}"'))
         elif f'{port}_SINK' not in mermaid_nodes:
             anchor = stub_anchor(f'{port}_nullout', stub_label)
-            mermaid_links.append(pmd.Link(port_node, anchor))
+            # switch-output stubs hug their gate; the control stub keeps
+            # the normal length (it exits from mid-cluster)
+            shape = 'normal' if wname == 'control' else 'short'
+            mermaid_links.append(pmd.Link(port_node, anchor, shape=shape))
 
     diag.add_links(mermaid_links)
     diag.graph.header = 'flowchart LR\n'
