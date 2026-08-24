@@ -21,9 +21,9 @@ With a suitable model loaded, you can run the EPR/Bell experiment and compare th
 Here is the simplest model — the single gate of figure 4.4 — as the app
 draws it, and its weight-evolution graph after a run:
 
-![The figure 4.4 circuit](images/fig4.04_circuit.png)
+![The figure 4.4 circuit](images/fig4.04_circuit.svg)
 
-![Weight evolution for figure 4.4](images/fig4.04_weight_evolution.png)
+![Weight evolution for figure 4.4](images/fig4.04_weight_evolution.svg)
 
 To get started with a. gentle introduction, follow the installation instructions below, then go to  [Quick Start](#quick-start).
 
