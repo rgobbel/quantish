@@ -2,7 +2,7 @@ import csv
 import logging
 import subprocess
 import time
-from argparse import ArgumentParser, BooleanOptionalAction, SUPPRESS, ArgumentDefaultsHelpFormatter
+from argparse import ArgumentParser, BooleanOptionalAction, ArgumentDefaultsHelpFormatter
 from collections import defaultdict
 from pathlib import Path
 
@@ -48,24 +48,25 @@ def main():
     parser.add_argument('--preserve-log', action='store_true', help='Preserve existing log file')
     parser.add_argument('--dup-log-to-console', action=BooleanOptionalAction,
                         default=True, help='Log to console as well as file')
-    parser.add_argument('-d', '--diagram', type=str,
-                        help="Create a Mermaid diagram of the gate network on the named file with default extension '.mmd'")
-    parser.add_argument('--no-diagram', action='store_true', default=SUPPRESS, help='Do not create a diagram')
-    parser.add_argument('--diagram-dir', type=str, default='mermaid', help='Directory for Mermaid diagrams')
-    parser.add_argument('--svg-diagram', action=BooleanOptionalAction, default=True,
-                        help='Create an SVG version of the diagram. Requires mmdc command-line Mermaid renderer')
-    parser.add_argument('--pdf-diagram', action=BooleanOptionalAction, default=False,
-                        help='Create a PDF version of the diagram. Requires mmdc command-line Mermaid renderer')
-    parser.add_argument('--network-graph', action=BooleanOptionalAction, default=True,
-                        help='Plot paths through configuration space')
-    parser.add_argument('--show-graph', action=BooleanOptionalAction, default=True, help='Display config space plot on screen')
-    parser.add_argument('--pdf-graph', action=BooleanOptionalAction, default=True,
-                        help='Create a PDF version of the config space plot')
+    parser.add_argument('--diagram', default='mermaid,graph',
+                        help='Comma-separated diagram kinds: mermaid, tikz, altair, '
+                             'graph (the weight-evolution graph), or all / none')
+    parser.add_argument('--diagram-format', default='svg',
+                        help='Comma-separated output formats: png, svg, pdf. '
+                             'mmd is also valid for mermaid (its .mmd source is '
+                             'always written). Renderers: Mermaid needs mmdc, '
+                             'TikZ needs pdflatex (+ pdf2svg / ImageMagick for '
+                             'svg / png); the altair and graph kinds render '
+                             'natively (Vega-Altair).')
+    parser.add_argument('--diagram-dir', type=str, default='diagrams',
+                        help='Directory for diagram output')
     parser.add_argument('--diagram-when', choices=['before', 'after', 'both'], default='before',
-                        help='When to create a diagram, before or after simulation')
-    parser.add_argument('--tikz-diagram', type=str, default=None,
-                        help='Render a TikZ circuit diagram to this file in the diagram dir '
-                             '(.pdf/.svg/.png chosen by extension, default .pdf). Requires pdflatex.')
+                        help='When to draw the circuit diagrams (mermaid and altair '
+                             'show run values in the after version; tikz shows '
+                             'structure only and is drawn once). The graph always '
+                             'follows the run.')
+    parser.add_argument('--show-graph', action=BooleanOptionalAction, default=False,
+                        help='Open the weight-evolution graph in a browser after the run')
     parser.add_argument('--csv-output', default=None, type=str, help='CSV output file, default is no CSV output')
     parser.add_argument('--set', dest='set_vars', action='append', default=[],
                         metavar='NAME=EXPR',
@@ -74,8 +75,10 @@ def main():
                              'the variable BY NAME (angle: theta2), not YAML '
                              'aliases (angle: *theta2), which copy the value at '
                              'parse time.')
-    parser.add_argument('--symbolic', action='store_true', default=SUPPRESS, help='Force symbolic math')
-    parser.add_argument('--numeric', action='store_true', default=SUPPRESS, help='Force numeric math')
+    parser.add_argument('--calculation-mode', choices=['symbolic', 'float'],
+                        default=None,
+                        help="Force the calculation mode, overriding the model "
+                             "YAML (default: the model's own symbolic setting)")
     parser.add_argument('--sample', action='store_true', help='Run multiple trials and collect a histogram of results')
     parser.add_argument('--n-samples', type=int, default=1, help='Run this many sampling trials')
     parser.add_argument('--mc-mode', choices=['terminal', 'path', 'both'], default='terminal',
@@ -104,6 +107,8 @@ def main():
         if not sep or not name.strip():
             raise SystemExit(f"--set expects NAME=EXPR, got '{item}'")
         config.variables[name.strip()] = expr.strip()
+    if args.calculation_mode is not None:
+        config.symbolic = args.calculation_mode == 'symbolic'
     symbolic = config.symbolic or False
     CalcMode.default('Symbolic' if symbolic else 'Float')
     qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
@@ -126,10 +131,6 @@ def main():
         logging.basicConfig(format=' %(message)s', level=loglevel, handlers=[QLogger()])
     log = logging.getLogger('quantish')
     if args.preserve_log: log.info(' ')
-    if 'symbolic' in args:
-        config.symbolic = args.symbolic
-    if 'numeric' in args:
-        config.symbolic = not args.numeric
     if args.sample:
         config.sample = True
         config.n_samples = args.n_samples
@@ -144,34 +145,72 @@ def main():
         log.debug(f'CONFIG:')
         for k, v in config_dict.items():
             log.debug(f'   {k}: {v}')
-    dpath = None
     has_run = False
     save_ll = log.getEffectiveLevel()
     sim = Simulation(config)
-    if args.tikz_diagram:
-        tikz_path = Path(args.diagram_dir, args.config + '_tikz.' + args.tikz_diagram)
-        from quantish.tikz_diagram import render_from_simulation
-        log.info(f'Rendering TikZ circuit diagram to {tikz_path}')
-        if not render_from_simulation(sim, tikz_path):
-            log.warning(f'TikZ diagram render failed (see stderr)')
-    if 'no_diagram' not in args:
-        if args.diagram is None:
-            dpath = Path(args.diagram_dir, args.config + '.mmd')
-        else:
-            dpath = Path(args.diagram_dir, args.diagram + '.mmd')
-        if 'diagram_when' in args:
-            if args.diagram_when in ('before', 'both'):
-                before_path = dpath.with_stem(dpath.stem+'_before').with_suffix('.mmd')
-                log.info(f'Generating Mermaid diagram on {before_path}')
-                diagram(sim, before_path, False)
-                if args.svg_diagram:
-                    svg_path = Path(before_path).with_suffix('.svg')
-                    log.info(f'Saving SVG version of diagram to {svg_path}')
-                    subprocess.run(mmdc_cmd() + ['-i', before_path, '-o', svg_path])
-                if args.pdf_diagram:
-                    pdf_path = Path(before_path).with_suffix('.pdf')
-                    log.info(f'Saving PDF version of diagram to {pdf_path}')
-                    subprocess.run(mmdc_cmd() + ['-i', before_path, '-o', pdf_path, '--pdfFit'])
+
+    # ---- diagram options: which kinds, which formats, where ----
+    all_kinds = {'mermaid', 'tikz', 'altair', 'graph'}
+    kinds = {k.strip() for k in args.diagram.split(',') if k.strip()}
+    if 'all' in kinds:
+        kinds = set(all_kinds)
+    if 'none' in kinds:
+        kinds = set()
+    if not kinds <= all_kinds:
+        parser.error(f'unknown --diagram kind(s): {sorted(kinds - all_kinds)}')
+    formats = {f.strip() for f in args.diagram_format.split(',') if f.strip()}
+    if not formats <= {'png', 'svg', 'pdf', 'mmd'}:
+        parser.error(f"unknown --diagram-format(s): "
+                     f"{sorted(formats - {'png', 'svg', 'pdf', 'mmd'})}")
+    file_formats = formats - {'mmd'}
+    diagram_dir = Path(args.diagram_dir)
+    if kinds:
+        diagram_dir.mkdir(parents=True, exist_ok=True)
+
+    def save_vegalite(chart, stem):
+        # altair charts and the weight-evolution graph share one saver
+        import vl_convert
+        spec = chart.to_json()
+        for fmt in file_formats:
+            out = diagram_dir / f'{stem}.{fmt}'
+            log.info(f'Writing {out}')
+            if fmt == 'svg':
+                out.write_text(vl_convert.vegalite_to_svg(spec))
+            elif fmt == 'png':
+                out.write_bytes(vl_convert.vegalite_to_png(spec, scale=2))
+            else:
+                out.write_bytes(vl_convert.vegalite_to_pdf(spec))
+
+    def circuit_diagrams(when: str):
+        # value displays only when the sim actually ran (--no-simulate
+        # with --diagram-when after still draws plain structure)
+        after = when == 'after' and has_run
+        if 'mermaid' in kinds:
+            mmd_path = diagram_dir / f'{args.config}_mermaid_{when}.mmd'
+            # (file names keep the requested phase even if the sim was
+            # skipped, so before/after outputs never collide)
+            log.info(f'Generating Mermaid diagram on {mmd_path}')
+            diagram(sim, mmd_path, after)
+            for fmt in sorted(file_formats):
+                out = mmd_path.with_suffix('.' + fmt)
+                log.info(f'Writing {out}')
+                subprocess.run(mmdc_cmd() + ['-i', mmd_path, '-o', out]
+                               + (['--pdfFit'] if fmt == 'pdf' else []))
+        if 'tikz' in kinds and when != 'after':
+            # structure only — identical before and after, so drawn once
+            from quantish.tikz_diagram import render_from_simulation
+            for fmt in sorted(file_formats):
+                out = diagram_dir / f'{args.config}_tikz.{fmt}'
+                log.info(f'Rendering TikZ circuit diagram to {out}')
+                if not render_from_simulation(sim, out):
+                    log.warning('TikZ diagram render failed (see stderr)')
+        if 'altair' in kinds:
+            from quantish.altair_diagram import circuit_chart
+            save_vegalite(circuit_chart(sim, has_run=after),
+                          f'{args.config}_altair_{when}')
+
+    if args.diagram_when in ('before', 'both'):
+        circuit_diagrams('before')
         log.info(' ')
     if args.simulate:
         result_space, all_points = sim.run()
@@ -290,24 +329,19 @@ def main():
 
             print(f'log level was {save_ll}, setting to {logging.WARN}')
             log.setLevel(logging.WARN)
-            if args.network_graph:
-                if dpath is None:  # diagrams disabled; still need a stem for the graph PDF
-                    dpath = Path(args.diagram_dir, args.config + '.mmd')
-                NetworkGraph(all_points, sim, dpath, show=args.show_graph)
+            if 'graph' in kinds:
+                graph_chart = NetworkGraph(all_points, sim).chart()
+                save_vegalite(graph_chart, f'{args.config}_graph')
+                if args.show_graph:
+                    import webbrowser
+                    import vl_convert
+                    html_path = diagram_dir / f'{args.config}_graph.html'
+                    html_path.write_text(vl_convert.vegalite_to_html(
+                        graph_chart.to_json()))
+                    webbrowser.open(html_path.resolve().as_uri())
 
-    if 'no_diagram' not in args:
-        if args.diagram_when in ('after', 'both'):
-            after_path = dpath.with_stem(dpath.stem+'_after').with_suffix('.mmd')
-            log.info(f'Generating Mermaid diagram on {after_path}')
-            diagram(sim, after_path, has_run)
-            if args.svg_diagram:
-                svg_path = Path(after_path).with_suffix('.svg')
-                log.info(f'Saving SVG version of diagram to {svg_path}')
-                subprocess.run(mmdc_cmd() + ['-i', after_path, '-o', svg_path])
-            if args.pdf_diagram:
-                pdf_path = Path(after_path).with_suffix('.pdf')
-                log.info(f'Saving PDF version of diagram to {pdf_path}')
-                subprocess.run(mmdc_cmd() + ['-i', after_path, '-o', pdf_path, '--pdfFit'])
+    if args.diagram_when in ('after', 'both'):
+        circuit_diagrams('after')
     log.setLevel(save_ll)
     print(f'setting log level back to {save_ll}')
 

@@ -10,16 +10,22 @@ cd "$REPO"
 uv build --wheel -q
 WHEEL=$(ls -t dist/quantish-*.whl | head -1)
 
-# 2) export the app (from notebooks/ so the relative css_file resolves)
+# 2) export both apps (from notebooks/ so the relative css_file
+#    resolves): the quantish app at the site root, the double-slit app
+#    under /double_slit/
 (cd notebooks && uv run marimo export html-wasm quantish_app.py -o "$OUT" --mode run -f)
+(cd notebooks && uv run marimo export html-wasm double_slit_app.py -o "$OUT/double_slit" --mode run -f)
 
-# 3) bundle the wheels
-mkdir -p "$OUT/public/wheels"
-cp "$WHEEL" "$OUT/public/wheels/"
-if [ ! -f "$OUT/public/wheels/addict-2.4.0-py3-none-any.whl" ]; then
-  curl -sL -o "$OUT/public/wheels/addict-2.4.0-py3-none-any.whl" \
-    "https://files.pythonhosted.org/packages/6a/00/b08f23b7d7e1e14ce01419a467b583edbb93c6cdb8654e54a9cc579cd61f/addict-2.4.0-py3-none-any.whl"
-fi
+# 3) bundle the wheels (both apps resolve them relative to their own
+#    page via mo.notebook_location)
+for W in "$OUT/public/wheels" "$OUT/double_slit/public/wheels"; do
+  mkdir -p "$W"
+  cp "$WHEEL" "$W/"
+  if [ ! -f "$W/addict-2.4.0-py3-none-any.whl" ]; then
+    curl -sL -o "$W/addict-2.4.0-py3-none-any.whl" \
+      "https://files.pythonhosted.org/packages/6a/00/b08f23b7d7e1e14ce01419a467b583edbb93c6cdb8654e54a9cc579cd61f/addict-2.4.0-py3-none-any.whl"
+  fi
+done
 
 # 4) bundle the model library as a single JSON manifest
 python3 - "$OUT" <<'PYEOF'

@@ -20,21 +20,21 @@ def _(mo):
     mo.md(r"""
     # Quantish Physics
     This [Marimo](https://marimo.io) notebook contains a simulation of the quantish universe described in Chapter 4 of
-    *Good and Real: Demystifying Paradoxes from Physics to Ethics* by Gary L. Drescher (MIT Press, 2006). Included are simulations of Fredkin gates, complex-weighted
-    configuration space points, and the classic Einstein-Podolsky-Rosen experiment.
+    *Good and Real: Demystifying Paradoxes from Physics to Ethics* by Gary L. Drescher (MIT Press, 2006). Included are
+    simulations of Fredkin gates, complex-weighted configuration space points, and the classic
+    Einstein-Podolsky-Rosen experiment.
 
     Several types of results are available:
-    - A diagram of network topology generated using TikZ, a vector graphics package that uses LaTeX for rendering
-    - A diagram showing network topology as well as gate inputs and outputs, generated using the Mermaid graphing framework
-    - A graphical trace of how weights evolve through the running of the model
-    - A table with exact numeric results of a model's run
-    - A table of the final set of configuration space points (i.e., "classical worlds")
-    - Marginal probabilities: the probability that any given particle will appear at a particular gate output
-    - A trace of input and output values at every execution stage
+    - A diagram of network topology, including results after a model is run
+    - A graphical trace of how weights evolve through the running of the loaded model
+    - Tables with exact numeric results from a model's run
 
     In addition to the basic simulation, there are:
-    - a Monte Carlo simulation, in which a model is run many times, tracing a single execution path depending on the probabilities of outputs at each gate, and tabulated to show statistics consistent with the results of running equivalent real-world experiments
-    - a weight-split explorer, to show concretely effects of various inputs to quantish Fredkin gates
+    - a Monte Carlo simulation, in which a model is run many times, tracing a single execution path depending on the
+      probabilities of outputs at each gate, and tabulated to show statistics to simulate inexact results from real-world experiments
+    - a simulation of the Einstein-Podolsky-Rosen (EPR) experiment, including results for both Bell's inequality and
+      the Clauser–Horne–Shimony–Holt (CHSH) inequality
+    - a Weight-split Explorer, to show concretely effects of various inputs to quantish Fredkin gates
     """)
     return
 
@@ -541,7 +541,7 @@ def _(
             return mo.md('_press **Run Monte Carlo** to sample_')
         return _progress(_job) if not _job['done'] else _results(_job)
 
-    mo.accordion({'## Monte Carlo sampling\n\n<span style="font-size:0.85em">Optional sampled trials on top of the exact run above</span>':
+    mo.accordion({'## Monte Carlo Sampling\n\n<span style="font-size:0.85em">Optional sampled trials on top of the exact run above</span>':
         mo.vstack([
             _explanation,
             mo.hstack([mc_trials, mc_trials_text, mc_mode, mc_seed,
@@ -679,7 +679,7 @@ def _(
     ws_wmag,
     ws_wphase,
 ):
-    mo.accordion({'## Weight-split explorer\n\n'
+    mo.accordion({'## Weight-split Explorer\n\n'
                   '<span style="font-size:0.85em">An interactive tool '
                   'showing what happens to weights going through a '
                   'Fredkin gate</span>': mo.vstack([

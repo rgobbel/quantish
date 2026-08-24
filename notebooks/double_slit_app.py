@@ -21,14 +21,32 @@ app = marimo.App(width="full", css_file="css/double_slit_app.css")
 
 
 @app.cell(hide_code=True)
-def initialization():
+async def initialization():
     import math
     import random
     import sys
     from pathlib import Path
 
-    import altair as alt
     import marimo as mo
+
+    # Under Pyodide (the WASM export) the quantish package and its one
+    # non-Pyodide dependency are installed from the bundled wheels
+    # (deps=False — micropip would otherwise stall resolving
+    # marimo/sympy from PyPI in the browser), and the Pyodide-shipped
+    # packages the engine imports internally are loaded explicitly
+    # (auto-loading only covers notebook-level imports). This app needs
+    # no model files: its circuits are built in code.
+    if sys.platform == 'emscripten':
+        import micropip
+        _base = str(mo.notebook_location())
+        await micropip.install([
+            f'{_base}/public/wheels/addict-2.4.0-py3-none-any.whl',
+            f'{_base}/public/wheels/quantish-0.1.0-py3-none-any.whl',
+        ], deps=False)
+        await micropip.install(['sympy', 'scipy', 'networkx', 'pandas',
+                                'altair', 'pyyaml'])
+
+    import altair as alt
     import pandas as pd
 
     # Inline chart data in the Vega-Lite spec. 'default' is not enough:
@@ -129,12 +147,11 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(mo):
+def _(DEFAULT_THETA_S, math, mo):
     """The comparison table's readability styles (black text, larger
     headers) live in css/double_slit_app.css, loaded via the App's css_file:
     a <style> tag emitted from a cell gets sanitized away."""
-    mo.accordion(
-        {'### A step-by-step explanation of the quantish model vs. the real-world experiment': mo.md(r"""
+    _step_by_step = mo.md(r"""
     Two conventions are used throughout:
     - gate $g_1$'s **upper** switch output
     leads to the **left** slit ($S_1$) and its **lower** switch output to
@@ -184,14 +201,10 @@ def _(mo):
     difference: plus-sign arrivals exit toward the detector $S$,
     minus-sign toward $D$. A plain position detector at $S$ then reads
     $P = \tfrac{1}{2}(1 + \cos\varphi)$: the fringes.
-    """)})
-    return
+    """)
 
-
-@app.cell(hide_code=True)
-def _(DEFAULT_THETA_S, math, mo):
     _deg = math.degrees(DEFAULT_THETA_S)
-    mo.accordion({'### How each curve is computed': mo.md(rf"""
+    _curves = mo.md(rf"""
     A **condition** consists of a complete apparatus for one version of
     the experiment. Every condition contains the source particle $p_1$,
     the split gate $g_1$, the remerge gate $g_2$, and the sign sorter
@@ -230,7 +243,15 @@ def _(DEFAULT_THETA_S, math, mo):
       term is structurally impossible and $\mathcal{{I}} =
       \tfrac{{1}}{{4}} + \tfrac{{1}}{{4}} = \tfrac{{1}}{{2}}$ is flat at
       exactly the classical sum, with both slits open.
-    """)})
+    """)
+
+    mo.accordion({'## Details\n\n<span style="font-size:0.85em">'
+                  'how this model works</span>': mo.vstack([
+        mo.accordion({'### A step-by-step explanation of the quantish '
+                      'model vs. the real-world experiment':
+                          _step_by_step}),
+        mo.accordion({'### How each curve is computed': _curves}),
+    ])})
     return
 
 

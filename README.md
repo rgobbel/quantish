@@ -1,5 +1,7 @@
 # Quantish Physics
 
+**_Note_: some portions of this refer to an as-yet-unpublished revised edition of _Good and Real._**
+
 This is a simulation of "quantish" physics, as described in Chapter 4 of *Good and
 Real: Demystifying Paradoxes from Physics to Ethics* (Gary L. Drescher, MIT
 Press, 2006). The quantish universe is a toy analogue of quantum mechanics, in which
@@ -12,8 +14,8 @@ revised draft (`models/gr2026/`); `models/README.md` has the mapping.
 
 With the included apps, you can: load any of the supplied models as a live circuit, run it, and see
   every resulting classical state with its exact weight. Once a model is loaded, you can
-  drag a gate's angle slider, run the model again, and see the split probabilities change.
-  Running a model also generates a trace how weights evolve through the circuit, step by step.
+  drag a gate's angle slider, run the model again, and see how the split probabilities change.
+  Running a model also generates a trace of weight evolution through the circuit, step by step.
 
 With a suitable model loaded, you can run the EPR/Bell experiment and compare the quantish results against
   both quantum and classical predictions
@@ -25,7 +27,7 @@ draws it, and its weight-evolution graph after a run:
 
 ![Weight evolution for figure 4.4](images/fig4.04_weight_evolution.svg)
 
-To get started with a. gentle introduction, follow the installation instructions below, then go to  [Quick Start](#quick-start).
+To get started with a gentle introduction, follow the installation instructions below, then go to  [Quick Start](#quick-start).
 
 ## Installation
 
@@ -49,29 +51,35 @@ Or, using `pip` in a fresh virtual environment:
 pip install -e .
 ```
 
-### External tools for the circuit diagrams
+### External tools for optional circuit diagrams (CLI only)
 
-The TikZ circuit diagrams are rendered with `pdflatex` and converted with `pdf2svg`. Without
-them the apps still run, but the diagram panels show a "render
-unavailable" note instead. The LaTeX install must include TikZ/PGF and
-the `standalone` document class.
+- TikZ
 
-To install TikZ:
+  The command-line interface can generate circuit diagrams using TikZ, suitable for inclusion in
+LaTeX documents.
 
-- On Debian/Ubuntu (including Jetson boards):
-  - `sudo apt install texlive-latex-base texlive-latex-extra
+  To install TikZ:
+
+     - On Debian/Ubuntu (including Jetson boards):
+       - `sudo apt install texlive-latex-base texlive-latex-extra
   texlive-fonts-recommended texlive-fonts-extra pdf2svg`
-  - the command above is verified to work. `texlive-latex-base` + `pdf2svg` alone is
+       - the command above is verified to work. `texlive-latex-base` + `pdf2svg` alone is
   not enough
-- On macOS:
-  1. Install MacTeX (large!) and Homebrew
-  2. `sudo tlmgr install standalone`
-  3. `brew install pdf2svg`
+     - On macOS:
+       1. Install MacTeX (large!) and Homebrew
+       2. `sudo tlmgr install standalone`
+       3. `brew install pdf2svg`
 
-Also optional, but highly recommended:
+     - Also optional, but highly recommended for TikZ diagrams on both MacOS and Linux:
 
-- ImageMagick (`magick`) — to export TikZ diagrams from the CLI to PNG files
-- `mmdc` (mermaid-cli) — to render Mermaid diagrams to SVG/PDF from the CLI
+       - ImageMagick (`magick`) — to export TikZ diagrams from the CLI to PNG files
+
+- Mermaid
+
+  There is also an option to generate circuit diagrams from the CLI with the Mermaid graphing package.
+
+  The `python-mermaid` package is installed by default. In order to generate SVG and PDF versions
+  of Mermaid diagrams, you will need the `mmdc` (mermaid-cli) Node package, which can be installed using `npm` on any system that supports `nodejs`.
 
 ## Running the interactive apps
 
@@ -81,11 +89,11 @@ To see implementations of the full set of figures from the book:
 uv run marimo run notebooks/quantish_app.py
 ```
 
-This will open a [marimo](https://marimo.io) notebook app, allowing you choose a model and gate angles,
-run the model, and explore the results, including circuit diagrams implemented with TikZ and Mermaid, tables showing numeric results, plus a few other demos:
+This will open a [marimo](https://marimo.io) notebook app, including 
+  interactive circuit diagrams, tables showing numeric results, and a few other demos:
 - a way to run a model using Monte Carlo sampling to collect classical-world statistics
+- (for networks that model the full EPR setup) a simulation of a full Bell/CHSH sweep, comparing observed values with analytically-derived expected values from a quantum world, as well as expected values from classical non-quantum physics
 - an interactive weight-split explorer to clarify the effect of weight-splitting in quantish gates
-- and (for networks that model the full EPR setup) a simulaton of a full Bell/CHSH sweep, comparing observed values with analytically-derived expected values from a quantum world, as well as expected values from classical non-quantum physics
 
 There is also a demonstration of the classic [double-slit experiment](https://en.wikipedia.org/wiki/Double-slit_experiment) implemented in the quantish framework:
 
@@ -94,7 +102,43 @@ uv run marimo run notebooks/double_slit_app.py
 ```
 Either of these notebooks can also be run using `marimo edit` in place of `marimo run`, to allow viewing and editing of the code.
 
+## Browser-only builds (WebAssembly)
 
+Both apps can be compiled into a static web site that runs entirely in
+the visitor's browser. The Python engine executes under
+[Pyodide](https://pyodide.org/) (WebAssembly), so serving the apps needs
+no Python installation, no running server process, and no authentication
+— any static file host will do, and nothing a visitor does can execute
+code on the host machine.
+
+To build the site:
+
+```bash
+tools/build_wasm_app.sh . /path/to/output-dir
+```
+
+The script builds a wheel of the `quantish` package, exports both
+notebooks with `marimo export html-wasm`, and bundles the wheels and the
+model library into the output. The quantish app lands at the site root
+and the double-slit app under `double_slit/`. To try it locally:
+
+```bash
+python3 -m http.server --directory /path/to/output-dir
+```
+
+then open `http://localhost:8000/` (the site must be served over HTTP;
+opening `index.html` from the filesystem will not work).
+
+A few things are different in the browser-only build:
+
+- The first visit downloads Pyodide and the scientific stack (roughly
+  40&nbsp;MB) from public CDNs and takes a minute or two; later visits
+  load from the browser cache in seconds.
+- The model library is frozen into the site at build time, so the
+  **rescan models** button is absent and the app says so; gate angles
+  and everything downstream remain fully adjustable.
+- Monte Carlo sampling runs synchronously with a progress bar (browser
+  Python cannot start threads), so there is no Cancel button.
 
 ## Quick Start
 
@@ -108,24 +152,27 @@ Either of these notebooks can also be run using `marimo edit` in place of `marim
 
 The simplest model is already selected: **fig4.04** — a single Fredkin
    gate, straight from figure 4.4 of the book, with particle _p1_ on the
-   gate's upper switch wire and a zero-weight particle _c1_ on its
-   control wire. A diagram of the network's structure will be displayed below.
+   gate's upper switch wire.
+   A diagram of the network's structure will be displayed below.
 
 Press **▶ Run simulation**.
-Results are initially hidden. Click on any results heading to see its content.
+Run result values are initially hidden. After running the simulation, the network diagram will include
+numerical results, and a graph illustrating the flow of weights through the network will be
+displayed below it. Remaining results are behind headings.
+
+Click on any results heading to see its content.
 
 ### What you should see, for the circuit of figure 4.4:
-   - The circuit diagram will now show the values computed by the simulation, as weights flow through the network.
+   - The circuit diagram will now show the values computed by the simulation, as weights flow through the network. Clicking **show values** will toggle between the pure topology diagram and the version that shows results.
    - Under **Detailed Results** are:
-     - **Weight evolution graphic**: A graphical trace of network weights as they propagate through the network
-     - **Weight evolution table**: A numerical table detailing the evolution of network weights.
-     - **Final configuration-space points**: the four "classical worlds"
-     the gate splits _p1_'s the initial weight into, each with its exact weight;
+     - **Weight evolution table**: A numerical table detailing the evolution of network weights
+     - **Final configuration-space points**: the four "classical worlds" that result from
+     the split of _p1_'s initial weight
      - **Marginal probabilities**: how likely _p1_ is to land at each
-     gate output.
+     gate output
+     - **Gate inputs and outputs by step**
 
-Now drag _**g1**_'s angle slider and press **▶ Run simulation** again:
-   the split probabilities will follow the angle (cos²θ against sin²θ,
+Now open **Custom Model Parameters**, drag _**g1**_'s angle slider and press **▶ Run simulation** again. The split probabilities will follow the angle (cos²θ against sin²θ,
    trading places as you sweep it).
 
 All of the book's circuits are instantiated as models that can be run in this app.
@@ -138,15 +185,19 @@ The models can also be run from a command line. For example:
 
 ```bash
 uv run quantish -c fig4.17            # the EPR experiment (2026 revised edition numbering)
-uv run quantish -c fig4.13 --symbolic # exact symbolic weights
+uv run quantish -c fig4.13 --calculation-mode symbolic   # exact symbolic weights
 uv run quantish -c fig4.16 --config-sub gr2006   # from the 2006 model set
 ```
 
 Some useful options (see `--help` for the full list):
 
-- `--symbolic` / `--numeric` — exact SymPy math vs. floating point
-- `--diagram-when both` — Mermaid diagrams before and after the run
-- `--tikz-diagram pdf|svg|png` — render the TikZ circuit diagram
+- `--calculation-mode symbolic|float` — exact SymPy math vs. floating
+  point, overriding the model's own setting
+- `--diagram mermaid,tikz,altair,graph` — which diagrams to draw
+  (also `all` / `none`; default `mermaid,graph`)
+- `--diagram-format png,svg,pdf` — output formats (default `svg`;
+  Mermaid always writes its `.mmd` source as well)
+- `--diagram-when both` — circuit diagrams before and/or after the run
 - `--sample --n-samples N` — Monte Carlo sampling of outcomes
 - `--epr-stats` — the Bell/CHSH sweep on an EPR model
 - `--set NAME=EXPR` — override a model variable, e.g. `--set theta2=pi/8`
