@@ -84,8 +84,10 @@ async def initialization():
                                       screen_curve, screen_positions,
                                       slit_sim)
 
+    WASM_MODE = sys.platform == 'emscripten'
     return (
         DEFAULT_THETA_S,
+        WASM_MODE,
         alt,
         math,
         mo,
@@ -426,12 +428,13 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(mo):
+def _(WASM_MODE, mo):
     # shown in the editor only: in `marimo run` the code cells below are
-    # hidden, so the heading would sit over nothing
+    # hidden, so the heading would sit over nothing (and the WASM
+    # runtime reports mode 'edit' even for run-mode exports)
     mo.md(r"""
     ## Support code
-    """) if mo.app_meta().mode != 'run' else None
+    """) if mo.app_meta().mode == 'edit' and not WASM_MODE else None
     return
 
 

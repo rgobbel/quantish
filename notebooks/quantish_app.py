@@ -684,7 +684,7 @@ def _(
                   'showing what happens to weights going through a '
                   'Fredkin gate</span>': mo.vstack([
         mo.md(r"""
-    It demonstrates the four-way split of one Fredkin gate measurement at angle $\theta$:
+    This tool demonstrates the four-way split of one Fredkin gate measurement at angle $\theta$:
     $c_{2a} = w\cos^2\theta$, $c_{2b} = i\,w\sin\theta\cos\theta$
     (straight), $c_{3a} = w\sin^2\theta$,
     $c_{3b} = -i\,w\sin\theta\cos\theta$ (cross); $c_2 = c_{2a}+c_{2b}$,

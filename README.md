@@ -119,8 +119,9 @@ tools/build_wasm_app.sh . /path/to/output-dir
 
 The script builds a wheel of the `quantish` package, exports both
 notebooks with `marimo export html-wasm`, and bundles the wheels and the
-model library into the output. The quantish app lands at the site root
-and the double-slit app under `double_slit/`. To try it locally:
+model library into the output. The apps land in `quantish_app/` and
+`double_slit_app/`, with a landing page at the site root linking to
+both. The output includes a small `serve.sh`; to try it locally:
 
 ```bash
 python3 -m http.server --directory /path/to/output-dir
