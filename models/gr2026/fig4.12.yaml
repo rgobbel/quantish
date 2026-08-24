@@ -3,13 +3,13 @@ title: Figure 4.12
 caption: An observation distinguishes between two outcomes of passing *p1* through a succession of gates with distinct measurement angles.
 
 variables:
-   one: &one '1+0j'
-   r60: &r60 '0.5+0.87j'
-   q1: &q1 'rad(15)'
-   q2: &q2 'rad(45)'
-   q15: &q15 'rad(15)'
-   q30: &q30 'rad(30)'
-   q45: &q45 'rad(45)'
+   one: '1+0j'
+   r60: '0.5+0.87j'
+   q1: 'rad(15)'
+   q2: 'rad(45)'
+   q15: 'rad(15)'
+   q30: 'rad(30)'
+   q45: 'rad(45)'
 
 run_stages:
    g1: [g1]
@@ -18,9 +18,9 @@ run_stages:
    measure_2: [g4]
 
 particles:
-   p1: {sign: 1, weight: *one}
-   p2: {sign: 1, weight: *one}
-   p3: {sign: 1, weight: *one}
+   p1: {sign: 1, weight: one}
+   p2: {sign: 1, weight: one}
+   p3: {sign: 1, weight: one}
 
 gates:
    g1: {angle: 'rad(30)'}

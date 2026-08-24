@@ -96,7 +96,7 @@ def log_tally(label: str, tally: Counter, predicted: dict, n_trials: int):
     return tvd / 2
 
 
-def run_monte_carlo(sim, n_trials: int, mode: str = 'both', seed=None) -> dict:
+def run_monte_carlo(sim, n_trials: int, mode: str = 'terminal', seed=None) -> dict:
     """Run Monte Carlo trials against a finished simulation.
 
     mode: 'terminal', 'path', or 'both'. Returns a dict with the predicted

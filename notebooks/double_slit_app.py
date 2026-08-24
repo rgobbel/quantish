@@ -439,21 +439,13 @@ def _(DEFAULT_THETA_S, math, mo, slit_sim):
     objects that yield the curves (Sn = slit n, Bn = a block in its place)."""
     def _diagram(mode, width):
         try:
-            from quantish.tikz_diagram import (render_diagram_svg,
-                                               spec_from_simulation)
-            svg = render_diagram_svg(
-                spec_from_simulation(slit_sim(mode)),
+            from quantish.altair_diagram import circuit_chart
+            return circuit_chart(
+                slit_sim(mode), has_run=False, width=width,
                 angle_overrides={
                     'g1': f'{math.degrees(DEFAULT_THETA_S):.0f}°',
                     'g2': f'{math.degrees(DEFAULT_THETA_S):.0f}°',
                     'g4': '0°', 'g5': '0°', 'gp': 'φ(x)'})
-            if svg is None:
-                return mo.md('_diagram unavailable (needs pdflatex + pdf2svg)_')
-            return mo.Html(
-                f'<div class="qslit" style="width:min(100%, {width}px); '
-                f'margin:auto">'
-                f'<style>.qslit svg {{ width:100%; height:auto; }}</style>'
-                f'{svg}</div>')
         except Exception as exc:  # noqa: BLE001--show, don't crash the app
             return mo.md(f'_diagram failed: {exc}_')
 

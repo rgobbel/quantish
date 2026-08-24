@@ -31,6 +31,7 @@ focus is stages and their results.
 import colorsys
 import logging
 import math as m
+import textwrap
 from collections import defaultdict
 from pathlib import Path
 
@@ -391,7 +392,11 @@ class NetworkGraph:
         x_lo, x_hi = -0.75, n_cols - 1 + 0.6
         y_span = (layer_max + 1) / 2.0
         y_lo, y_hi = -y_span - 0.75, y_span + 0.4
-        width = min(170 * n_cols, 1350)
+        # cap the total width to fit a typical app cell without a
+        # horizontal scrollbar (the same budget as the circuit
+        # diagram's MAX_WIDTH); columns compress to fit, and the chart
+        # stays zoomable in the app
+        width = min(170 * n_cols, 900)
         height = max(min(int(58 * (layer_max + 2)), 900), 220)
         px_x = width / (x_hi - x_lo)
         px_y = height / (y_hi - y_lo)
@@ -512,6 +517,11 @@ class NetworkGraph:
             fontSize=13, color='black').encode(
             x=X(), y=Y(), text='text:N'))
 
+        # vega titles are single-line: wrap the caption to the chart
+        # width (as the circuit diagram does) instead of silently
+        # widening the canvas
+        title_lines = textwrap.wrap(model['title'],
+                                    width=max(20, int(width / 9)))
         return alt.layer(*layer).properties(
             width=width, height=height,
-            title=model['title']).configure_view(stroke=None)
+            title=title_lines).configure_view(stroke=None)

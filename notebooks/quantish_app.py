@@ -64,10 +64,10 @@ def initialization():
     logging.getLogger('quantish').setLevel(logging.WARNING)
 
     from quantish.config_space import GatePort
+    from quantish.altair_diagram import circuit_chart
     from quantish.display import coord_sort_key, cs_point_sort_key, gate_io
     from quantish.epr import run_epr_experiment, supports_epr
     from quantish.gate import FredkinGate
-    from quantish.montecarlo import run_monte_carlo
     from quantish.simulation import Simulation
     from quantish.mermaid_diagram import diagram
     from quantish.network_graph import NetworkGraph
@@ -83,17 +83,16 @@ def initialization():
         NetworkGraph,
         Simulation,
         alt,
+        circuit_chart,
         cmath,
         coord_sort_key,
         cs_point_sort_key,
-        diagram,
         gate_io,
         math,
         mo,
         pd,
         qn,
         run_epr_experiment,
-        run_monte_carlo,
         supports_epr,
         yaml,
     )
@@ -177,66 +176,47 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""
-    ## Model Parameters
+def _(circuit_chart, mo, show_values, sim, sim_model):
+    # The circuit diagram, always current for the model loaded above.
+    # Before a run it shows the wiring alone; once ▶ Run has computed
+    # results it fills with values (the switch above it toggles back to
+    # the plain view) — and because any change to the model, angles, or
+    # mode resets sim to None until the next run, it automatically
+    # drops back to the plain wiring view whenever the settings on
+    # screen are not the ones that were run.
+    def _chart():
+        try:
+            # displayed directly: mo.ui.altair_chart's selection wrapper
+            # chokes on layered interactive charts
+            if sim is not None:
+                return circuit_chart(sim, has_run=show_values.value)
+            return circuit_chart(sim_model, has_run=False)
+        except Exception as exc:  # noqa: BLE001 — show, don't crash the app
+            return mo.md(f'_circuit diagram failed: {exc}_')
 
-    Each model has a set of particles, a set of gates each with a particular angle, and links that connect particles and gates. Once a model is loaded, its gate angles can be modified below. Angles can be input using the sliders, each with a range from -180º to 180º, or the text entry fields, using values in either degrees or radians, according to the radio button selector. Added specifically for the simulation of the double-slit experiment, gates have an optional _phase_ parameter, allowing a gate with a zero angle to act as a _phase plate_, but that option is not surfaced in this application.
-
-    Calculations within models often produce very small values, and floating-point roundoff errors can compound, appreciably affecting final results. Models can be run using exact values using symbolic arithmetic. In order to take best advantage of symbolic math, input values such gate angles should be specified symbolically (e.g., "pi/6" rather than "30.0º"). All numeric values can be in the form of expressions parsable by SymPy, such as "rad(30)", equivalent to "pi/6" arithmetic expressions such as "pi/6 + pi/8", and references to variables defined in a `variables` clause in a model's YAML specification.
-
-    _Note:_ Symbolic math is much slower than floating-point, so model execution in Symbolic mode may take several seconds, especially for large models like the EPR setup (2026 figure 4.17, 2006 figure 4.16).
-    """)
-    return
-
-
-@app.cell(hide_code=True)
-def _(
-    angle_slider_elems,
-    angle_text_elems,
-    base_config,
-    gate_names,
-    mo,
-    mode_pick,
-    units_pick,
-):
-    def _():
-        rows = [mo.hstack([angle_slider_elems[g], angle_text_elems[g]],
-                          widths=[5, 1], align='center')
-                for g in gate_names]
-        # the model's caption (typically the book figure's) is Markdown
-        # and passes through verbatim — no added styling
-        _caption = ' '.join(str(base_config.get('caption', '')).split())
-        _title = (f"**{base_config.title}**: {_caption}" if _caption
-                  else f"**{base_config.title}**")
-        return mo.vstack([
-            mo.md(_title),
-            mo.md("Gate angles: Slider and entry track "
-                  "each other; sliders are degrees (0-centered). Typed numbers "
-                  "use the units selector; anything else is a symbolic radian "
-                  "expression (`pi/8`, `rad(30)`, `acos(4/5)`)."),
-            mo.hstack([mode_pick, units_pick], wrap=True, justify='start', gap=2),
-            mo.vstack(rows),
-        ])
-
-    _()
-    return
-
-
-@app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""
-    ## Run the selected model
-
-    Once a model has been loaded and its parameters set, the `Run simulation` button will execute the loaded model with the parameters shown above. Results displays will appear after execution is complete.
-    """)
+    # align='stretch' so the chart gets the cell's real width — left to
+    # the default it collapses and squishes the diagram
+    mo.vstack(
+        ([mo.hstack([show_values], justify='start')]
+         if sim is not None else [])
+        + [
+            _chart(),
+            mo.md('_Scroll to zoom, drag to pan, double-click to reset; '
+                  'after a run, hover a port or value blob for its '
+                  'values._'),
+        ], align='stretch')
     return
 
 
 @app.cell(hide_code=True)
 def _(mo):
     run_btn = mo.ui.run_button(label='▶ Run simulation')
-    run_btn
+    mo.md(f'''Once a model has been loaded and its parameters set, the `▶Run simulation` button will execute the loaded model, with the currently-set parameters.
+
+    Results displays will appear after execution is complete.
+
+    {run_btn}
+    ''')
     return (run_btn,)
 
 
@@ -258,121 +238,111 @@ def _(build_sim, mo, mode_pick, model_pick, run_btn):
     sim = _() if run_btn.value else None
 
     def _():
-        if sim is None:
-            return mo.md('_press **▶ Run simulation** to compute results '
-                         'with the settings above_')
-        angles = ', '.join(f'{g}={float(gate.theta.degrees):.1f}º'
-                           for g, gate in sim.fredkin_gates.items())
-        return mo.md(
-            f"Ran **{sim.title}** ({mode_pick.value} mode) — {angles}; "
-            f"{len(sim.run_stages)} steps, "
-            f"{len(sim.result_space.index)} final configuration-space point(s), "
-            f"total probability "
-            f"{sum(float(p.probability) for p in sim.result_space.index.values()):.6f}")
+        if sim is not None:
+            angles = ', '.join(f'{g}={float(gate.theta.degrees):.1f}º'
+                               for g, gate in sim.fredkin_gates.items())
+            return mo.md(
+                f"Ran **{sim.title}** ({mode_pick.value} mode) — {angles}; "
+                f"{len(sim.run_stages)} steps, "
+                f"{len(sim.result_space.index)} final configuration-space point(s), "
+                f"total probability "
+                f"{sum(float(p.probability) for p in sim.result_space.index.values()):.6f}")
 
     _()
     return (sim,)
 
 
 @app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""
-    ## Results
+def _(
+    angle_slider_elems,
+    angle_text_elems,
+    base_config,
+    gate_names,
+    mo,
+    mode_pick,
+    units_pick,
+):
+    # The whole Model Parameters section lives in one accordion so it is
+    # collapsed by default in BOTH edit and app mode (accordions are the
+    # one hide-by-default mechanism that behaves identically in the two
+    # modes). The UI elements inside stay fully reactive.
+    _explanation = mo.md(r"""
+    Each model has a set of particles, a set of gates each with a particular angle, and links that connect particles and gates. Once a model is loaded, its gate angles can be modified below. Angles can be input using the sliders, each with a range from -180º to 180º, or the text entry fields, using values in either degrees or radians, according to the radio button selector. Added specifically for the simulation of the double-slit experiment, gates have an optional _phase_ parameter, allowing a gate with a zero angle to act as a _phase plate_, but that option is not surfaced in this application.
+
+    Calculations within models often produce very small values, and floating-point roundoff errors can compound, appreciably affecting final results. Models can be run using exact values using symbolic arithmetic. In order to take best advantage of symbolic math, input values such gate angles should be specified symbolically (e.g., "pi/6" rather than "30.0º"). All numeric values can be in the form of expressions parsable by SymPy, such as "rad(30)", equivalent to "pi/6" arithmetic expressions such as "pi/6 + pi/8", and references to variables defined in a `variables` clause in a model's YAML specification.
+
+    _Note:_ Symbolic math is much slower than floating-point, so model execution in Symbolic mode may take several seconds, especially for large models like the EPR setup (2026 figure 4.17, 2006 figure 4.16).
     """)
-    return
-
-
-@app.cell(hide_code=True)
-def _(mo, sim, tikz_zoom, zoomable):
-    mo.stop(sim is None)  # nothing to show until ▶ Run
-    # Depends on sim, so it refreshes on every Run (runs are now explicit,
-    # so the pdflatex cost is paid once per Run, not per slider move).
-    # SVG, not PNG: vector output stays crisp at any zoom.
-    def _():
-        from quantish.tikz_diagram import render_diagram_svg, spec_from_simulation
-        try:
-            # gate labels come from the sim's config: symbolic angle
-            # expressions display verbatim, numeric ones as degrees
-            svg = render_diagram_svg(spec_from_simulation(sim))
-            if svg is None:
-                return mo.md('_TikZ render unavailable (needs pdflatex + pdf2svg)_')
-            return mo.Html(svg)
-        except Exception as exc:  # noqa: BLE001 — show, don't crash the app
-            return mo.md(f'_TikZ diagram failed: {exc}_')
-
-    mo.accordion({'## TikZ circuit diagram': mo.vstack([tikz_zoom,
-               zoomable(_(), tikz_zoom.value)])})
-    return
-
-
-@app.cell(hide_code=True)
-def _(diagram, mermaid_zoom, mo, sim, zoomable):
-    mo.stop(sim is None)  # nothing to show until ▶ Run
 
     def _():
-        # The generated source carries no theme, and mo.mermaid's own
-        # theme choice is unreadable on nested subgraphs — so pin the
-        # palette of the old CLI-rendered SVGs (mermaid's classic
-        # 'default' look): light-yellow group/gate clusters, light-gray
-        # port nodes. Injected into the frontmatter alongside the title.
-        theme = ('config:\n'
-                 '  theme: base\n'
-                 '  themeVariables:\n'
-                 "    clusterBkg: '#ffffde'\n"
-                 "    clusterBorder: '#aaaa33'\n"
-                 "    primaryColor: '#ececec'\n"
-                 "    primaryBorderColor: '#999999'\n"
-                 "    primaryTextColor: '#333333'\n"
-                 "    lineColor: '#333333'\n"
-                 "    titleColor: '#333333'\n"
-                 "    edgeLabelBackground: 'rgba(232,232,232,0.8)'\n"
-                 'title:')
-        try:
-            src = str(diagram(sim, output_file=None, has_run=True)).replace(
-                'title:', theme, 1)
-            return mo.mermaid(src)
-        except Exception as exc:  # noqa: BLE001
-            return mo.md(f'_Mermaid diagram failed: {exc}_')
+        rows = [mo.hstack([angle_slider_elems[g], angle_text_elems[g]],
+                          widths=[5, 1], align='center')
+                for g in gate_names]
+        # the model's caption (typically the book figure's) is Markdown
+        # and passes through verbatim — no added styling
+        _caption = ' '.join(str(base_config.get('caption', '')).split())
+        _title = (f"**{base_config.title}**: {_caption}" if _caption
+                  else f"**{base_config.title}**")
+        return mo.vstack([
+            mo.md(_title),
+            mo.md("Gate angles: Slider and entry track "
+                  "each other; sliders are degrees (0-centered). Typed numbers "
+                  "use the units selector; anything else is a symbolic radian "
+                  "expression (`pi/8`, `rad(30)`, `acos(4/5)`)."),
+            mo.hstack([mode_pick, units_pick], wrap=True, justify='start', gap=2),
+            mo.vstack(rows),
+        ])
 
-    mo.accordion({'## Mermaid circuit diagram, including calculated values': mo.vstack([
-               mermaid_zoom, zoomable(_(), mermaid_zoom.value)])})
-    return
-
-
-@app.cell(hide_code=True)
-def _(NetworkGraph, mo, sim):
-    mo.stop(sim is None)  # nothing to show until ▶ Run
-    # native Altair: live SVG with tooltips, pans/zooms itself. Shown
-    # directly — mo.ui.altair_chart injects a selection param, which
-    # Vega-Lite rejects on layered charts that carry configure_* options.
-    def _():
-        try:
-            return NetworkGraph(sim.all_points, sim).chart().interactive()
-        except Exception as exc:  # noqa: BLE001 — surface, don't crash the app
-            return mo.md(f'_network graph failed: {exc}_')
-
-    mo.accordion({'## Weight evolution graphic (configuration-space points × stages)': mo.vstack([_()])})
+    # the accordion label is markdown: the heading plus a short
+    # always-visible explanation in the normal (smaller) text size
+    # black text for the label comes from the app stylesheet (the
+    # no-gray-text rule), not from inline styling
+    mo.accordion({
+        '## Custom Model Parameters\n\n<span style="font-size: 0.85em">'
+        'Gate angle and '
+        'calculation mode settings for the current model</span>':
+            mo.vstack([_explanation, _()])})
     return
 
 
 @app.cell(hide_code=True)
 def _(
     GatePort,
+    NetworkGraph,
     coord_sort_key,
     cs_point_sort_key,
+    gate_io,
     math_weight,
     md_table,
     mo,
+    phase_deg,
     qn,
     sim,
 ):
     mo.stop(sim is None)  # nothing to show until ▶ Run
-    # Tabular twin of the weight-evolution graph: per stage, one row per
-    # parent→child branch — the input configuration-space point and its weight, the
-    # per-particle components the gate applied (cos²θ, ±i·sinθcosθ, sin²θ),
-    # the branch amplitude, and the output configuration-space point's total weight. Where
-    # branch w ≠ point w, interfering branches merged into that configuration-space point.
-    def _():
+
+    # All the detailed-results subsections live under one outer
+    # accordion; each keeps its own inner accordion, so a reader can
+    # open the section and then just the tables they care about.
+
+    def _evolution_graphic():
+        # native Altair: live SVG with tooltips, pans/zooms itself. Shown
+        # directly — mo.ui.altair_chart injects a selection param, which
+        # Vega-Lite rejects on layered charts that carry configure_* options.
+        def _():
+            try:
+                return NetworkGraph(sim.all_points, sim).chart().interactive()
+            except Exception as exc:  # noqa: BLE001 — surface, don't crash the app
+                return mo.md(f'_network graph failed: {exc}_')
+
+        return mo.accordion({'### Weight evolution graphic (configuration-space points × stages)': mo.vstack([_()])})
+
+    def _evolution_table():
+        # Tabular twin of the weight-evolution graph: per stage, one row per
+        # parent→child branch — the input configuration-space point and its weight, the
+        # per-particle components the gate applied (cos²θ, ±i·sinθcosθ, sin²θ),
+        # the branch amplitude, and the output configuration-space point's total weight. Where
+        # branch w ≠ point w, interfering branches merged into that configuration-space point.
         def label(p):
             return f'`{p.short_config(key=lambda c: coord_sort_key(sim, c)).replace("|", " ")}`'
 
@@ -467,28 +437,13 @@ def _(
                 md_table(['input configuration-space point', 'control', '$w_{in}$', 'particles',
                           'branch $w$', 'output configuration-space point', '$w_{out}$'], rows) +
                 f'\n\ntotal probability after step: {total:.6f}')
-        return mo.accordion({'## Weight evolution table (configuration-space points)':
+        return mo.accordion({'### Weight evolution table (configuration-space points)':
                              mo.accordion(sections, multiple=True, lazy=True)})
 
-    _()
-    return
-
-
-@app.cell(hide_code=True)
-def _(
-    coord_sort_key,
-    cs_point_sort_key,
-    math_weight,
-    md_table,
-    mo,
-    phase_deg,
-    sim,
-):
-    mo.stop(sim is None)  # nothing to show until ▶ Run
-    # Worlds sorted canonically: gate (in evaluation order), then port
-    # (upper before lower), then sign (+ before −); the configuration
-    # label's coordinates are reordered to match.
-    def _():
+    def _final_points():
+        # Worlds sorted canonically: gate (in evaluation order), then port
+        # (upper before lower), then sign (+ before −); the configuration
+        # label's coordinates are reordered to match.
         rows = [(
             f'`{p.short_config(key=lambda c: coord_sort_key(sim, c)).replace("|", " ")}`',
             math_weight(p.weight, prec=3),
@@ -496,24 +451,17 @@ def _(
             f'${phase_deg(p.weight):+.1f}º$',
         ) for p in sorted(sim.result_space.index.values(),
                           key=lambda p: cs_point_sort_key(sim, p))]
-        return mo.accordion({'## Final configuration-space points\n': mo.md(md_table(
+        return mo.accordion({'### Final configuration-space points\n': mo.md(md_table(
             ['configuration', 'weight $w$', r'$\lvert w\rvert^2$', 'phase'],
             rows))})
 
-    _()
-    return
-
-
-@app.cell(hide_code=True)
-def _(coord_sort_key, md_table, mo, sim):
-    mo.stop(sim is None)  # nothing to show until ▶ Run
-    # Marginal in the statistics sense: each row sums |w|² over every
-    # final configuration-space point containing that coordinate — the chance of finding that
-    # particle, with that sign, at that port, regardless of where the
-    # other particles ended up. Rows follow gate evaluation order (upper
-    # before lower, + before −), so a port's +/− pair sits together and
-    # sums to the port's total output probability.
-    def _():
+    def _marginals():
+        # Marginal in the statistics sense: each row sums |w|² over every
+        # final configuration-space point containing that coordinate — the chance of finding that
+        # particle, with that sign, at that port, regardless of where the
+        # other particles ended up. Rows follow gate evaluation order (upper
+        # before lower, + before −), so a port's +/− pair sits together and
+        # sums to the port's total output probability.
         acc = {}
         for p in sim.result_space.index.values():
             prob = float(p.probability)
@@ -525,37 +473,36 @@ def _(coord_sort_key, md_table, mo, sim):
                 for key, entry in sorted(acc.items(),
                                          key=lambda kv: coord_sort_key(sim, kv[1][0]))]
         return mo.accordion({
-            '## Marginal probabilities (one coordinate at a time)':
+            '### Marginal probabilities (one coordinate at a time)':
                 mo.md(r'Each row sums $\lvert w\rvert^2$ over every final configuration-space point '
                       'in which that particle, with that sign, sits at that '
                       'port — its probability there *regardless of where the '
                       'other particles ended up* (the marginal over the rest '
-                      'of the configuration). The +/− rows at one port '
+                      "of the configuration). The +/− rows at one port "
                       "together give the port's total output probability.\n" +
                       md_table(['coordinate', 'probability'], rows))
         })
 
-    _()
-    return
-
-
-@app.cell(hide_code=True)
-def _(gate_io, md_table, mo, sim):
-    mo.stop(sim is None)  # nothing to show until ▶ Run
-    # Per-step gate traffic: what arrived at each port (previous step's
-    # coordinate endpoints) and what left it (that step's origins), with
-    # per-sign probabilities and the aggregate Σ (|Σ|² and phase).
-    def _():
+    def _gate_io_table():
+        # Per-step gate traffic: what arrived at each port (previous step's
+        # coordinate endpoints) and what left it (that step's origins), with
+        # per-sign probabilities and the aggregate Σ (|Σ|² and phase).
         rows = [(row['step'], row['gate'], row['port'],
                  row['input'].replace('\n', '<br>'),
                  row['output'].replace('\n', '<br>'))
                 for row in gate_io(sim)]
         return mo.accordion({
-            '## Gate inputs and outputs by step':
+            '### Gate inputs and outputs by step':
                 mo.md(md_table(['step', 'gate', 'port', 'input', 'output'], rows))
         })
 
-    _()
+    mo.accordion({'## Detailed Results': mo.vstack([
+        _evolution_graphic(),
+        _evolution_table(),
+        _final_points(),
+        _marginals(),
+        _gate_io_table(),
+    ])})
     return
 
 
@@ -588,46 +535,77 @@ def _(mo):
                100000, 200000, 500000, 1000000],
         value=20000, label='trials', show_value=True)
     mc_trials_text = mo.ui.text(value='', placeholder='custom trial count')
+    # terminal is the faithful simulation of a real experiment and the
+    # default; path (per-stage collapse) is opt-in for comparison
     mc_mode = mo.ui.dropdown(options=['terminal', 'path', 'both'],
-                             value='both', label='mode')
+                             value='terminal', label='mode')
     mc_seed = mo.ui.number(value=42, label='seed')
     mc_button = mo.ui.run_button(label='Run Monte Carlo')
+    mc_cancel = mo.ui.run_button(label='Cancel')
+    # ticks the progress display while a sampling job runs; rendered
+    # (and therefore ticking) only during a run
+    mc_refresh = mo.ui.refresh(default_interval='400ms')
     mo.hstack([mc_trials, mc_trials_text, mc_mode, mc_seed, mc_button],
               wrap=True)
-    return mc_button, mc_mode, mc_seed, mc_trials, mc_trials_text
+    return (
+        mc_button,
+        mc_cancel,
+        mc_mode,
+        mc_refresh,
+        mc_seed,
+        mc_trials,
+        mc_trials_text,
+    )
 
 
 @app.cell(hide_code=True)
 def _(
     coord_sort_key,
     mc_button,
-    mc_mode,
-    mc_seed,
-    mc_trials,
-    mc_trials_text,
+    mc_cancel,
+    mc_job_slot,
+    mc_refresh,
     md_table,
     mo,
-    run_monte_carlo,
     sim,
 ):
+    mc_button  # re-render when a job starts
+    mc_refresh  # ...and on every tick while the progress view shows it
     mo.stop(sim is None)  # nothing to sample until ▶ Run
-    mo.stop(not mc_button.value, mo.md('_press **Run Monte Carlo** to sample_'))
+    _job = mc_job_slot.get('job')
+    mo.stop(_job is None, mo.md('_press **Run Monte Carlo** to sample_'))
 
-    def _():
-        try:  # the text entry, when it parses, overrides the slider
-            n_trials = max(1, int(mc_trials_text.value.strip()))
-        except ValueError:
-            n_trials = int(mc_trials.value)
-        results = run_monte_carlo(sim, n_trials, mode=mc_mode.value,
-                                  seed=int(mc_seed.value))
+    def _progress():
+        pct = 100 * _job['progress'] / max(1, _job['total'])
+        # the refresh element is rendered only here, so it stops
+        # ticking as soon as the job finishes
+        return mo.vstack([
+            mo.hstack([
+                mo.Html(f'<progress value="{_job["progress"]}" '
+                        f'max="{_job["total"]}" style="width: 24em">'
+                        '</progress>'),
+                mo.md(f'{pct:.0f}% — {_job["progress"]:,} of '
+                      f'{_job["total"]:,} draws'),
+                mc_cancel,
+                mc_refresh,
+            ], justify='start', gap=1, align='center'),
+        ])
+
+    def _results():
+        if _job['error'] is not None:
+            return mo.md(f'**Monte Carlo failed** — `{_job["error"]}`')
+        results = _job['results']
+        job_sim = _job['sim']
         pred = results['predicted']
         # compact row labels: the same short-config form the final-points
         # table uses, looked up from the terminal points (raw keys are
         # unreadably long for multi-particle models)
         short = {p.key: p.short_config(
-                     key=lambda c: coord_sort_key(sim, c)).replace('|', ' ')
-                 for p in sim.result_space.index.values()}
+                     key=lambda c: coord_sort_key(job_sim, c)).replace('|', ' ')
+                 for p in job_sim.result_space.index.values()}
         sections = []
+        if _job['cancel'].is_set():
+            sections.append('_cancelled — partial tallies below_')
         # terminal first: it is the faithful baseline the path mode's
         # per-stage collapse is measured against
         for label, note in (
@@ -635,24 +613,27 @@ def _(
                 ('path', 'one world-line per trial — collapses at every stage')):
             if label not in results:
                 continue
+            n_done = _job['n_done'].get(label, 0)
+            if not n_done:
+                continue
             tally = results[label]
             rows = []
             tvd = 0.0
             for key in sorted(set(tally) | set(pred), key=lambda k: -pred.get(k, 0)):
-                freq = tally.get(key, 0) / n_trials
+                freq = tally.get(key, 0) / n_done
                 tvd += abs(freq - pred.get(key, 0.0))
                 bare = key.split(':')[0]
                 label_str = short.get(bare, bare[:60].replace('|', ' '))
                 rows.append((f'`{label_str}`',
                              tally.get(key, 0),
                              f'{freq:.4f}', f'{pred.get(key, 0.0):.4f}'))
-            sections.append(f'**{label}** — {note}; '
+            sections.append(f'**{label}** — {note}; {n_done:,} trials, '
                             f'total variation distance {tvd / 2:.4f}\n\n' +
                             md_table(['configuration-space point', 'count', 'freq', 'exact'],
                                      rows))
         return mo.md('\n\n'.join(sections))
 
-    _()
+    _progress() if not _job['done'] else _results()
     return
 
 
@@ -821,7 +802,9 @@ def _(
             'sweep angles: ' + ', '.join(
                 f'{k} = {math.degrees(float(v)):.1f}º'
                 for k, v in values.items()),
-            '**observed discrepancy** (sampled)' if epr_trials.value else '**exact discrepancy**',
+            '**observed discrepancy** (sampled: terminal draws from each '
+            'cell&rsquo;s final superposition)'
+            if epr_trials.value else '**exact simulated discrepancy**',
             grid_table(lambda c: c.get('sampled', c['exact'])),
             r'**analytical** $\sin^2(\theta_1-\theta_2)$',
             grid_table(lambda c: c['analytical']),
@@ -1280,7 +1263,7 @@ def _(mo):
         return zslider(), zslider(), zslider()
 
     tikz_zoom, mermaid_zoom, graph_zoom = _()
-    return mermaid_zoom, tikz_zoom
+    return
 
 
 @app.cell(hide_code=True)
@@ -1355,7 +1338,7 @@ def _(cmath, mo, qn):
             f'height:auto !important; }}</style>'
             f'{mo.as_html(obj).text}</div></div>')
 
-    return latex_weight, math_weight, md_table, phase_deg, zoomable
+    return latex_weight, math_weight, md_table, phase_deg
 
 
 @app.cell(hide_code=True)
@@ -1385,6 +1368,112 @@ def _(mo):
                               show_value=True)
     epr_button = mo.ui.run_button(label='Run EPR experiment')
     return epr_button, epr_trials
+
+
+
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    # Only shown once the model has been run (the plain wiring view is
+    # all there is before that); its state persists across runs.
+    show_values = mo.ui.switch(value=True, label='show values')
+    return (show_values,)
+
+
+@app.cell(hide_code=True)
+def _():
+    # shared, mutable job slot for the background Monte Carlo worker —
+    # plain dict on purpose: the worker thread updates it and the
+    # refresh-driven display cell polls it (marimo state setters must
+    # not be called from threads)
+    mc_job_slot = {}
+    return (mc_job_slot,)
+
+
+@app.cell(hide_code=True)
+def _(
+    mc_button,
+    mc_job_slot,
+    mc_mode,
+    mc_seed,
+    mc_trials,
+    mc_trials_text,
+    mo,
+    sim,
+):
+    # Pressing Run starts the sampling in a background thread, chunk by
+    # chunk, so the app stays responsive, progress is visible, and
+    # Cancel can stop it between chunks (keeping the partial tallies).
+    mo.stop(sim is None)
+    if mc_button.value:
+        import random as _random
+        import threading
+
+        _prev = mc_job_slot.get('job')
+        if _prev is not None and not _prev['done']:
+            _prev['cancel'].set()
+
+        try:  # the text entry, when it parses, overrides the slider
+            _n = max(1, int(mc_trials_text.value.strip()))
+        except ValueError:
+            _n = int(mc_trials.value)
+        _modes = [m for m in ('terminal', 'path')
+                  if mc_mode.value in (m, 'both')]
+        _job = {'cancel': threading.Event(), 'done': False,
+                'progress': 0, 'total': _n * len(_modes),
+                'n_trials': _n, 'modes': _modes, 'sim': sim,
+                'results': None, 'n_done': {}, 'error': None}
+        mc_job_slot['job'] = _job
+
+        def _worker():
+            from collections import Counter
+            from quantish.montecarlo import (predicted_distribution,
+                                             sample_paths, sample_terminal)
+            try:
+                rng = _random.Random(int(mc_seed.value))
+                res = {'predicted': predicted_distribution(sim.result_space)}
+                chunk_size = 2000
+                done = 0
+                for m in _job['modes']:
+                    tally = Counter()
+                    dead = 0
+                    remaining = _n
+                    while remaining and not _job['cancel'].is_set():
+                        k = min(chunk_size, remaining)
+                        if m == 'terminal':
+                            tally += sample_terminal(sim.result_space, k, rng)
+                        else:
+                            t, d = sample_paths(sim.initial_point,
+                                                len(sim.run_stages), k, rng)
+                            tally += t
+                            dead += d
+                        remaining -= k
+                        done += k
+                        _job['progress'] = done
+                    res[m] = tally
+                    if m == 'path':
+                        res['path_dead_ends'] = dead
+                    _job['n_done'][m] = _n - remaining
+                _job['results'] = res
+            except Exception as exc:  # noqa: BLE001 — surface in the display
+                _job['error'] = repr(exc)
+            finally:
+                _job['done'] = True
+
+        threading.Thread(target=_worker, daemon=True).start()
+    return
+
+
+@app.cell(hide_code=True)
+def _(mc_cancel, mc_job_slot):
+    # the Cancel button flags the running job; the worker stops at the
+    # next chunk boundary and reports its partial tallies
+    if mc_cancel.value:
+        _job = mc_job_slot.get('job')
+        if _job is not None and not _job['done']:
+            _job['cancel'].set()
+    return
 
 
 if __name__ == "__main__":

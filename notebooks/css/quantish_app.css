@@ -8,3 +8,24 @@
 .output-area {
     max-height: none !important;
 }
+
+/* All prose renders in black instead of the theme's gray — the same
+   no-gray-text rule as the double-slit app. The theme colors text
+   through CSS variables, so the overrides need !important. */
+.prose,
+.prose p, .prose li, .prose td, .prose th,
+.prose strong, .prose em, .prose summary,
+.prose h1, .prose h2, .prose h3, .prose h4,
+.prose .katex,
+.markdown,
+.markdown p, .markdown li, .markdown td, .markdown th,
+.markdown .katex {
+    color: #000 !important;
+}
+
+/* Accordion labels render their markdown inside <summary>, which the
+   theme otherwise paints muted gray. */
+summary, summary p, summary span,
+summary h1, summary h2, summary h3, summary h4 {
+    color: #000 !important;
+}

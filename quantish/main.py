@@ -78,7 +78,7 @@ def main():
     parser.add_argument('--numeric', action='store_true', default=SUPPRESS, help='Force numeric math')
     parser.add_argument('--sample', action='store_true', help='Run multiple trials and collect a histogram of results')
     parser.add_argument('--n-samples', type=int, default=1, help='Run this many sampling trials')
-    parser.add_argument('--mc-mode', choices=['terminal', 'path', 'both'], default='both',
+    parser.add_argument('--mc-mode', choices=['terminal', 'path', 'both'], default='terminal',
                         help='Monte Carlo sampling mode (with --sample): terminal draws from the '
                              'final superposition, path walks one world-line per trial')
     parser.add_argument('--mc-seed', type=int, default=None, help='Monte Carlo RNG seed')
