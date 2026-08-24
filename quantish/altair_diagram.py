@@ -56,7 +56,7 @@ def circuit_chart(sim, has_run: bool = False, scale: float = 46.0,
     dangling valued outputs get stadium blobs past their stub wires, and
     the same values appear as hover tooltips. The chart renders at its
     natural width, capped at MAX_WIDTH (pass width to override).
-    angle_overrides replaces a gate's angle-label text ({'gp': 'φ(x)'})."""
+    angle_overrides replaces a gate's angle-label text ({'φ': 'φ(x)'})."""
     spec = spec_from_simulation(sim)
     L = compute_layout(spec)
     routes = route_wires(spec, L)

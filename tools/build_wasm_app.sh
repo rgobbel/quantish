@@ -11,14 +11,29 @@ uv build --wheel -q
 WHEEL=$(ls -t dist/quantish-*.whl | head -1)
 
 # 2) export both apps (from notebooks/ so the relative css_file
-#    resolves), each into its own subdirectory; the site root is a
-#    landing page linking to both
+#    resolves), each into its own subdirectory, in two variants: the
+#    read-only app view and the full in-browser editor. The site root
+#    is a landing page linking to all of them.
 (cd notebooks && uv run marimo export html-wasm quantish_app.py -o "$OUT/quantish_app" --mode run -f)
 (cd notebooks && uv run marimo export html-wasm double_slit_app.py -o "$OUT/double_slit_app" --mode run -f)
+(cd notebooks && uv run marimo export html-wasm quantish_app.py -o "$OUT/quantish_app_edit" --mode edit -f)
+(cd notebooks && uv run marimo export html-wasm double_slit_app.py -o "$OUT/double_slit_app_edit" --mode edit -f)
+# the exporter pins auto_instantiate off for editable exports; we want
+# the notebooks to run on load
+python3 - "$OUT/quantish_app_edit/index.html" "$OUT/double_slit_app_edit/index.html" <<'PYPATCH'
+import sys
+for path in sys.argv[1:]:
+    with open(path) as f:
+        t = f.read()
+    t = t.replace('"auto_instantiate": false', '"auto_instantiate": true')
+    with open(path, 'w') as f:
+        f.write(t)
+PYPATCH
 
 # 3) bundle the wheels (both apps resolve them relative to their own
 #    page via mo.notebook_location)
-for W in "$OUT/quantish_app/public/wheels" "$OUT/double_slit_app/public/wheels"; do
+for W in "$OUT"/quantish_app/public/wheels "$OUT"/double_slit_app/public/wheels \
+         "$OUT"/quantish_app_edit/public/wheels "$OUT"/double_slit_app_edit/public/wheels; do
   mkdir -p "$W"
   cp "$WHEEL" "$W/"
   if [ ! -f "$W/addict-2.4.0-py3-none-any.whl" ]; then
@@ -38,7 +53,9 @@ models = {}
 top = Path('models')
 for p in sorted(top.rglob('*.yaml')):
     models[str(p.relative_to(top))] = p.read_text()
-(out / 'quantish_app' / 'public' / 'models.json').write_text(json.dumps(models))
+payload = json.dumps(models)
+for app_dir in ('quantish_app', 'quantish_app_edit'):
+    (out / app_dir / 'public' / 'models.json').write_text(payload)
 print(f'bundled {len(models)} model files')
 PYEOF
 
@@ -81,6 +98,13 @@ cat > "$OUT/index.html" <<'HTML'
     fire particles, watch fringes build up dot by dot, and see the
     circuits behind each condition.
   </a>
+  <p>Each app also comes as an editable notebook: the same simulation
+     in the full marimo editor, where you can read the code, change it,
+     and re-run cells. Edits run entirely in your browser and affect
+     only your copy &mdash; reload to start fresh, or use the editor's
+     download button to keep your changes.</p>
+  <p><a href="quantish_app_edit/">Quantish app (editable)</a> &middot;
+     <a href="double_slit_app_edit/">Double-slit app (editable)</a></p>
 </body>
 </html>
 HTML
@@ -100,9 +124,11 @@ Usage: ./serve.sh [options] [PORT]
 
 Serves the app directory over HTTP. One server covers both apps:
 
-    http://<host>:<port>/                   a landing page linking to both
+    http://<host>:<port>/                   a landing page linking to all
     http://<host>:<port>/quantish_app/      the quantish app
     http://<host>:<port>/double_slit_app/   the double-slit app
+    (plus quantish_app_edit/ and double_slit_app_edit/: the same
+    notebooks in the in-browser editor)
 
 Options:
   -d, --directory DIR   directory to serve
@@ -161,8 +187,10 @@ Quantish apps, compiled to WebAssembly (static site).
   ./serve.sh [-d DIR] [-p PORT]     # default port 2718
 
 then open  http://<host>:<port>/  in a browser: the root is a landing
-page linking to the quantish app (quantish_app/) and the double-slit
-app (double_slit_app/).
+page linking to the quantish app (quantish_app/), the double-slit app
+(double_slit_app/), and editable-notebook variants of both
+(quantish_app_edit/, double_slit_app_edit/). Edits run entirely in the
+visitor's browser and affect only their own copy.
 
 Notes:
 - Nothing runs server-side: the Python engine executes in the visitor's

@@ -94,12 +94,26 @@ def angle_label(spec, degrees, degree_sign='º'):
 
 _SUBSCRIPT_DIGITS = str.maketrans('0123456789', '₀₁₂₃₄₅₆₇₈₉')
 
+# letters (and a few Greek letters) that have Unicode subscript forms,
+# for explicit _x subscripts in names like the double-slit's g_φ
+_SUBSCRIPT_LETTERS = dict(zip(
+    'aehijklmnoprstuvxβγρφχ',
+    'ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓᵦᵧᵨᵩᵪ'))
+
+
 def subscript_digits(s: str) -> str:
     """Digits directly after letters become unicode subscripts, as in the
-    book's labels: q5 → q₅, theta2 → theta₂. For plain-text surfaces
-    (Mermaid labels); the TikZ renderer does the same in TeX math."""
-    return re.sub(r'(?<=[A-Za-z])(\d+)',
-                  lambda mt: mt.group(1).translate(_SUBSCRIPT_DIGITS), s)
+    book's labels: q5 → q₅, theta2 → theta₂; an explicit underscore
+    subscripts a single character where Unicode has a form for it:
+    g_p → gₚ, g_φ → gᵩ. For plain-text surfaces (Mermaid labels, the
+    Altair diagrams); the TikZ renderer does the same in TeX math."""
+    s = re.sub(r'(?<=[A-Za-z])(\d+)',
+               lambda mt: mt.group(1).translate(_SUBSCRIPT_DIGITS), s)
+    return re.sub(r'_([0-9A-Za-zβγρφχ])(?![0-9A-Za-z])',
+                  lambda mt: (mt.group(1).translate(_SUBSCRIPT_DIGITS)
+                              if mt.group(1).isdigit()
+                              else _SUBSCRIPT_LETTERS.get(mt.group(1),
+                                                          mt.group(0))), s)
 
 
 def math_to_unicode(s: str) -> str:

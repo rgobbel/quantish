@@ -5,11 +5,11 @@ As described in *Good and Real* (p. 200), the two slits are the two
 switch-wire inputs of a recombining gate. The apparatus, per pixel:
 
     p1 -> g1 (split, theta_s) -> upper output -> S1 (left slit)  -> g2.upper
-                              -> lower output -> S2 (right slit) -> gp -> g2.lower
+                              -> lower output -> S2 (right slit) -> φ -> g2.lower
     g2 (remerge, theta_s) -> upper output -> g5 (sign sorter, angle 0)
     g5.upper -> S (this pixel's detector)      g5.lower -> D (dark channel)
 
-gp is a pure phase plate: an angle-0 gate with a `phase`, entered through
+φ is a pure phase plate: an angle-0 gate with a `phase`, entered through
 its control wire, which rotates the traversing weight by e^(i*phi) and
 changes nothing else. It stands for the path-length difference from the
 slits to THIS pixel: phi(x) = fringes*pi*x, zero at the screen center.
@@ -65,7 +65,7 @@ def slit_config(mode: str = 'both', theta_s: float = DEFAULT_THETA_S,
     reaches the slit plane: the upper output at the left slit (box S1),
     the lower at the right slit (S2), and a blocked slit n has the block
     Bn in its place (the book's "diversion away", fig 4.14). The right
-    slit's path continues through the phase plate gp to the remerge gate
+    slit's path continues through the phase plate φ to the remerge gate
     g2, whose upper output the sorter g5 splits into the detectors S
     (plus sign) and D (minus sign). 'observed' routes the right slit's
     wire through the control input of the angle-0 gate g4 on its way to
@@ -78,17 +78,17 @@ def slit_config(mode: str = 'both', theta_s: float = DEFAULT_THETA_S,
     particles = {'p1': {'sign': 1, 'weight': 1}}
     links = {'p1': 'g1.upper',
              'g1.upper': 'S1', 'S1': 'g2.upper',
-             'g1.lower': 'S2', 'S2': 'gp.control', 'gp.control': 'g2.lower',
+             'g1.lower': 'S2', 'S2': 'φ.control', 'φ.control': 'g2.lower',
              'g2.upper': 'g5.upper', 'g5.upper': 'S', 'g5.lower': 'D'}
     slits = ['S1', 'S2']
-    stages = {'split': ['g1'], 'slits': slits, 'phase': ['gp'],
+    stages = {'split': ['g1'], 'slits': slits, 'phase': ['φ'],
               'merge': ['g2'], 'sort': ['g5'], 'detect': ['S', 'D']}
     if mode != 'slit1':          # the right slit is open: phase plate in play
-        gates['gp'] = {'angle': 0, 'phase': phi}
+        gates['φ'] = {'angle': 0, 'phase': phi}
     if mode == 'slit1':
         slits[:] = ['S1', 'B2']
         links['g1.lower'] = 'B2'
-        del links['S2'], links['gp.control']
+        del links['S2'], links['φ.control']
         del stages['phase']
     elif mode == 'slit2':
         slits[:] = ['B1', 'S2']

@@ -34,7 +34,7 @@ def _(mo):
       probabilities of outputs at each gate, and tabulated to show statistics to simulate inexact results from real-world experiments
     - a simulation of the Einstein-Podolsky-Rosen (EPR) experiment, including results for both Bell's inequality and
       the Clauser–Horne–Shimony–Holt (CHSH) inequality
-    - a Weight-split Explorer, to show concretely effects of various inputs to quantish Fredkin gates
+    - a Weight-split Explorer, to show concretely the effects of various inputs to quantish Fredkin gates
     """)
     return
 
@@ -700,31 +700,30 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(WASM_MODE, mo):
+def _(EDITOR_UI, mo):
     # shown in the editor only: in `marimo run` the code cells below are
     # hidden, so the heading would sit over nothing
     mo.md(r"""
     ## Loaded Configuration Details
-    """) if mo.app_meta().mode == 'edit' and not WASM_MODE else None
+    """) if EDITOR_UI else None
     return
 
 
 @app.cell(hide_code=True)
-def _(WASM_MODE, mo, model_pick, sim):
+def _(EDITOR_UI, mo, model_pick, sim):
     # editor-only section: hidden with its heading in `marimo run`
-    mo.stop(sim is None or WASM_MODE
-            or mo.app_meta().mode != 'edit')
+    mo.stop(sim is None or not EDITOR_UI)
     mo.accordion({str(model_pick.value.stem): mo.accordion(sim.__dict__, multiple=True, lazy=True)})
     return
 
 
 @app.cell(hide_code=True)
-def _(WASM_MODE, mo):
+def _(EDITOR_UI, mo):
     # shown in the editor only: in `marimo run` the code cells below are
     # hidden, so the heading would sit over nothing
     mo.md(r"""
     ## Support Code
-    """) if mo.app_meta().mode == 'edit' and not WASM_MODE else None
+    """) if EDITOR_UI else None
     return
 
 
@@ -763,6 +762,10 @@ async def initialization():
             _p = Path('/wasm-data/models') / _rel
             _p.parent.mkdir(parents=True, exist_ok=True)
             _p.write_text(_text)
+        # Under WASM, mo.app_meta().mode reports 'edit' for BOTH export
+        # modes; the page's own mount config records which one this is.
+        _page = await (await pyfetch(f'{_base}/index.html')).string()
+        _wasm_editor = '"mode": "edit"' in _page
 
     import altair as alt
     import pandas as pd
@@ -813,6 +816,11 @@ async def initialization():
 
     REPO_DIR = Path(__file__).resolve().parents[1]
     WASM_MODE = sys.platform == 'emscripten'
+    # True whenever the surrounding UI is the marimo editor (local
+    # `marimo edit` or a WASM edit-mode export): editor-only sections
+    # key off this
+    EDITOR_UI = (_wasm_editor if WASM_MODE
+                 else mo.app_meta().mode == 'edit')
     MODELS_TOP = (Path('/wasm-data/models') if WASM_MODE
                   else REPO_DIR / 'models')
     return (
@@ -822,6 +830,7 @@ async def initialization():
         GatePort,
         MODELS_TOP,
         NetworkGraph,
+        EDITOR_UI,
         Simulation,
         WASM_MODE,
         alt,

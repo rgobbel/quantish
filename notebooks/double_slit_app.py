@@ -45,6 +45,11 @@ async def initialization():
         ], deps=False)
         await micropip.install(['sympy', 'scipy', 'networkx', 'pandas',
                                 'altair', 'pyyaml'])
+        # Under WASM, mo.app_meta().mode reports 'edit' for BOTH export
+        # modes; the page's own mount config records which one this is.
+        from pyodide.http import pyfetch
+        _page = await (await pyfetch(f'{_base}/index.html')).string()
+        _wasm_editor = '"mode": "edit"' in _page
 
     import altair as alt
     import pandas as pd
@@ -85,9 +90,11 @@ async def initialization():
                                       slit_sim)
 
     WASM_MODE = sys.platform == 'emscripten'
+    EDITOR_UI = (_wasm_editor if WASM_MODE
+                 else mo.app_meta().mode == 'edit')
     return (
         DEFAULT_THETA_S,
-        WASM_MODE,
+        EDITOR_UI,
         alt,
         math,
         mo,
@@ -160,10 +167,10 @@ def _(DEFAULT_THETA_S, math, mo):
     the **right** slit ($S_2$). 
     - Several wires route a particle through
     a **control input** (the slit boxes $S_n$, the blocks $B_n$, the
-    recorder gate $g_4$, and the phase plate $g_p$). A control input never changes the particle
+    recorder gate $g_4$, and the phase plate $\varphi$). A control input never changes the particle
     passing through it–its occupancy decides only whether or not that gate
     swaps its switch wires. (One deliberate exception: a gate with a
-    **phase** setting, like $g_p$, rotates the weight of every particle
+    **phase** setting, like $\varphi$, rotates the weight of every particle
     traversing it, control input included, without effecting amplitude.)
 
     | real-world experiment | quantish circuit |
@@ -172,7 +179,7 @@ def _(DEFAULT_THETA_S, math, mo):
     | the two slits | the two switch outputs of gate $g_1$ (angle 45°): upper for the left slit, lower for the right |
     | passing through both slits at once | $g_1$ splits $p_1$'s world into superposed configuration-space points, one per slit, each carrying part of the weight |
     | the two slits themselves | the boxes $S_1$ and $S_2$, entered through their control inputs (pass-throughs; they change no amplitudes) |
-    | different path lengths from the two slits to screen position $x$ | the phase plate $g_p$ (an angle-0 gate with phase $\varphi(x)$) on the right slit's wire: it rotates the passing amplitude by $e^{i\varphi(x)}$ and changes nothing else |
+    | different path lengths from the two slits to screen position $x$ | the phase plate $\varphi$ (an angle-0 gate with phase $\varphi(x)$) on the right slit's wire: it rotates the passing amplitude by $e^{i\varphi(x)}$ and changes nothing else |
     | the screen pixel at $x$ | the remerge gate $g_2$ (matched to the split) followed by the sign sorter $g_5$; a particle reaching the detector box $S$ is a hit at this pixel |
     | blocking slit $n$ | the block $B_n$ standing in that slit's place. The wire is diverted into it and those worlds never reach the screen |
     | a which-way detector at one slit | recorder particle $p_2$ enters gate $g_4$'s upper switch input, and the wire to the right slit passes through $g_4$'s `control` input on its way to $S_2$. In the worlds where $p_1$ heads for the right slit, the occupied control makes $g_4$ swap its switch wires and $p_2$ exits on the lower wire; in the other worlds it exits on the upper wire. $p_2$'s exit records which slit $p_1$ used, without touching $p_1$ |
@@ -181,7 +188,7 @@ def _(DEFAULT_THETA_S, math, mo):
     material inserted into one light path: the wave crosses it more
     slowly and comes out with its phase shifted but its brightness
     untouched (the trick behind Zernike's phase-contrast microscope).
-    Our $g_p$ is its quantish counterpart: an angle-0 gate whose
+    Our $\varphi$ is its quantish counterpart: an angle-0 gate whose
     **phase** setting rotates every traversing weight by $e^{i\varphi}$.
     The book's gates have only a measurement angle — the phase setting is
     this simulator's one extension beyond chapter 4's physics, and its
@@ -191,7 +198,7 @@ def _(DEFAULT_THETA_S, math, mo):
     and phase together, so sweeping any gate's angle changes even a single
     slit's throughput, a $\cos^2$ modulation that would show fringes even with
     only one slit open. The phase knob is different: $\lvert e^{i\varphi}\rvert = 1$,
-    so $g_p$ can never change what a single path delivers, and anything
+    so $\varphi$ can never change what a single path delivers, and anything
     the screen shows beyond a flat line is genuine two-path interference.
 
     And why the sorter, $g_5$? At the matched remerge, the relative phase
@@ -219,12 +226,12 @@ def _(DEFAULT_THETA_S, math, mo):
 
     **There is one engine run per screen pixel:** the pixel at $x$ is
     reached through path lengths that differ between the slits, and the
-    phase plate $g_p$ carries that difference as its phase setting
+    phase plate $\varphi$ carries that difference as its phase setting
     $\varphi(x) = f\pi x$ ($f$ = the fringes slider). For each $x$ the
     engine propagates $p_1$ (weight 1) through the circuit exactly: the
     split rule at $g_1$ (angle $\theta = {_deg:.0f}°$) divides $p_1$'s
     world into superposed configuration-space points headed for the two
-    slits; the right slit's points pick up $e^{{i\varphi(x)}}$ at $g_p$;
+    slits; the right slit's points pick up $e^{{i\varphi(x)}}$ at $\varphi$;
     the matched remerge $g_2$ recombines whatever the engine's remerge
     rule allows to interfere; and $g_5$ sorts the result into the
     detectors $S$ and $D$. What the screen shows at $x$ is the
@@ -417,7 +424,7 @@ def _(mo):
     really is in the circuit: each screen pixel is one engine run through
     the remerge gate $g_2$ (matched to the split at $g_1$, as in figure
     4.7), with the path-length difference to that pixel carried by the
-    phase plate $g_p$ and the result sorted into the detectors by $g_5$.
+    phase plate $\varphi$ and the result sorted into the detectors by $g_5$.
     That is also exactly why the
     recorder kills the fringes: $p_2$ makes the two slits' worlds disagree, and the
     remerge rule then has nothing it is allowed to merge, and why
@@ -428,13 +435,12 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(WASM_MODE, mo):
-    # shown in the editor only: in `marimo run` the code cells below are
-    # hidden, so the heading would sit over nothing (and the WASM
-    # runtime reports mode 'edit' even for run-mode exports)
+def _(EDITOR_UI, mo):
+    # shown in the editor only: in `marimo run` the code cells below
+    # are hidden, so the heading would sit over nothing
     mo.md(r"""
     ## Support code
-    """) if mo.app_meta().mode == 'edit' and not WASM_MODE else None
+    """) if EDITOR_UI else None
     return
 
 
@@ -469,7 +475,7 @@ def _(DEFAULT_THETA_S, math, mo, slit_sim):
                 angle_overrides={
                     'g1': f'{math.degrees(DEFAULT_THETA_S):.0f}°',
                     'g2': f'{math.degrees(DEFAULT_THETA_S):.0f}°',
-                    'g4': '0°', 'g5': '0°', 'gp': 'φ(x)'})
+                    'g4': '0°', 'g5': '0°', 'φ': 'φ(x)'})
         except Exception as exc:  # noqa: BLE001--show, don't crash the app
             return mo.md(f'_diagram failed: {exc}_')
 
