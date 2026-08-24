@@ -16,88 +16,6 @@ app = marimo.App(width="full", css_file="css/quantish_app.css")
 
 
 @app.cell(hide_code=True)
-def initialization():
-    import cmath
-    import logging
-    import math
-    import sys
-    from pathlib import Path
-
-    import altair as alt
-    import marimo as mo
-    import pandas as pd
-    import yaml
-    from addict import Addict
-
-    # Inline chart data in the Vega-Lite spec. 'default' is not enough:
-    # mo.ui.altair_chart overrides any non-marimo transformer with
-    # marimo_arrow, whose virtual files are disposed on every cell re-run
-    # while the browser still requests them ("Virtual file not found"
-    # tracebacks flooding the server log). marimo respects transformers
-    # named marimo_*, and marimo_inline_csv embeds the data as a base64
-    # data: URL, so no virtual files exist at all.
-    try:
-        alt.data_transformers.enable('marimo_inline_csv')
-    except Exception:
-        try:  # marimo registers its transformers lazily
-            from marimo._plugins.ui._impl.charts.altair_transformer import (
-                register_transformers)
-            register_transformers()
-            alt.data_transformers.enable('marimo_inline_csv')
-        except Exception:  # not running under marimo at all
-            alt.data_transformers.enable('default')
-
-    # make the repo importable no matter where marimo was launched from
-    def _():
-        repo = Path(__file__).resolve().parents[1]
-        if str(repo) not in sys.path:
-            sys.path.insert(0, str(repo))
-
-    _()
-
-    import quantish.qnumber as qn
-    from quantish.qnumber import CalcMode
-
-    CalcMode.default('Float')
-    qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
-    logging.basicConfig(level=logging.WARNING)
-    logging.getLogger('quantish').setLevel(logging.WARNING)
-
-    from quantish.config_space import GatePort
-    from quantish.altair_diagram import circuit_chart
-    from quantish.display import coord_sort_key, cs_point_sort_key, gate_io
-    from quantish.epr import run_epr_experiment, supports_epr
-    from quantish.gate import FredkinGate
-    from quantish.simulation import Simulation
-    from quantish.network_graph import NetworkGraph
-
-    REPO_DIR = Path(__file__).resolve().parents[1]
-    MODELS_TOP = REPO_DIR / 'models'
-    return (
-        Addict,
-        CalcMode,
-        FredkinGate,
-        GatePort,
-        MODELS_TOP,
-        NetworkGraph,
-        Simulation,
-        alt,
-        circuit_chart,
-        cmath,
-        coord_sort_key,
-        cs_point_sort_key,
-        gate_io,
-        math,
-        mo,
-        pd,
-        qn,
-        run_epr_experiment,
-        supports_epr,
-        yaml,
-    )
-
-
-@app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
     # Quantish Physics
@@ -122,8 +40,17 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""
+def _(WASM_MODE, mo):
+    _closing = (
+        "**Note:** this copy runs entirely in your browser (via "
+        "WebAssembly) — there is no server behind it. The model library "
+        "was frozen into the page when it was built, so the models and "
+        "their parameters above are fixed; gate angles and everything "
+        "below remain fully adjustable."
+        if WASM_MODE else
+        "The **rescan models** button will reload models that have been "
+        "modified since this notebook was started.")
+    mo.md(f"""
     ## Model Selection
 
     The default model is as simple as possible, a single Fredkin gate as shown in figure 4.4 of _Good and Real_. Follow along in the book for fuller explanations of what's happening in each figure.
@@ -133,7 +60,7 @@ def _(mo):
     - **gr2006**: models implementing the figures in Chapter 4 of the original 2006 edition of *Good and Real*.
     - **extra**: more models demonstrating various aspects of the quantish framework. The `extras` collection includes a model taken from `MIT AIM-1026a`, the original 1989 paper which introduced the quantish framework.
 
-    The **rescan models** button will reload models that have been modified since this notebook was started.
+    {_closing}
     """)
     return
 
@@ -141,6 +68,7 @@ def _(mo):
 @app.cell(hide_code=True)
 def _(
     MODELS_TOP,
+    WASM_MODE,
     collection_pick,
     last_models_get,
     last_models_set,
@@ -169,9 +97,42 @@ def _(
         )
 
     model_pick = _()
-    mo.hstack([collection_pick, model_pick, model_rescan],
+    mo.hstack([collection_pick, model_pick]
+              + ([] if WASM_MODE else [model_rescan]),
               justify='start', gap=1)
     return (model_pick,)
+
+
+@app.cell(hide_code=True)
+def _(build_sim, mo, mode_pick, model_pick, run_btn):
+    # Gated on the button. Rather than mo.stop (whose descendants all
+    # display "this cell wasn't run because an ancestor was stopped"),
+    # sim is None until the button is pressed, and each results cell
+    # silently renders nothing while it is.
+    def _():
+        try:
+            run = build_sim()
+            run.run()
+            return run
+        except Exception as exc:  # noqa: BLE001 — old-format models raise all sorts
+            mo.stop(True, mo.md(
+                f"**{model_pick.value.stem} failed to run**\n\n```\n{exc}\n```"))
+
+    sim = _() if run_btn.value else None
+
+    def _():
+        if sim is not None:
+            angles = ', '.join(f'{g}={float(gate.theta.degrees):.1f}º'
+                               for g, gate in sim.fredkin_gates.items())
+            return mo.md(
+                f"Ran **{sim.title}** ({mode_pick.value} mode) — {angles}; "
+                f"{len(sim.run_stages)} steps, "
+                f"{len(sim.result_space.index)} final configuration-space point(s), "
+                f"total probability "
+                f"{sum(float(p.probability) for p in sim.result_space.index.values()):.6f}")
+
+    _()
+    return (sim,)
 
 
 @app.cell(hide_code=True)
@@ -208,6 +169,28 @@ def _(circuit_chart, mo, show_values, sim, sim_model):
 
 
 @app.cell(hide_code=True)
+def _(NetworkGraph, mo, sim):
+    # The weight-evolution graph, right under the circuit diagram once
+    # the model has run. Shown directly — mo.ui.altair_chart injects a
+    # selection param, which Vega-Lite rejects on layered charts that
+    # carry configure_* options.
+    mo.stop(sim is None)
+
+    def _():
+        try:
+            return NetworkGraph(sim.all_points, sim).chart().interactive()
+        except Exception as exc:  # noqa: BLE001 — surface, don't crash the app
+            return mo.md(f'_network graph failed: {exc}_')
+
+    mo.vstack([
+        mo.md('### Weight evolution graphic '
+              '(configuration-space points × stages)'),
+        _(),
+    ])
+    return
+
+
+@app.cell(hide_code=True)
 def _(mo):
     run_btn = mo.ui.run_button(label='▶ Run simulation')
     mo.md(f'''Once a model has been loaded and its parameters set, the `▶Run simulation` button will execute the loaded model, with the currently-set parameters.
@@ -217,38 +200,6 @@ def _(mo):
     {run_btn}
     ''')
     return (run_btn,)
-
-
-@app.cell(hide_code=True)
-def _(build_sim, mo, mode_pick, model_pick, run_btn):
-    # Gated on the button. Rather than mo.stop (whose descendants all
-    # display "this cell wasn't run because an ancestor was stopped"),
-    # sim is None until the button is pressed, and each results cell
-    # silently renders nothing while it is.
-    def _():
-        try:
-            run = build_sim()
-            run.run()
-            return run
-        except Exception as exc:  # noqa: BLE001 — old-format models raise all sorts
-            mo.stop(True, mo.md(
-                f"**{model_pick.value.stem} failed to run**\n\n```\n{exc}\n```"))
-
-    sim = _() if run_btn.value else None
-
-    def _():
-        if sim is not None:
-            angles = ', '.join(f'{g}={float(gate.theta.degrees):.1f}º'
-                               for g, gate in sim.fredkin_gates.items())
-            return mo.md(
-                f"Ran **{sim.title}** ({mode_pick.value} mode) — {angles}; "
-                f"{len(sim.run_stages)} steps, "
-                f"{len(sim.result_space.index)} final configuration-space point(s), "
-                f"total probability "
-                f"{sum(float(p.probability) for p in sim.result_space.index.values()):.6f}")
-
-    _()
-    return (sim,)
 
 
 @app.cell(hide_code=True)
@@ -307,7 +258,6 @@ def _(
 @app.cell(hide_code=True)
 def _(
     GatePort,
-    NetworkGraph,
     coord_sort_key,
     cs_point_sort_key,
     gate_io,
@@ -323,18 +273,6 @@ def _(
     # All the detailed-results subsections live under one outer
     # accordion; each keeps its own inner accordion, so a reader can
     # open the section and then just the tables they care about.
-
-    def _evolution_graphic():
-        # native Altair: live SVG with tooltips, pans/zooms itself. Shown
-        # directly — mo.ui.altair_chart injects a selection param, which
-        # Vega-Lite rejects on layered charts that carry configure_* options.
-        def _():
-            try:
-                return NetworkGraph(sim.all_points, sim).chart().interactive()
-            except Exception as exc:  # noqa: BLE001 — surface, don't crash the app
-                return mo.md(f'_network graph failed: {exc}_')
-
-        return mo.accordion({'### Weight evolution graphic (configuration-space points × stages)': mo.vstack([_()])})
 
     def _evolution_table():
         # Tabular twin of the weight-evolution graph: per stage, one row per
@@ -495,8 +433,7 @@ def _(
                 mo.md(md_table(['step', 'gate', 'port', 'input', 'output'], rows))
         })
 
-    mo.accordion({'## Detailed Results': mo.vstack([
-        _evolution_graphic(),
+    mo.accordion({'## Detailed Results\n\n<span style="font-size:0.85em">Numerical simulation resuls</span>': mo.vstack([
         _evolution_table(),
         _final_points(),
         _marginals(),
@@ -506,10 +443,24 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""
-    ## Monte Carlo sampling
-    Optional sampled trials on top of the exact run above. Monte Carlo sampling can be run in either or both of two modes:
+def _(
+    coord_sort_key,
+    mc_button,
+    mc_cancel,
+    mc_job_slot,
+    mc_mode,
+    mc_refresh,
+    mc_seed,
+    mc_trials,
+    mc_trials_text,
+    md_table,
+    mo,
+    sim,
+):
+    mc_button  # re-render when a job starts
+    mc_refresh  # ...and on every tick while the progress view shows it
+    _explanation = mo.md(r"""
+    Monte Carlo sampling can be run in either or both of two modes:
 
     - **terminal** — each trial draws one final configuration-space point from the
       evolved superposition with probability $\lvert w\rvert^2$. This is
@@ -524,73 +475,22 @@ def _(mo):
       exact values — the divergence measures how much interference
       matters.
     """)
-    return
 
-
-@app.cell(hide_code=True)
-def _(mo):
-    mc_trials = mo.ui.slider(
-        steps=[100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000,
-               100000, 200000, 500000, 1000000],
-        value=20000, label='trials', show_value=True)
-    mc_trials_text = mo.ui.text(value='', placeholder='custom trial count')
-    # terminal is the faithful simulation of a real experiment and the
-    # default; path (per-stage collapse) is opt-in for comparison
-    mc_mode = mo.ui.dropdown(options=['terminal', 'path', 'both'],
-                             value='terminal', label='mode')
-    mc_seed = mo.ui.number(value=42, label='seed')
-    mc_button = mo.ui.run_button(label='Run Monte Carlo')
-    mc_cancel = mo.ui.run_button(label='Cancel')
-    # ticks the progress display while a sampling job runs; rendered
-    # (and therefore ticking) only during a run
-    mc_refresh = mo.ui.refresh(default_interval='400ms')
-    mo.hstack([mc_trials, mc_trials_text, mc_mode, mc_seed, mc_button],
-              wrap=True)
-    return (
-        mc_button,
-        mc_cancel,
-        mc_mode,
-        mc_refresh,
-        mc_seed,
-        mc_trials,
-        mc_trials_text,
-    )
-
-
-@app.cell(hide_code=True)
-def _(
-    coord_sort_key,
-    mc_button,
-    mc_cancel,
-    mc_job_slot,
-    mc_refresh,
-    md_table,
-    mo,
-    sim,
-):
-    mc_button  # re-render when a job starts
-    mc_refresh  # ...and on every tick while the progress view shows it
-    mo.stop(sim is None)  # nothing to sample until ▶ Run
-    _job = mc_job_slot.get('job')
-    mo.stop(_job is None, mo.md('_press **Run Monte Carlo** to sample_'))
-
-    def _progress():
+    def _progress(_job):
         pct = 100 * _job['progress'] / max(1, _job['total'])
         # the refresh element is rendered only here, so it stops
         # ticking as soon as the job finishes
-        return mo.vstack([
-            mo.hstack([
-                mo.Html(f'<progress value="{_job["progress"]}" '
-                        f'max="{_job["total"]}" style="width: 24em">'
-                        '</progress>'),
-                mo.md(f'{pct:.0f}% — {_job["progress"]:,} of '
-                      f'{_job["total"]:,} draws'),
-                mc_cancel,
-                mc_refresh,
-            ], justify='start', gap=1, align='center'),
-        ])
+        return mo.hstack([
+            mo.Html(f'<progress value="{_job["progress"]}" '
+                    f'max="{_job["total"]}" style="width: 24em">'
+                    '</progress>'),
+            mo.md(f'{pct:.0f}% — {_job["progress"]:,} of '
+                  f'{_job["total"]:,} draws'),
+            mc_cancel,
+            mc_refresh,
+        ], justify='start', gap=1, align='center')
 
-    def _results():
+    def _results(_job):
         if _job['error'] is not None:
             return mo.md(f'**Monte Carlo failed** — `{_job["error"]}`')
         results = _job['results']
@@ -632,24 +532,39 @@ def _(
                                      rows))
         return mo.md('\n\n'.join(sections))
 
-    _progress() if not _job['done'] else _results()
+    def _results_area():
+        if sim is None:
+            return mo.md('_run the model first (**▶ Run simulation** '
+                         'above) to have something to sample_')
+        _job = mc_job_slot.get('job')
+        if _job is None:
+            return mo.md('_press **Run Monte Carlo** to sample_')
+        return _progress(_job) if not _job['done'] else _results(_job)
+
+    mo.accordion({'## Monte Carlo sampling\n\n<span style="font-size:0.85em">Optional sampled trials on top of the exact run above</span>':
+        mo.vstack([
+            _explanation,
+            mo.hstack([mc_trials, mc_trials_text, mc_mode, mc_seed,
+                       mc_button], wrap=True),
+            _results_area(),
+        ])})
     return
 
 
 @app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""
-    ## The Einstein-Podolsky-Rosen / Bell Experiment
-
-    The EPR experiment user interface is hidden until a suitable model (e.g. Figure 4.17) is loaded.
-    """)
-    return
-
-
-@app.cell(hide_code=True)
-def _(epr_angle_elems, epr_button, epr_trials, mo, sim_model, supports_epr):
-    mo.stop(not supports_epr(sim_model))
-    mo.vstack([
+def _(
+    epr_angle_elems,
+    epr_button,
+    epr_trials,
+    epr_view,
+    mo,
+    sim_model,
+    supports_epr,
+):
+    _content = mo.md(
+        '_The EPR experiment needs a suitable model (e.g. Figure 4.17) '
+        'to be loaded above._'
+    ) if not supports_epr(sim_model) else mo.vstack([
         mo.md(r"""
     **What the sweep does:** it re-runs the whole circuit **nine times**,
     once per pair $(\theta_1, \theta_2)$ from the sweep angles
@@ -743,93 +658,32 @@ def _(epr_angle_elems, epr_button, epr_trials, mo, sim_model, supports_epr):
                    epr_angle_elems['qc']],
                   justify='start', gap=2),
         mo.hstack([epr_trials, epr_button], justify='start'),
+        epr_view,
     ])
+
+    mo.accordion({'## The Einstein-Podolsky-Rosen / Bell Experiment\n\n'
+                  '<span style="font-size:0.85em">Sweep the measurement '
+                  'angles of an EPR-capable model and test the Bell and '
+                  'CHSH inequalities</span>': _content})
     return
 
 
 @app.cell(hide_code=True)
 def _(
-    base_env,
-    epr_angle_elems,
-    epr_button,
-    epr_trials,
-    math,
-    md_table,
     mo,
-    qn,
-    run_epr_experiment,
-    sim_model,
-    supports_epr,
-    units_pick,
+    ws_components,
+    ws_sign,
+    ws_size,
+    ws_theta,
+    ws_view,
+    ws_wmag,
+    ws_wphase,
 ):
-    mo.stop(not supports_epr(sim_model))
-    mo.stop(not epr_button.value, mo.md('_press **Run EPR experiment** to sweep_'))
-
-    def _():
-        def parse_angle(raw):
-            # same convention as the gate-angle entries: a bare number is in
-            # the selected units, anything else a symbolic radian expression
-            txt = (raw or '').strip().rstrip('º°').strip()
-            try:
-                num = float(txt)
-                return qn.qify(num if units_pick.value == 'radians'
-                               else math.radians(num))
-            except ValueError:
-                # symbolic radian expression; may use model variables
-                return qn.qify(txt, base_env)
-
-        try:
-            values = {k: parse_angle(v)
-                      for k, v in epr_angle_elems.value.items()}
-        except Exception as exc:  # noqa: BLE001 — show, don't crash the app
-            mo.stop(True, mo.md(f'**unparseable sweep angle** — {exc}'))
-        mo.stop(len({round(float(v) % math.pi, 9) for v in values.values()}) < 3,
-                mo.md('**sweep angles must be distinct (mod π)** — equal angles '
-                      'make cells compare an angle with itself and the '
-                      'inequalities degenerate'))
-        res = run_epr_experiment(sim_model, n_trials=int(epr_trials.value), seed=1,
-                                 values=values)
-        labels = list(res['values'].keys())
-
-        def grid_table(getter, fmt='{:.4f}'):
-            rows = [[f'**{l1}**'] + [fmt.format(getter(res['grid'][(l1, l2)]))
-                                     for l2 in labels]
-                    for l1 in labels]
-            return md_table([r'$\theta_1 \backslash \theta_2$'] + labels, rows)
-
-        parts = [
-            'sweep angles: ' + ', '.join(
-                f'{k} = {math.degrees(float(v)):.1f}º'
-                for k, v in values.items()),
-            '**observed discrepancy** (sampled: terminal draws from each '
-            'cell&rsquo;s final superposition)'
-            if epr_trials.value else '**exact simulated discrepancy**',
-            grid_table(lambda c: c.get('sampled', c['exact'])),
-            r'**analytical** $\sin^2(\theta_1-\theta_2)$',
-            grid_table(lambda c: c['analytical']),
-            '**classical hidden-variable prediction**',
-            grid_table(lambda c: c['classical']),
-        ]
-        bell, bell_at = res['bell_exact']
-        chsh, chsh_at = res['chsh_exact']
-        parts.append(
-            f'Bell excess (exact): **{bell:+.4f}** at {bell_at} — '
-            f'{"**VIOLATED**" if bell > 1e-9 else "satisfied"}  \n'
-            f'CHSH $|S|$ (exact): **{chsh:.4f}** at {chsh_at} — '
-            f'{"**VIOLATED**" if chsh > 2 + 1e-9 else "satisfied"}')
-        return mo.md('\n\n'.join(parts))
-
-    _()
-    return
-
-
-@app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""
-    ## Weight-split explorer
-
-    An interactive tool showing what happens to weights going through a Fredkin gate.
-
+    mo.accordion({'## Weight-split explorer\n\n'
+                  '<span style="font-size:0.85em">An interactive tool '
+                  'showing what happens to weights going through a '
+                  'Fredkin gate</span>': mo.vstack([
+        mo.md(r"""
     It demonstrates the four-way split of one Fredkin gate measurement at angle $\theta$:
     $c_{2a} = w\cos^2\theta$, $c_{2b} = i\,w\sin\theta\cos\theta$
     (straight), $c_{3a} = w\sin^2\theta$,
@@ -837,168 +691,192 @@ def _(mo):
     $c_3 = c_{3a}+c_{3b}$. A minus-sign particle swaps the roles.
 
     **Note:** Individual components can be selected by clicking on either their vectors on the chart or their entry in the legend. Shift-click toggles a component's selected state.
-    """)
+    """),
+        mo.hstack([ws_theta, ws_sign, ws_wmag, ws_wphase, ws_components,
+                   ws_size], wrap=True),
+        ws_view,
+    ])})
     return
 
 
 @app.cell(hide_code=True)
-def _(mo):
-    ws_theta = mo.ui.slider(-90, 90, step=5, value=30, label='θ (º)',
-                            show_value=True)
-    ws_sign = mo.ui.switch(value=True, label='sign + (off = −)')
-    ws_wmag = mo.ui.slider(0.0, 1.0, step=0.05, value=1.0, label='|w|',
-                           show_value=True)
-    ws_wphase = mo.ui.slider(-180, 180, step=5, value=0, label='φ(w) (º)',
-                             show_value=True)
-    ws_components = mo.ui.multiselect(
-        options=['c2', 'c3', 'c2a', 'c2b', 'c3a', 'c3b'],
-        value=['c2', 'c3', 'c2a', 'c2b', 'c3a', 'c3b'],
-        label='components')
-    # one value drives both chart dimensions, so the 1:1 aspect (which
-    # keeps the unit circle circular) can't be broken by stretching
-    ws_size = mo.ui.slider(300, 1000, step=25, value=500,
-                           label='chart size (px)', show_value=True)
-    # the mouse selection, persisted across parameter changes (the chart
-    # is rebuilt on every slider move; the param is reseeded from here)
-    ws_sel_get, ws_sel_set = mo.state(())
-    mo.hstack([ws_theta, ws_sign, ws_wmag, ws_wphase, ws_components, ws_size],
-              wrap=True)
-    return (
-        ws_components,
-        ws_sel_get,
-        ws_sel_set,
-        ws_sign,
-        ws_size,
-        ws_theta,
-        ws_wmag,
-        ws_wphase,
-    )
-
-
-@app.cell(hide_code=True)
-def _(
-    FredkinGate,
-    alt,
-    cmath,
-    cpair,
-    latex_weight,
-    math,
-    mo,
-    pd,
-    phase_deg,
-    qn,
-    ws_components,
-    ws_sel_get,
-    ws_sign,
-    ws_size,
-    ws_theta,
-    ws_wmag,
-    ws_wphase,
-):
-    def _():
-        gate = FredkinGate('ws', qn.qify(math.radians(ws_theta.value)))
-        w = ws_wmag.value * cmath.exp(1j * math.radians(ws_wphase.value))
-        c2a, c2b, c3a, c3b = (complex(x) for x in
-            cpair(gate, qn.Complex(w), twist=not ws_sign.value))
-        data = {'c2': c2a + c2b, 'c3': c3a + c3b,
-                'c2a': c2a, 'c2b': c2b, 'c3a': c3a, 'c3b': c3b}
-        order = ['c2', 'c3', 'c2a', 'c2b', 'c3a', 'c3b']
-        sel = [c for c in order if c in ws_components.value]
-        frame = pd.DataFrame({
-            'parallel': [data[c].real for c in sel],
-            'perpendicular': [data[c].imag for c in sel],
-            'component': sel,
-        })
-        # Finder-style selection: click a vector or a legend entry to
-        # make it the selection; shift/cmd/ctrl-click toggles items in and
-        # out; click empty space to clear. One selection with on='click'
-        # AND bind='legend' receives both event streams (verified in the
-        # compiled Vega), so the legend highlighting tracks mark clicks
-        # and vice versa — no difference which you click.
-        mods = 'event.shiftKey || event.metaKey || event.ctrlKey'
-        seed = [{'component': c} for c in ws_sel_get() if c in sel]
-        picked = alt.selection_point(name='picked', fields=['component'],
-                                     on='click', bind='legend', toggle=mods,
-                                     **({'value': seed} if seed else {}))
-        base = alt.Chart(frame)
-        vectors = base.mark_rule().encode(
-            x2=alt.datum(0.0),
-            x=alt.X('parallel:Q', axis=alt.Axis(title='Parallel (Re)'),
-                    scale=alt.Scale(domain=[-1.1, 1.1])),
-            y2=alt.datum(0.0),
-            y=alt.Y('perpendicular:Q', axis=alt.Axis(title='Perpendicular (Im)'),
-                    scale=alt.Scale(domain=[-1.1, 1.1])),
-            color=alt.Color('component:N', sort=order,
-                            scale=alt.Scale(domain=order)),
-            strokeWidth=alt.when(picked).then(alt.value(4.0))
-                           .otherwise(alt.value(2.5)),
-            opacity=alt.when(picked).then(alt.value(1.0))
-                       .otherwise(alt.value(0.35)),
-        ).add_params(picked)
-        labels = base.mark_text(align='left', baseline='middle', dx=7).encode(
-            x='parallel:Q', y='perpendicular:Q', text='component:N',
-            color=alt.Color('component:N', sort=order,
-                            scale=alt.Scale(domain=order)),
-            opacity=alt.when(picked).then(alt.value(1.0))
-                       .otherwise(alt.value(0.35)),
-        )
-        sign_str = '+' if ws_sign.value else '−'
-        # .interactive(): mouse-wheel zoom, drag to pan
-        chart = (vectors + labels).properties(
-            title=f'θ = {ws_theta.value}º, sign = {sign_str}',
-            width=int(ws_size.value), height=int(ws_size.value)).interactive()
-        lines = []
-        for name in sel:
-            val = data[name]
-            lines.append(
-                rf"{name} &= {latex_weight(val, prec=2)}"
-                rf" &\quad \texttt{{Pr}} &= {abs(val)**2:.2f} & \phi &= {phase_deg(val):.1f}\degree\\")
-        joined = '\n'.join(lines)
-        latex = rf"""
-    $$
-    \begin{{aligned}}
-    {joined}
-    \end{{aligned}}
-    $$
-    """
-        # mo.ui.altair_chart carries the 'picked' selection back to
-        # Python so the capture cell below can persist it
-        widget = mo.ui.altair_chart(chart, chart_selection=False,
-                                    legend_selection=False)
-        return widget, mo.hstack([widget, mo.md(latex)],
-                                 align='center', justify='start')
-
-    ws_chart, _view = _()
-    _view
-    return (ws_chart,)
-
-
-@app.cell(hide_code=True)
-def _(mo):
+def _(WASM_MODE, mo):
     # shown in the editor only: in `marimo run` the code cells below are
     # hidden, so the heading would sit over nothing
     mo.md(r"""
     ## Loaded Configuration Details
-    """) if mo.app_meta().mode != 'run' else None
+    """) if mo.app_meta().mode == 'edit' and not WASM_MODE else None
     return
 
 
 @app.cell(hide_code=True)
-def _(mo, model_pick, sim):
+def _(WASM_MODE, mo, model_pick, sim):
     # editor-only section: hidden with its heading in `marimo run`
-    mo.stop(sim is None or mo.app_meta().mode == 'run')
+    mo.stop(sim is None or WASM_MODE
+            or mo.app_meta().mode != 'edit')
     mo.accordion({str(model_pick.value.stem): mo.accordion(sim.__dict__, multiple=True, lazy=True)})
     return
 
 
 @app.cell(hide_code=True)
-def _(mo):
+def _(WASM_MODE, mo):
     # shown in the editor only: in `marimo run` the code cells below are
     # hidden, so the heading would sit over nothing
     mo.md(r"""
     ## Support Code
-    """) if mo.app_meta().mode != 'run' else None
+    """) if mo.app_meta().mode == 'edit' and not WASM_MODE else None
     return
+
+
+@app.cell(hide_code=True)
+async def initialization():
+    import cmath
+    import logging
+    import math
+    import sys
+    from pathlib import Path
+
+    import marimo as mo
+
+    # Under Pyodide (the WASM export) the quantish package, its one
+    # non-Pyodide dependency, and the model library are not on any
+    # filesystem: install the bundled wheels (deps=False — micropip
+    # would otherwise stall resolving marimo/sympy from PyPI in the
+    # browser), load the Pyodide-shipped packages the quantish package
+    # imports internally (auto-loading only covers notebook-level
+    # imports), and materialize models/ into the virtual filesystem so
+    # the Path-based model browsing below works unchanged.
+    if sys.platform == 'emscripten':
+        import json as _json
+
+        import micropip
+        from pyodide.http import pyfetch
+        _base = str(mo.notebook_location())
+        await micropip.install([
+            f'{_base}/public/wheels/addict-2.4.0-py3-none-any.whl',
+            f'{_base}/public/wheels/quantish-0.1.0-py3-none-any.whl',
+        ], deps=False)
+        await micropip.install(['sympy', 'scipy', 'networkx', 'pandas',
+                                'altair', 'pyyaml'])
+        _resp = await pyfetch(f'{_base}/public/models.json')
+        for _rel, _text in _json.loads(await _resp.string()).items():
+            _p = Path('/wasm-data/models') / _rel
+            _p.parent.mkdir(parents=True, exist_ok=True)
+            _p.write_text(_text)
+
+    import altair as alt
+    import pandas as pd
+    import yaml
+    from addict import Addict
+
+    # Inline chart data in the Vega-Lite spec. 'default' is not enough:
+    # mo.ui.altair_chart overrides any non-marimo transformer with
+    # marimo_arrow, whose virtual files are disposed on every cell re-run
+    # while the browser still requests them ("Virtual file not found"
+    # tracebacks flooding the server log). marimo respects transformers
+    # named marimo_*, and marimo_inline_csv embeds the data as a base64
+    # data: URL, so no virtual files exist at all.
+    try:
+        alt.data_transformers.enable('marimo_inline_csv')
+    except Exception:
+        try:  # marimo registers its transformers lazily
+            from marimo._plugins.ui._impl.charts.altair_transformer import (
+                register_transformers)
+            register_transformers()
+            alt.data_transformers.enable('marimo_inline_csv')
+        except Exception:  # not running under marimo at all
+            alt.data_transformers.enable('default')
+
+    # make the repo importable no matter where marimo was launched from
+    def _():
+        repo = Path(__file__).resolve().parents[1]
+        if str(repo) not in sys.path:
+            sys.path.insert(0, str(repo))
+
+    _()
+
+    import quantish.qnumber as qn
+    from quantish.qnumber import CalcMode
+
+    CalcMode.default('Float')
+    qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
+    logging.basicConfig(level=logging.WARNING)
+    logging.getLogger('quantish').setLevel(logging.WARNING)
+
+    from quantish.config_space import GatePort
+    from quantish.altair_diagram import circuit_chart
+    from quantish.display import coord_sort_key, cs_point_sort_key, gate_io
+    from quantish.epr import run_epr_experiment, supports_epr
+    from quantish.gate import FredkinGate
+    from quantish.simulation import Simulation
+    from quantish.network_graph import NetworkGraph
+
+    REPO_DIR = Path(__file__).resolve().parents[1]
+    WASM_MODE = sys.platform == 'emscripten'
+    MODELS_TOP = (Path('/wasm-data/models') if WASM_MODE
+                  else REPO_DIR / 'models')
+    return (
+        Addict,
+        CalcMode,
+        FredkinGate,
+        GatePort,
+        MODELS_TOP,
+        NetworkGraph,
+        Simulation,
+        WASM_MODE,
+        alt,
+        circuit_chart,
+        cmath,
+        coord_sort_key,
+        cs_point_sort_key,
+        gate_io,
+        math,
+        mo,
+        pd,
+        qn,
+        run_epr_experiment,
+        supports_epr,
+        yaml,
+    )
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    model_rescan = mo.ui.run_button(label='↻ rescan models')
+    # per-collection selection memory, seeded with each collection's
+    # designated default; a new collection falls back to first-by-name
+    last_collection_get, last_collection_set = mo.state('gr2026')
+    last_models_get, last_models_set = mo.state(
+        {'extras': 'AIM_Figure12', 'gr2006': 'fig4.04', 'gr2026': 'fig4.04'})
+    return (
+        last_collection_get,
+        last_collection_set,
+        last_models_get,
+        last_models_set,
+        model_rescan,
+    )
+
+
+@app.cell(hide_code=True)
+def _(MODELS_TOP, last_collection_get, last_collection_set, mo, model_rescan):
+    model_rescan  # dependency: pressing the button re-scans the directory
+
+    def _():
+        options = sorted(d.name for d in MODELS_TOP.iterdir()
+                         if d.is_dir() and d.name != 'HIDEME'
+                         and not d.name.startswith('.'))
+        default = last_collection_get() if last_collection_get() in options \
+            else options[0]
+        return mo.ui.dropdown(
+            options=options,
+            value=default,
+            label='collection',
+            on_change=lambda name: last_collection_set(name)
+            if name is not None else None,
+        )
+
+    collection_pick = _()
+    return (collection_pick,)
 
 
 @app.cell(hide_code=True)
@@ -1048,83 +926,11 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(MODELS_TOP, last_collection_get, last_collection_set, mo, model_rescan):
-    model_rescan  # dependency: pressing the button re-scans the directory
-
-    def _():
-        options = sorted(d.name for d in MODELS_TOP.iterdir()
-                         if d.is_dir() and d.name != 'HIDEME'
-                         and not d.name.startswith('.'))
-        default = last_collection_get() if last_collection_get() in options \
-            else options[0]
-        return mo.ui.dropdown(
-            options=options,
-            value=default,
-            label='collection',
-            on_change=lambda name: last_collection_set(name)
-            if name is not None else None,
-        )
-
-    collection_pick = _()
-    return (collection_pick,)
-
-
-@app.cell(hide_code=True)
 def _(mo):
-    model_rescan = mo.ui.run_button(label='↻ rescan models')
-    # per-collection selection memory, seeded with each collection's
-    # designated default; a new collection falls back to first-by-name
-    last_collection_get, last_collection_set = mo.state('gr2026')
-    last_models_get, last_models_set = mo.state(
-        {'extras': 'AIM_Figure12', 'gr2006': 'fig4.04', 'gr2026': 'fig4.04'})
-    return (
-        last_collection_get,
-        last_collection_set,
-        last_models_get,
-        last_models_set,
-        model_rescan,
-    )
-
-
-@app.cell(hide_code=True)
-def _(FredkinGate, qn):
-    def cpair(g: FredkinGate, w:qn.Complex, twist=False):
-        """
-        From AIM-1026a: the four split components of weight w.
-        Values are precomputed for speed. twist=True gives the minus-sign
-        column (cos/sin of theta - pi/2, i.e. sin/cos of theta).
-        """
-        if not twist:
-            c2a = w * g.cos2_theta
-            c2b = w * g.cos_sin_theta
-            c3a = w * g.sin2_theta
-            c3b = w * g.mcos_sin_theta
-        else:
-            c2a = w * g.cos2_twist
-            c2b = w * g.cos_sin_twist
-            c3a = w * g.sin2_twist
-            c3b = w * g.mcos_sin_twist
-        return c2a, c2b, c3a, c3b
-
-    return (cpair,)
-
-
-@app.cell(hide_code=True)
-def _(ws_chart, ws_sel_get, ws_sel_set):
-    # Persist the explorer's mouse selection. A freshly rebuilt chart
-    # reports no selection until clicked, so an empty report never clears
-    # a remembered selection — clearing happens by toggling items off.
-    def _():
-        try:
-            comps = tuple(ws_chart.selections.get('picked', {})
-                          .get('component', ()))
-        except Exception:  # noqa: BLE001 — selection shape varies by marimo version
-            return
-        if comps and comps != tuple(ws_sel_get()):
-            ws_sel_set(comps)
-
-    _()
-    return
+    # Only shown once the model has been run (the plain wiring view is
+    # all there is before that); its state persists across runs.
+    show_values = mo.ui.switch(value=True, label='show values')
+    return (show_values,)
 
 
 @app.cell(hide_code=True)
@@ -1304,6 +1110,140 @@ def _(cmath, mo, qn):
 
 
 @app.cell(hide_code=True)
+def _(mo):
+    mc_trials = mo.ui.slider(
+        steps=[100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000,
+               100000, 200000, 500000, 1000000],
+        value=20000, label='trials', show_value=True)
+    mc_trials_text = mo.ui.text(value='', placeholder='custom trial count')
+    # terminal is the faithful simulation of a real experiment and the
+    # default; path (per-stage collapse) is opt-in for comparison
+    mc_mode = mo.ui.dropdown(options=['terminal', 'path', 'both'],
+                             value='terminal', label='mode')
+    mc_seed = mo.ui.number(value=42, label='seed')
+    mc_button = mo.ui.run_button(label='Run Monte Carlo')
+    mc_cancel = mo.ui.run_button(label='Cancel')
+    # ticks the progress display while a sampling job runs; rendered
+    # (and therefore ticking) only during a run
+    mc_refresh = mo.ui.refresh(default_interval='400ms')
+    return (
+        mc_button,
+        mc_cancel,
+        mc_mode,
+        mc_refresh,
+        mc_seed,
+        mc_trials,
+        mc_trials_text,
+    )
+
+
+@app.cell(hide_code=True)
+def _():
+    # shared, mutable job slot for the background Monte Carlo worker —
+    # plain dict on purpose: the worker thread updates it and the
+    # refresh-driven display cell polls it (marimo state setters must
+    # not be called from threads)
+    mc_job_slot = {}
+    return (mc_job_slot,)
+
+
+@app.cell(hide_code=True)
+def _(
+    mc_button,
+    mc_job_slot,
+    mc_mode,
+    mc_seed,
+    mc_trials,
+    mc_trials_text,
+    mo,
+    sim,
+):
+    # Pressing Run starts the sampling in a background thread, chunk by
+    # chunk, so the app stays responsive, progress is visible, and
+    # Cancel can stop it between chunks (keeping the partial tallies).
+    # Under Pyodide (the WASM export) threads cannot start, so the same
+    # chunked run happens synchronously with marimo's progress bar
+    # instead (no Cancel — closing the tab is the escape hatch).
+    mo.stop(sim is None)
+    if mc_button.value:
+        import random as _random
+        import sys as _sys
+        import threading
+
+        _prev = mc_job_slot.get('job')
+        if _prev is not None and not _prev['done']:
+            _prev['cancel'].set()
+
+        try:  # the text entry, when it parses, overrides the slider
+            _n = max(1, int(mc_trials_text.value.strip()))
+        except ValueError:
+            _n = int(mc_trials.value)
+        _modes = [m for m in ('terminal', 'path')
+                  if mc_mode.value in (m, 'both')]
+        _job = {'cancel': threading.Event(), 'done': False,
+                'progress': 0, 'total': _n * len(_modes),
+                'n_trials': _n, 'modes': _modes, 'sim': sim,
+                'results': None, 'n_done': {}, 'error': None}
+        mc_job_slot['job'] = _job
+
+        def _worker(tick=None):
+            from collections import Counter
+            from quantish.montecarlo import (predicted_distribution,
+                                             sample_paths, sample_terminal)
+            try:
+                rng = _random.Random(int(mc_seed.value))
+                res = {'predicted': predicted_distribution(sim.result_space)}
+                chunk_size = 2000
+                done = 0
+                for m in _job['modes']:
+                    tally = Counter()
+                    dead = 0
+                    remaining = _n
+                    while remaining and not _job['cancel'].is_set():
+                        k = min(chunk_size, remaining)
+                        if m == 'terminal':
+                            tally += sample_terminal(sim.result_space, k, rng)
+                        else:
+                            t, d = sample_paths(sim.initial_point,
+                                                len(sim.run_stages), k, rng)
+                            tally += t
+                            dead += d
+                        remaining -= k
+                        done += k
+                        _job['progress'] = done
+                        if tick is not None:
+                            tick(k)
+                    res[m] = tally
+                    if m == 'path':
+                        res['path_dead_ends'] = dead
+                    _job['n_done'][m] = _n - remaining
+                _job['results'] = res
+            except Exception as exc:  # noqa: BLE001 — surface in the display
+                _job['error'] = repr(exc)
+            finally:
+                _job['done'] = True
+
+        if _sys.platform == 'emscripten':
+            with mo.status.progress_bar(total=_job['total'],
+                                        title='sampling…') as _bar:
+                _worker(tick=_bar.update)
+        else:
+            threading.Thread(target=_worker, daemon=True).start()
+    return
+
+
+@app.cell(hide_code=True)
+def _(mc_cancel, mc_job_slot):
+    # the Cancel button flags the running job; the worker stops at the
+    # next chunk boundary and reports its partial tallies
+    if mc_cancel.value:
+        _job = mc_job_slot.get('job')
+        if _job is not None and not _job['done']:
+            _job['cancel'].set()
+    return
+
+
+@app.cell(hide_code=True)
 def _(base_config, mo):
     # Sweep-angle entries, reseeded from the model's qa/qb/qc variables
     # (or the canonical 0, pi/8, pi/4) when the model changes. Same input
@@ -1332,110 +1272,252 @@ def _(mo):
     return epr_button, epr_trials
 
 
+@app.cell(hide_code=True)
+def _(
+    base_env,
+    epr_angle_elems,
+    epr_button,
+    epr_trials,
+    math,
+    md_table,
+    mo,
+    qn,
+    run_epr_experiment,
+    sim_model,
+    supports_epr,
+    units_pick,
+):
+    def _():
+        if not supports_epr(sim_model):
+            return None
+        if not epr_button.value:
+            return mo.md('_press **Run EPR experiment** to sweep_')
 
+        def parse_angle(raw):
+            # same convention as the gate-angle entries: a bare number is in
+            # the selected units, anything else a symbolic radian expression
+            txt = (raw or '').strip().rstrip('º°').strip()
+            try:
+                num = float(txt)
+                return qn.qify(num if units_pick.value == 'radians'
+                               else math.radians(num))
+            except ValueError:
+                # symbolic radian expression; may use model variables
+                return qn.qify(txt, base_env)
+
+        try:
+            values = {k: parse_angle(v)
+                      for k, v in epr_angle_elems.value.items()}
+        except Exception as exc:  # noqa: BLE001 — show, don't crash the app
+            return mo.md(f'**unparseable sweep angle** — {exc}')
+        if len({round(float(v) % math.pi, 9) for v in values.values()}) < 3:
+            return mo.md('**sweep angles must be distinct (mod π)** — equal '
+                         'angles make cells compare an angle with itself and '
+                         'the inequalities degenerate')
+        res = run_epr_experiment(sim_model, n_trials=int(epr_trials.value), seed=1,
+                                 values=values)
+        labels = list(res['values'].keys())
+
+        def grid_table(getter, fmt='{:.4f}'):
+            rows = [[f'**{l1}**'] + [fmt.format(getter(res['grid'][(l1, l2)]))
+                                     for l2 in labels]
+                    for l1 in labels]
+            return md_table([r'$\theta_1 \backslash \theta_2$'] + labels, rows)
+
+        parts = [
+            'sweep angles: ' + ', '.join(
+                f'{k} = {math.degrees(float(v)):.1f}º'
+                for k, v in values.items()),
+            '**observed discrepancy** (sampled: terminal draws from each '
+            'cell&rsquo;s final superposition)'
+            if epr_trials.value else '**exact simulated discrepancy**',
+            grid_table(lambda c: c.get('sampled', c['exact'])),
+            r'**analytical** $\sin^2(\theta_1-\theta_2)$',
+            grid_table(lambda c: c['analytical']),
+            '**classical hidden-variable prediction**',
+            grid_table(lambda c: c['classical']),
+        ]
+        bell, bell_at = res['bell_exact']
+        chsh, chsh_at = res['chsh_exact']
+        parts.append(
+            f'Bell excess (exact): **{bell:+.4f}** at {bell_at} — '
+            f'{"**VIOLATED**" if bell > 1e-9 else "satisfied"}  \n'
+            f'CHSH $|S|$ (exact): **{chsh:.4f}** at {chsh_at} — '
+            f'{"**VIOLATED**" if chsh > 2 + 1e-9 else "satisfied"}')
+        return mo.md('\n\n'.join(parts))
+
+    epr_view = _()
+    return (epr_view,)
 
 
 @app.cell(hide_code=True)
 def _(mo):
-    # Only shown once the model has been run (the plain wiring view is
-    # all there is before that); its state persists across runs.
-    show_values = mo.ui.switch(value=True, label='show values')
-    return (show_values,)
-
-
-@app.cell(hide_code=True)
-def _():
-    # shared, mutable job slot for the background Monte Carlo worker —
-    # plain dict on purpose: the worker thread updates it and the
-    # refresh-driven display cell polls it (marimo state setters must
-    # not be called from threads)
-    mc_job_slot = {}
-    return (mc_job_slot,)
+    ws_theta = mo.ui.slider(-90, 90, step=5, value=30, label='θ (º)',
+                            show_value=True)
+    ws_sign = mo.ui.switch(value=True, label='sign + (off = −)')
+    ws_wmag = mo.ui.slider(0.0, 1.0, step=0.05, value=1.0, label='|w|',
+                           show_value=True)
+    ws_wphase = mo.ui.slider(-180, 180, step=5, value=0, label='φ(w) (º)',
+                             show_value=True)
+    ws_components = mo.ui.multiselect(
+        options=['c2', 'c3', 'c2a', 'c2b', 'c3a', 'c3b'],
+        value=['c2', 'c3', 'c2a', 'c2b', 'c3a', 'c3b'],
+        label='components')
+    # one value drives both chart dimensions, so the 1:1 aspect (which
+    # keeps the unit circle circular) can't be broken by stretching
+    ws_size = mo.ui.slider(300, 1000, step=25, value=500,
+                           label='chart size (px)', show_value=True)
+    # the mouse selection, persisted across parameter changes (the chart
+    # is rebuilt on every slider move; the param is reseeded from here)
+    ws_sel_get, ws_sel_set = mo.state(())
+    return (
+        ws_components,
+        ws_sel_get,
+        ws_sel_set,
+        ws_sign,
+        ws_size,
+        ws_theta,
+        ws_wmag,
+        ws_wphase,
+    )
 
 
 @app.cell(hide_code=True)
 def _(
-    mc_button,
-    mc_job_slot,
-    mc_mode,
-    mc_seed,
-    mc_trials,
-    mc_trials_text,
+    FredkinGate,
+    alt,
+    cmath,
+    cpair,
+    latex_weight,
+    math,
     mo,
-    sim,
+    pd,
+    phase_deg,
+    qn,
+    ws_components,
+    ws_sel_get,
+    ws_sign,
+    ws_size,
+    ws_theta,
+    ws_wmag,
+    ws_wphase,
 ):
-    # Pressing Run starts the sampling in a background thread, chunk by
-    # chunk, so the app stays responsive, progress is visible, and
-    # Cancel can stop it between chunks (keeping the partial tallies).
-    mo.stop(sim is None)
-    if mc_button.value:
-        import random as _random
-        import threading
+    def _():
+        gate = FredkinGate('ws', qn.qify(math.radians(ws_theta.value)))
+        w = ws_wmag.value * cmath.exp(1j * math.radians(ws_wphase.value))
+        c2a, c2b, c3a, c3b = (complex(x) for x in
+            cpair(gate, qn.Complex(w), twist=not ws_sign.value))
+        data = {'c2': c2a + c2b, 'c3': c3a + c3b,
+                'c2a': c2a, 'c2b': c2b, 'c3a': c3a, 'c3b': c3b}
+        order = ['c2', 'c3', 'c2a', 'c2b', 'c3a', 'c3b']
+        sel = [c for c in order if c in ws_components.value]
+        frame = pd.DataFrame({
+            'parallel': [data[c].real for c in sel],
+            'perpendicular': [data[c].imag for c in sel],
+            'component': sel,
+        })
+        # Finder-style selection: click a vector or a legend entry to
+        # make it the selection; shift/cmd/ctrl-click toggles items in and
+        # out; click empty space to clear. One selection with on='click'
+        # AND bind='legend' receives both event streams (verified in the
+        # compiled Vega), so the legend highlighting tracks mark clicks
+        # and vice versa — no difference which you click.
+        mods = 'event.shiftKey || event.metaKey || event.ctrlKey'
+        seed = [{'component': c} for c in ws_sel_get() if c in sel]
+        picked = alt.selection_point(name='picked', fields=['component'],
+                                     on='click', bind='legend', toggle=mods,
+                                     **({'value': seed} if seed else {}))
+        base = alt.Chart(frame)
+        vectors = base.mark_rule().encode(
+            x2=alt.datum(0.0),
+            x=alt.X('parallel:Q', axis=alt.Axis(title='Parallel (Re)'),
+                    scale=alt.Scale(domain=[-1.1, 1.1])),
+            y2=alt.datum(0.0),
+            y=alt.Y('perpendicular:Q', axis=alt.Axis(title='Perpendicular (Im)'),
+                    scale=alt.Scale(domain=[-1.1, 1.1])),
+            color=alt.Color('component:N', sort=order,
+                            scale=alt.Scale(domain=order)),
+            strokeWidth=alt.when(picked).then(alt.value(4.0))
+                           .otherwise(alt.value(2.5)),
+            opacity=alt.when(picked).then(alt.value(1.0))
+                       .otherwise(alt.value(0.35)),
+        ).add_params(picked)
+        labels = base.mark_text(align='left', baseline='middle', dx=7).encode(
+            x='parallel:Q', y='perpendicular:Q', text='component:N',
+            color=alt.Color('component:N', sort=order,
+                            scale=alt.Scale(domain=order)),
+            opacity=alt.when(picked).then(alt.value(1.0))
+                       .otherwise(alt.value(0.35)),
+        )
+        sign_str = '+' if ws_sign.value else '−'
+        # .interactive(): mouse-wheel zoom, drag to pan
+        chart = (vectors + labels).properties(
+            title=f'θ = {ws_theta.value}º, sign = {sign_str}',
+            width=int(ws_size.value), height=int(ws_size.value)).interactive()
+        lines = []
+        for name in sel:
+            val = data[name]
+            lines.append(
+                rf"{name} &= {latex_weight(val, prec=2)}"
+                rf" &\quad \texttt{{Pr}} &= {abs(val)**2:.2f} & \phi &= {phase_deg(val):.1f}\degree\\")
+        joined = '\n'.join(lines)
+        latex = rf"""
+    $$
+    \begin{{aligned}}
+    {joined}
+    \end{{aligned}}
+    $$
+    """
+        # mo.ui.altair_chart carries the 'picked' selection back to
+        # Python so the capture cell below can persist it
+        widget = mo.ui.altair_chart(chart, chart_selection=False,
+                                    legend_selection=False)
+        return widget, mo.hstack([widget, mo.md(latex)],
+                                 align='center', justify='start')
 
-        _prev = mc_job_slot.get('job')
-        if _prev is not None and not _prev['done']:
-            _prev['cancel'].set()
+    ws_chart, ws_view = _()
+    return ws_chart, ws_view
 
-        try:  # the text entry, when it parses, overrides the slider
-            _n = max(1, int(mc_trials_text.value.strip()))
-        except ValueError:
-            _n = int(mc_trials.value)
-        _modes = [m for m in ('terminal', 'path')
-                  if mc_mode.value in (m, 'both')]
-        _job = {'cancel': threading.Event(), 'done': False,
-                'progress': 0, 'total': _n * len(_modes),
-                'n_trials': _n, 'modes': _modes, 'sim': sim,
-                'results': None, 'n_done': {}, 'error': None}
-        mc_job_slot['job'] = _job
 
-        def _worker():
-            from collections import Counter
-            from quantish.montecarlo import (predicted_distribution,
-                                             sample_paths, sample_terminal)
-            try:
-                rng = _random.Random(int(mc_seed.value))
-                res = {'predicted': predicted_distribution(sim.result_space)}
-                chunk_size = 2000
-                done = 0
-                for m in _job['modes']:
-                    tally = Counter()
-                    dead = 0
-                    remaining = _n
-                    while remaining and not _job['cancel'].is_set():
-                        k = min(chunk_size, remaining)
-                        if m == 'terminal':
-                            tally += sample_terminal(sim.result_space, k, rng)
-                        else:
-                            t, d = sample_paths(sim.initial_point,
-                                                len(sim.run_stages), k, rng)
-                            tally += t
-                            dead += d
-                        remaining -= k
-                        done += k
-                        _job['progress'] = done
-                    res[m] = tally
-                    if m == 'path':
-                        res['path_dead_ends'] = dead
-                    _job['n_done'][m] = _n - remaining
-                _job['results'] = res
-            except Exception as exc:  # noqa: BLE001 — surface in the display
-                _job['error'] = repr(exc)
-            finally:
-                _job['done'] = True
+@app.cell(hide_code=True)
+def _(ws_chart, ws_sel_get, ws_sel_set):
+    # Persist the explorer's mouse selection. A freshly rebuilt chart
+    # reports no selection until clicked, so an empty report never clears
+    # a remembered selection — clearing happens by toggling items off.
+    def _():
+        try:
+            comps = tuple(ws_chart.selections.get('picked', {})
+                          .get('component', ()))
+        except Exception:  # noqa: BLE001 — selection shape varies by marimo version
+            return
+        if comps and comps != tuple(ws_sel_get()):
+            ws_sel_set(comps)
 
-        threading.Thread(target=_worker, daemon=True).start()
+    _()
     return
 
 
 @app.cell(hide_code=True)
-def _(mc_cancel, mc_job_slot):
-    # the Cancel button flags the running job; the worker stops at the
-    # next chunk boundary and reports its partial tallies
-    if mc_cancel.value:
-        _job = mc_job_slot.get('job')
-        if _job is not None and not _job['done']:
-            _job['cancel'].set()
-    return
+def _(FredkinGate, qn):
+    def cpair(g: FredkinGate, w:qn.Complex, twist=False):
+        """
+        From AIM-1026a: the four split components of weight w.
+        Values are precomputed for speed. twist=True gives the minus-sign
+        column (cos/sin of theta - pi/2, i.e. sin/cos of theta).
+        """
+        if not twist:
+            c2a = w * g.cos2_theta
+            c2b = w * g.cos_sin_theta
+            c3a = w * g.sin2_theta
+            c3b = w * g.mcos_sin_theta
+        else:
+            c2a = w * g.cos2_twist
+            c2b = w * g.cos_sin_twist
+            c3a = w * g.sin2_twist
+            c3b = w * g.mcos_sin_twist
+        return c2a, c2b, c3a, c3b
+
+    return (cpair,)
 
 
 if __name__ == "__main__":
