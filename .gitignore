@@ -37,3 +37,4 @@ __pycache__/
 __marimo__/
 *~
 .DS_Store
+csv/

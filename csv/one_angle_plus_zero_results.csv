@@ -1,5 +1,0 @@
-step,p1.sign,p1.position,weight,probability
-2,+,g1.upper_in>g1.upper_out,3/4,9/16
-2,-,g1.lower_in>g1.lower_out,sqrt(3)*I/4,3/16
-2,+,g1.lower_in>g1.lower_out,1/4,1/16
-2,-,g1.upper_in>g1.upper_out,-sqrt(3)*I/4,3/16

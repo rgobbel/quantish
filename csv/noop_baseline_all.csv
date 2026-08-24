@@ -1,7 +1,0 @@
-step,part1.sign,part1.position,weight,probability
-0,+,ORIGIN>gate1.upper_in,1,1
-1,+,gate1.upper_out>gate2.upper_in,3/4,9/16
-1,-,gate1.upper_out>gate2.upper_in,sqrt(3)*I/4,3/16
-1,+,gate1.lower_out>gate2.lower_in,1/4,1/16
-1,-,gate1.lower_out>gate2.lower_in,-sqrt(3)*I/4,3/16
-2,+,gate2.upper_in>gate2.upper_out,1,1

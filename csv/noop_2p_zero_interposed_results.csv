@@ -1,9 +1,0 @@
-step,part1.sign,part1.weight,part1.prob,part1.position,part2.sign,part2.weight,part2.prob,part2.position
-5,+,(0.24999999999999992+0j),0.06249999999999996,gate2.upper_in>gate2.upper_out,+,(0.9999999999999999+0j),0.9999999999999998,gateB.upper_in>gateB.upper_out
-5,-,0.4330127018922193j,0.18749999999999997,gate2.upper_in>gate2.upper_out,+,(0.9999999999999999+0j),0.9999999999999998,gateB.upper_in>gateB.upper_out
-5,+,(0.7499999999999999+0j),0.5624999999999998,gate2.lower_in>gate2.lower_out,+,(0.9999999999999999+0j),0.9999999999999998,gateB.upper_in>gateB.upper_out
-5,-,-0.43301270189221924j,0.18749999999999992,gate2.lower_in>gate2.lower_out,+,(0.9999999999999999+0j),0.9999999999999998,gateB.upper_in>gateB.upper_out
-5,+,(0.24999999999999992+0j),0.06249999999999996,gate2.upper_in>gate2.upper_out,-,5.551115123125783e-17j,3.0814879110195774e-33,gateB.upper_in>gateB.upper_out
-5,-,0.4330127018922193j,0.18749999999999997,gate2.upper_in>gate2.upper_out,-,5.551115123125783e-17j,3.0814879110195774e-33,gateB.upper_in>gateB.upper_out
-5,+,(0.7499999999999999+0j),0.5624999999999998,gate2.lower_in>gate2.lower_out,-,5.551115123125783e-17j,3.0814879110195774e-33,gateB.upper_in>gateB.upper_out
-5,-,-0.43301270189221924j,0.18749999999999992,gate2.lower_in>gate2.lower_out,-,5.551115123125783e-17j,3.0814879110195774e-33,gateB.upper_in>gateB.upper_out

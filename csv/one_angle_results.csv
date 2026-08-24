@@ -1,2 +1,0 @@
-step,p1.sign,p1.position,weight,probability
-1,+,g0.upper_in>g0.upper_out,(1+0j),1

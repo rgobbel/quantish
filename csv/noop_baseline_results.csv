@@ -1,2 +1,0 @@
-step,part1.sign,part1.position,weight,probability
-2,+,gate2.upper_in>gate2.upper_out,1,1
