@@ -436,6 +436,17 @@ def _(mo):
 
 @app.cell(hide_code=True)
 def _(EDITOR_UI, mo):
+    # the end-of-page mark (Ann's request): a small flourish so readers
+    # know nothing further is loading. The editor genuinely has more
+    # below (support code), so it appears in the app views only.
+    mo.Html('<div style="text-align: center; color: #000; '
+            'font-size: 1.6em; padding: 1.5em 0 1em;">&#8258;</div>'
+            ) if not EDITOR_UI else None
+    return
+
+
+@app.cell(hide_code=True)
+def _(EDITOR_UI, mo):
     # shown in the editor only: in `marimo run` the code cells below
     # are hidden, so the heading would sit over nothing
     mo.md(r"""
