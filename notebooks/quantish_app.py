@@ -69,7 +69,6 @@ def initialization():
     from quantish.epr import run_epr_experiment, supports_epr
     from quantish.gate import FredkinGate
     from quantish.simulation import Simulation
-    from quantish.mermaid_diagram import diagram
     from quantish.network_graph import NetworkGraph
 
     REPO_DIR = Path(__file__).resolve().parents[1]
@@ -1253,20 +1252,6 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(mo):
-    # One zoom slider per diagram, defined together so a zoom change
-    # re-runs only the cell that displays that diagram.
-    def _():
-        def zslider():
-            return mo.ui.slider(0.5, 3.0, step=0.25, value=1.0,
-                                label='zoom', show_value=True)
-        return zslider(), zslider(), zslider()
-
-    tikz_zoom, mermaid_zoom, graph_zoom = _()
-    return
-
-
-@app.cell(hide_code=True)
 def _(cmath, mo, qn):
     def latex_weight(w, prec=4, max_len=40) -> str:
         # In Symbolic mode, render the exact sympy expression as LaTeX —
@@ -1315,29 +1300,6 @@ def _(cmath, mo, qn):
         return '\n'.join(lines)
 
     _ = mo.md('')  # helpers only
-    def inline_png(png_bytes):
-        # a data-URI <img> instead of marimo's shared-memory virtual
-        # files: re-running a cell disposes the old virtual file while the
-        # browser still holds its URL, producing FileNotFoundError noise
-        # in the server log (same reason the Altair data is inlined)
-        import base64
-        b64 = base64.b64encode(png_bytes).decode()
-        return mo.Html(f'<img src="data:image/png;base64,{b64}">')
-
-    def zoomable(obj, factor):
-        # Width-based zoom: widen an inner container and make the media
-        # fill it. CSS zoom fails here because mo.image and Mermaid SVGs
-        # are max-width-clamped to the container — the clamp scales along
-        # with the zoom, so only the caption text grew. Full height, no
-        # inner vertical scrolling; zoomed-in content scrolls sideways.
-        return mo.Html(
-            f'<div style="overflow-x:auto">'
-            f'<div class="qzoom" style="width:{factor * 100:.0f}%">'
-            f'<style>.qzoom img, .qzoom svg '
-            f'{{ width:100% !important; max-width:none !important; '
-            f'height:auto !important; }}</style>'
-            f'{mo.as_html(obj).text}</div></div>')
-
     return latex_weight, math_weight, md_table, phase_deg
 
 
