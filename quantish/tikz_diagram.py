@@ -614,18 +614,29 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
         return None
 
     # Entry corridors: the approach segment directly in front of every
-    # linked input port — y = the port's row, x spanning from the start of
-    # the port's entry gap to the port edge. A foreign stub parked along
-    # this segment walls off the port: the wire that must terminate there
-    # has no way in except on top of it. Reserved up front (keyed by the
-    # owning link, which is of course allowed to use its own corridor) so
-    # every other wire's stubs keep clear.
+    # linked input port — y = the port's row, x spanning the end of the
+    # port's entry gap and on to the port edge. A foreign stub parked
+    # along this final approach walls off the port: the wire that must
+    # terminate there has no way in except on top of it. One further
+    # left is fine — the entering wire's channel still fits between the
+    # stub's end and the port — so the reserve starts _APPROACH_CLEAR
+    # before the routable gap ends (never before the gap starts).
+    # Reserving whole corridors instead would wall off every port that
+    # shares a row with a port in the next column, which wire pairs that
+    # swap rows between adjacent columns make unavoidable. Reserved up
+    # front (keyed by the owning link, which is of course allowed to use
+    # its own corridor) so every other wire's stubs keep clear. The free
+    # left margin is a quarter of the routable gap, at most
+    # _APPROACH_CLEAR.
+    _APPROACH_CLEAR = 0.6
     entry_reserves: list[tuple[tuple, float, float, float]] = []
     for _src, _dst in parsed.links.items():
         _d_xy, _d_col = dst_xy_col(circuit, L, _dst, delays)
         if _d_xy is None or _d_col is None:
             continue
-        _rx_lo, _ = gap_x_range(max(-1, _d_col - 1))
+        _gap_lo, _gap_hi = gap_x_range(max(-1, _d_col - 1))
+        _rx_lo = max(_gap_lo + (_gap_hi - _gap_lo) / 4,
+                     _gap_hi - _APPROACH_CLEAR)
         entry_reserves.append(((_src, _dst), _d_xy[1], _rx_lo, _d_xy[0]))
 
     cur_link: list = [None]   # the link being routed, exempt from its own reserve
@@ -876,7 +887,10 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
             y_lo, y_hi = min(sy, dy), max(sy, dy)
             picked_cx = None
             tried = set()
-            for _attempt in range(8):
+            # walk the full candidate ladder: a reserve near the gap's
+            # preferred (right) end can push the only workable channel
+            # x's far to the left
+            for _attempt in range(32):
                 # In the particle corridor (gap == -1), spread successive
                 # particle wires so they cascade rather than stack on the
                 # leftmost slot.
