@@ -37,7 +37,11 @@ async def initialization():
     # (auto-loading only covers notebook-level imports). This app needs
     # no model files: its circuits are built in code.
     if sys.platform == 'emscripten':
-        import micropip
+        # dynamic import: a literal `import micropip` makes server-side
+        # marimo install a mock micropip meta-path finder whose globals
+        # die with the notebook session, breaking all later imports
+        import importlib
+        micropip = importlib.import_module('micropip')
         _base = str(mo.notebook_location())
         await micropip.install([
             f'{_base}/public/wheels/addict-2.4.0-py3-none-any.whl',

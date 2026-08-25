@@ -759,7 +759,11 @@ async def initialization():
     if sys.platform == 'emscripten':
         import json as _json
 
-        import micropip
+        # dynamic import: a literal `import micropip` makes server-side
+        # marimo install a mock micropip meta-path finder whose globals
+        # die with the notebook session, breaking all later imports
+        import importlib
+        micropip = importlib.import_module('micropip')
         from pyodide.http import pyfetch
         _base = str(mo.notebook_location())
         await micropip.install([

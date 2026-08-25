@@ -18,14 +18,20 @@ WHEEL=$(ls -t dist/quantish-*.whl | head -1)
 (cd notebooks && uv run marimo export html-wasm double_slit_app.py -o "$OUT/double_slit_app" --mode run -f)
 (cd notebooks && uv run marimo export html-wasm quantish_app.py -o "$OUT/quantish_app_edit" --mode edit -f)
 (cd notebooks && uv run marimo export html-wasm double_slit_app.py -o "$OUT/double_slit_app_edit" --mode edit -f)
-# the exporter pins auto_instantiate off for editable exports; we want
-# the notebooks to run on load
-python3 - "$OUT/quantish_app_edit/index.html" "$OUT/double_slit_app_edit/index.html" <<'PYPATCH'
+# Two config patches on the exported pages. The exporter pins
+# auto_instantiate off for editable exports; we want the notebooks to
+# run on load. And it bakes in theme "system", which hands dark-mode
+# visitors marimo's dark theme under stylesheets tuned for the light
+# one — pin every app to light.
+python3 - "$OUT"/quantish_app*/index.html "$OUT"/double_slit_app*/index.html <<'PYPATCH'
+import os
 import sys
 for path in sys.argv[1:]:
     with open(path) as f:
         t = f.read()
-    t = t.replace('"auto_instantiate": false', '"auto_instantiate": true')
+    t = t.replace('"theme": "system"', '"theme": "light"')
+    if os.path.dirname(path).endswith('_edit'):
+        t = t.replace('"auto_instantiate": false', '"auto_instantiate": true')
     with open(path, 'w') as f:
         f.write(t)
 PYPATCH
