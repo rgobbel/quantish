@@ -105,11 +105,39 @@ const C = {
   particleFill: '#f4f4f6', particleStroke: '#8b93a0',
   wire: '#22314a', select: '#d97706', target: '#16a34a',
 };
-const SUB = {'0':'₀','1':'₁','2':'₂','3':'₃',
-             '4':'₄','5':'₅','6':'₆','7':'₇',
-             '8':'₈','9':'₉'};
-const subName = (s) => s.replace(/(?<=[A-Za-zφ])(\d+)/g,
-  (m) => [...m].map((c) => SUB[c] ?? c).join(''));
+const SUB = {'0':'₀','1':'₁','2':'₂','3':'₃','4':'₄','5':'₅',
+             '6':'₆','7':'₇','8':'₈','9':'₉',
+             'a':'ₐ','e':'ₑ','h':'ₕ','i':'ᵢ','j':'ⱼ','k':'ₖ',
+             'l':'ₗ','m':'ₘ','n':'ₙ','o':'ₒ','p':'ₚ','r':'ᵣ',
+             's':'ₛ','t':'ₜ','u':'ᵤ','v':'ᵥ','x':'ₓ',
+             'β':'ᵦ','γ':'ᵧ','ρ':'ᵨ','φ':'ᵩ','χ':'ᵪ'};
+const SUP = {'0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵',
+             '6':'⁶','7':'⁷','8':'⁸','9':'⁹','+':'⁺','-':'⁻',
+             '=':'⁼','(':'⁽',')':'⁾','n':'ⁿ','i':'ⁱ'};
+// the same LaTeX subset the Python side renders (util.fmt_label);
+// TikZ keeps real LaTeX and does not use this
+const MATHCMD = {alpha:'α',beta:'β',gamma:'γ',delta:'δ',epsilon:'ε',
+  zeta:'ζ',eta:'η',theta:'θ',iota:'ι',kappa:'κ',lambda:'λ',mu:'μ',
+  nu:'ν',xi:'ξ',pi:'π',rho:'ρ',sigma:'σ',tau:'τ',upsilon:'υ',
+  phi:'φ',varphi:'φ',chi:'χ',psi:'ψ',omega:'ω',
+  Gamma:'Γ',Delta:'Δ',Theta:'Θ',Lambda:'Λ',Xi:'Ξ',Pi:'Π',Sigma:'Σ',
+  Phi:'Φ',Psi:'Ψ',Omega:'Ω',
+  angle:'∠',times:'×',cdot:'·',pm:'±',mp:'∓',le:'≤',leq:'≤',
+  ge:'≥',geq:'≥',ne:'≠',neq:'≠',approx:'≈',infty:'∞',sqrt:'√',
+  sum:'∑',prod:'∏',int:'∫',partial:'∂',to:'→',rightarrow:'→',
+  leftarrow:'←',ldots:'…',dots:'…',circ:'°',degree:'°'};
+const _subStr = (s) => [...s].map((c) => SUB[c] ?? c).join('');
+const _supStr = (s) => [...s].map((c) => SUP[c] ?? c).join('');
+const subName = (s) => String(s)
+  .replace(/\$([^$]+)\$/g, (m, seg) => seg
+    .replace(/\\([a-zA-Z]+)/g, (c, w) => MATHCMD[w] ?? c)
+    .replace(/_\{([^{}]*)\}/g, (c, w) => _subStr(w))
+    .replace(/_(\S)/g, (c, w) => _subStr(w))
+    .replace(/\^\{([^{}]*)\}/g, (c, w) => _supStr(w))
+    .replace(/\^(\S)/g, (c, w) => _supStr(w))
+    .replace(/[{}]/g, ''))
+  .replace(/(?<=[A-Za-zφ])(\d+)/g,
+           (m) => [...m].map((c) => SUB[c] ?? c).join(''));
 
 // phase plates and delay gates are compact one-wire gates; everything
 // geometric branches through these. A delay gate has no ports at all —
@@ -569,7 +597,7 @@ function render({ model, el }) {
         grp.appendChild(h('text', {
           x: gd.x + w0 / 2, y: gd.y + h0 - 8, 'text-anchor': 'middle',
           'font-size': 11.5, fill: '#000',
-        }, angleLabel(name, gd.phase)));
+        }, subName(angleLabel(name, gd.phase))));
       } else {
         grp.appendChild(h('text', {
           x: gd.x + w0 / 2, y: gd.y + 18, 'text-anchor': 'middle',
@@ -579,7 +607,7 @@ function render({ model, el }) {
         grp.appendChild(h('text', {
           x: gd.x + w0 / 2, y: gd.y + 37, 'text-anchor': 'middle',
           'font-size': 11.5, fill: '#000',
-        }, angleLabel(name, gd.angle)));
+        }, subName(angleLabel(name, gd.angle))));
         // the network diagram's dotted straight-and-crossed switch
         // lines between the two switch-wire rows
         const xA = gd.x + 46, xB = gd.x + w0 - 46;

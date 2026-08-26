@@ -2,8 +2,8 @@ from pathlib import Path
 
 from quantish.display import pos_value_str
 from quantish.simulation import Simulation
-from quantish.util import (SEP, angle_label, math_to_unicode,
-                           parse_position, subscript_digits)
+from quantish.util import (SEP, angle_label, fmt_label,
+                           math_to_unicode, parse_position)
 import quantish.qnumber as qn
 import python_mermaid.diagram as pmd
 import python_mermaid.link as pml
@@ -125,7 +125,7 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
     def wire_label(source):
         # the model's label for the wire leaving `source` (the book's
         # w₂, w₂ₐ... names), shown as the mermaid edge label
-        return subscript_digits(_wire_labels.get(source, ''))
+        return fmt_label(_wire_labels.get(source, ''))
 
     mermaid_nodes = {}
     if has_run:
@@ -169,7 +169,7 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
             end=base.end + f'\nstyle {node_id} fill:transparent,'
                            f'stroke:transparent')
         node = pmd.Node(node_id, shape=shape_name)
-        node.content = subscript_digits(label) if label else ' '
+        node.content = fmt_label(label) if label else ' '
         mermaid_nodes[node.id] = node
         diag.add_nodes([node])
         return node
@@ -210,12 +210,12 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
                 gg = pg.add_subgraph(gname)
                 # a symbolic angle spec labels the gate verbatim with its
                 # degrees appended; a numeric one shows degrees only
-                _angle = subscript_digits(
+                _angle = fmt_label(
                     angle_label(sim.config.gates[gname].angle,
                                 gate.theta.degrees))
                 _phase = sim.config.gates[gname].get('phase')
                 if _phase is not None:
-                    _angle += ' φ=' + subscript_digits(
+                    _angle += ' φ=' + fmt_label(
                         angle_label(_phase, gate.phase.degrees))
                 gg.header = f'subgraph {gname}["{gname}: {_angle}"]'
                 ggi = gg.add_subgraph(f'{gname}.input')
@@ -332,7 +332,7 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
             anchor = mermaid_nodes[f'{port}_nullin']
             mermaid_links.append(pmd.Link(
                 anchor, port_node,
-                message=f'"{subscript_digits(stub_label)}"'))
+                message=f'"{fmt_label(stub_label)}"'))
         elif f'{port}_SINK' not in mermaid_nodes:
             anchor = stub_anchor(f'{port}_nullout', stub_label)
             # switch-output stubs hug their gate; the control stub keeps

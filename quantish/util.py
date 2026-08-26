@@ -125,15 +125,67 @@ def subscript_digits(s: str) -> str:
                                                           mt.group(0))), s)
 
 
+_SUPERSCRIPTS = str.maketrans('0123456789+-=()ni',
+                              '⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁿⁱ')
+
+# the LaTeX subset every text surface understands: greek letters and
+# the symbols that come up in this domain. TikZ output keeps real
+# LaTeX and does not use this table.
+_MATH_COMMANDS = {
+    'alpha': 'α', 'beta': 'β', 'gamma': 'γ', 'delta': 'δ',
+    'epsilon': 'ε', 'zeta': 'ζ', 'eta': 'η', 'theta': 'θ',
+    'iota': 'ι', 'kappa': 'κ', 'lambda': 'λ', 'mu': 'μ', 'nu': 'ν',
+    'xi': 'ξ', 'pi': 'π', 'rho': 'ρ', 'sigma': 'σ', 'tau': 'τ',
+    'upsilon': 'υ', 'phi': 'φ', 'varphi': 'φ', 'chi': 'χ',
+    'psi': 'ψ', 'omega': 'ω',
+    'Gamma': 'Γ', 'Delta': 'Δ', 'Theta': 'Θ', 'Lambda': 'Λ',
+    'Xi': 'Ξ', 'Pi': 'Π', 'Sigma': 'Σ', 'Phi': 'Φ', 'Psi': 'Ψ',
+    'Omega': 'Ω',
+    'angle': '∠', 'times': '×', 'cdot': '·', 'pm': '±', 'mp': '∓',
+    'le': '≤', 'leq': '≤', 'ge': '≥', 'geq': '≥', 'ne': '≠',
+    'neq': '≠', 'approx': '≈', 'infty': '∞', 'sqrt': '√',
+    'sum': '∑', 'prod': '∏', 'int': '∫', 'partial': '∂',
+    'to': '→', 'rightarrow': '→', 'leftarrow': '←',
+    'ldots': '…', 'dots': '…', 'circ': '°', 'degree': '°',
+}
+
+
+def _subscript_str(s: str) -> str:
+    return ''.join(_SUBSCRIPT_LETTERS.get(c, c.translate(_SUBSCRIPT_DIGITS))
+                   for c in s)
+
+
+def fmt_label(s) -> str:
+    """The one label formatter for every non-TikZ text surface:
+    $...$ math becomes unicode (math_to_unicode) and bare digits after
+    letters auto-subscript (subscript_digits) — so plain labels need
+    no markup at all."""
+    return subscript_digits(math_to_unicode(str(s)))
+
+
 def math_to_unicode(s: str) -> str:
-    """$...$ math segments in caption text rendered as plain unicode:
-    $Q_1$ → Q₁, $Q_{12}$ → Q₁₂. For surfaces with no LaTeX rendering
-    (Mermaid labels, chart titles); mo.md surfaces render the math
-    itself and don't need this."""
+    """$...$ math segments rendered as plain unicode, covering the
+    subset the diagrams need: subscripts ($Q_1$ → Q₁, $w_{2a}$ → w₂ₐ),
+    superscripts ($x^2$ → x²), greek and symbol commands
+    ($\\theta_1 = \\pi/6$ → θ₁ = π/6, $\\angle$ → ∠). For surfaces
+    with no LaTeX rendering (the SVG widgets, Vega text, Mermaid
+    labels, chart titles); mo.md surfaces render the math themselves
+    and don't need this. Plain text outside $...$ passes through
+    untouched."""
     def _segment(m):
-        return re.sub(r'_\{?(\w+)\}?',
-                      lambda t: t.group(1).translate(_SUBSCRIPT_DIGITS),
-                      m.group(1))
+        seg = m.group(1)
+        seg = re.sub(r'\\([a-zA-Z]+)',
+                     lambda c: _MATH_COMMANDS.get(c.group(1),
+                                                  c.group(0)), seg)
+        seg = re.sub(r'_\{([^{}]*)\}',
+                     lambda c: _subscript_str(c.group(1)), seg)
+        seg = re.sub(r'_(\S)',
+                     lambda c: _subscript_str(c.group(1)), seg)
+        seg = re.sub(r'\^\{([^{}]*)\}',
+                     lambda c: c.group(1).translate(_SUPERSCRIPTS), seg)
+        seg = re.sub(r'\^(\S)',
+                     lambda c: c.group(1).translate(_SUPERSCRIPTS), seg)
+        return seg.replace('{', '').replace('}', '')
     return re.sub(r'\$([^$]+)\$', _segment, s)
 
 

@@ -21,7 +21,7 @@ from quantish.tikz_diagram import (CONTROL_HALF_W, GATE_WIDTH, PORT_DY,
                                    WIRE_STUB_LEN,
                                    compute_layout, route_wires,
                                    spec_from_simulation)
-from quantish.util import angle_label, SEP, subscript_digits
+from quantish.util import angle_label, fmt_label, SEP
 
 # The palette. Edit these hex values and save; the app picks the change
 # up on the next ▶ Run (module autoreload). Input (particle) and output
@@ -46,7 +46,7 @@ CHAR_W = 0.115          # approx character width at the value font size
 
 
 def _sub(s) -> str:
-    return subscript_digits(str(s))
+    return fmt_label(s)
 
 
 def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
@@ -413,7 +413,8 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
         boxes.insert(0, dict(x=gx1, x2=gx2, y=gy1, y2=gy2,
                              fill=STAGE_FILL, stroke=STAGE_STROKE,
                              corner=6, amp='', pr=''))
-        texts.append(dict(x=(gx1 + gx2) / 2, y=gy2 + 0.28, lines=[label],
+        texts.append(dict(x=(gx1 + gx2) / 2, y=gy2 + 0.28,
+                          lines=[_sub(label)],
                           size=11, color='#888888', weight='normal'))
 
     # ---- assemble ----
