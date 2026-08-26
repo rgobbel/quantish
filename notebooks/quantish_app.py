@@ -162,7 +162,7 @@ def _(circuit_chart, mo, show_values, sim, sim_model):
         + [
             _chart(),
             mo.md('_Scroll to zoom, drag to pan, double-click to reset; '
-                  'after a run, hover a port or value blob for its '
+                  'after a run, hover over a port or value blob for its '
                   'values._'),
         ], align='stretch')
     return

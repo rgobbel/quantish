@@ -7,9 +7,11 @@ circuit diagrams; there are no external JS dependencies, so the widget
 works in the WASM builds too.
 
 Interactions:
-  toolbar        add a gate / phase plate / particle, group the
-                 selection into a stage or diagram group, delete,
-                 clear the canvas (confirmed, and undo-able),
+  palette        miniature object icons beside the canvas — circuit
+                 elements on top (gate, particle, phase plate, delay),
+                 the two group kinds below the divider (run stage,
+                 diagram group); tooltips name them
+  toolbar        delete, clear the canvas (confirmed, and undo-able),
                  undo / redo
   drag body      move a gate or particle (a shift-selection moves
                  together); drag on empty canvas pans the view, and
@@ -40,8 +42,24 @@ _CSS = """
                      white-space: nowrap; }
 .qb-toolbar button:hover { border-color: #5c64d1; background: #f6f7ff; }
 .qb-hint { font-size: 12px; color: #000; margin-left: auto; }
+.qb-body { display: flex; gap: 8px; align-items: flex-start; }
+.qb-palette { display: flex; flex-direction: column; width: 84px;
+              border: 1px solid #bbb; border-radius: 8px;
+              background: #fff; overflow: hidden; }
+.qb-palette button { width: 100%; padding: 6px 2px 7px;
+                     border: none; border-radius: 0;
+                     border-bottom: 1px solid #e2e2e8;
+                     background: #fff; cursor: pointer;
+                     display: flex; flex-direction: column;
+                     align-items: center; gap: 2px; }
+.qb-palette button:last-child { border-bottom: none; }
+.qb-palette button:hover { background: #f6f7ff; }
+.qb-palette button svg { display: block; width: 48px; height: 42px; }
+.qb-palette .qb-pal-label { font-size: 12.5px; color: #000;
+                            line-height: 1.1; }
+.qb-pal-sep { border-top: 3px double #8b93a0; margin: 0; }
 .qb-svg { border: 1px solid #ddd; border-radius: 8px; background: #fff;
-          display: block; width: 100%;
+          display: block; flex: 1; min-width: 0;
           user-select: none; -webkit-user-select: none; }
 .qb-dialog { position: absolute; top: 60px; left: 50%;
              transform: translateX(-50%); z-index: 10;
@@ -118,18 +136,60 @@ function render({ model, el }) {
   root.style.position = 'relative';
   const bar = document.createElement('div');
   bar.className = 'qb-toolbar';
-  const addGateBtn = document.createElement('button');
-  addGateBtn.textContent = '+ gate';
-  const addPlateBtn = document.createElement('button');
-  addPlateBtn.textContent = '+ φ plate';
-  const addDelayBtn = document.createElement('button');
-  addDelayBtn.textContent = '+ delay';
-  const addPartBtn = document.createElement('button');
-  addPartBtn.textContent = '+ particle';
-  const stageBtn = document.createElement('button');
-  stageBtn.textContent = 'stage…';
-  const dgroupBtn = document.createElement('button');
-  dgroupBtn.textContent = 'diagram group…';
+  // the add palette: miniature versions of the objects as drawn on
+  // the canvas, with tooltips naming them
+  const mkIcon = (title, label, body) => {
+    const b = document.createElement('button');
+    b.title = title;
+    b.innerHTML = `<svg viewBox="0 0 40 40">${body}</svg>`
+      + `<span class="qb-pal-label">${label}</span>`;
+    return b;
+  };
+  const _dash = (x1, y1, x2, y2) =>
+    `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" `
+    + 'stroke="#22314a" stroke-width="1" stroke-dasharray="2 2"/>';
+  const addGateBtn = mkIcon('add a Fredkin gate', 'gate', `
+    <rect x="7" y="3" width="26" height="34" rx="4"
+          fill="#e6f4f1" stroke="#2f9e8f" stroke-width="1.6"/>
+    <circle cx="20" cy="10" r="2.6" fill="#e0e7ff" stroke="#5c64d1"/>
+    ${['18', '28'].map((y) => `
+      <circle cx="7" cy="${y}" r="2.4" fill="#e0e7ff" stroke="#5c64d1"/>
+      <circle cx="33" cy="${y}" r="2.4" fill="#e0e7ff" stroke="#5c64d1"/>
+    `).join('')}
+    ${_dash(12, 18, 28, 18)}${_dash(12, 28, 28, 28)}
+    ${_dash(12, 18, 28, 28)}${_dash(12, 28, 28, 18)}`);
+  const addPlateBtn = mkIcon('add a φ phase plate', 'phase', `
+    <rect x="9" y="9" width="22" height="22" rx="5"
+          fill="#f3e8ff" stroke="#8b5cf6" stroke-width="1.6"/>
+    <text x="20" y="25" text-anchor="middle" font-size="14"
+          font-weight="600" fill="#000">φ</text>`);
+  const addDelayBtn = mkIcon('add a delay gate', 'delay', `
+    <rect x="10" y="10" width="20" height="20" rx="5"
+          fill="#eef1f8" stroke="#8b93a0" stroke-width="1.6"/>
+    <circle cx="10" cy="20" r="2.4" fill="#e0e7ff" stroke="#5c64d1"/>
+    <circle cx="30" cy="20" r="2.4" fill="#e0e7ff" stroke="#5c64d1"/>
+    <text x="20" y="24.5" text-anchor="middle" font-size="12"
+          font-weight="600" fill="#000">d</text>`);
+  const addPartBtn = mkIcon('add a particle', 'particle', `
+    <rect x="5" y="12" width="30" height="16" rx="8"
+          fill="#f4f4f6" stroke="#8b93a0" stroke-width="1.6"/>
+    <circle cx="35" cy="20" r="2.4" fill="#e0e7ff" stroke="#5c64d1"/>
+    <text x="19" y="24.5" text-anchor="middle" font-size="11"
+          font-weight="600" fill="#000">+p</text>`);
+  const _minis = `
+    <rect x="10" y="14" width="8" height="12" rx="2"
+          fill="#e6f4f1" stroke="#2f9e8f"/>
+    <rect x="22" y="14" width="8" height="12" rx="2"
+          fill="#e6f4f1" stroke="#2f9e8f"/>`;
+  const stageBtn = mkIcon(
+    'group the selected gates into a named run stage', 'stage', `
+    <rect x="5" y="8" width="30" height="24" rx="6"
+          fill="none" stroke="#2f9e8f" stroke-width="1.8"/>${_minis}`);
+  const dgroupBtn = mkIcon(
+    'group the selected gates into a named diagram group', 'group', `
+    <rect x="5" y="8" width="30" height="24" rx="6" fill="none"
+          stroke="#22314a" stroke-width="1.4"
+          stroke-dasharray="4 3"/>${_minis}`);
   const delBtn = document.createElement('button');
   delBtn.textContent = 'delete selected';
   const clearBtn = document.createElement('button');
@@ -148,11 +208,18 @@ function render({ model, el }) {
   hint.textContent = 'drag output → input to wire · double-click a ' +
     'body to edit, a name to rename · shift-click or shift-drag to ' +
     'select · scroll/pinch zooms, drag on empty space pans';
-  bar.append(addGateBtn, addPlateBtn, addDelayBtn, addPartBtn,
-             stageBtn, dgroupBtn, delBtn, clearBtn, undoBtn, redoBtn,
-             hint);
+  bar.append(delBtn, clearBtn, undoBtn, redoBtn, hint);
   const svg = h('svg', { class: 'qb-svg', height: 560 });
-  root.append(bar, svg);
+  const body = document.createElement('div');
+  body.className = 'qb-body';
+  const palette = document.createElement('div');
+  palette.className = 'qb-palette';
+  const sep = document.createElement('div');
+  sep.className = 'qb-pal-sep';
+  palette.append(addGateBtn, addPartBtn, addPlateBtn, addDelayBtn,
+                 sep, stageBtn, dgroupBtn);
+  body.append(palette, svg);
+  root.append(bar, body);
   el.appendChild(root);
 
   const graph = () => model.get('graph');
@@ -227,6 +294,122 @@ function render({ model, el }) {
   const usedSrc = (g) => new Set(g.links.map((l) => l[0]));
   const usedDst = (g) => new Set(g.links.map((l) => l[1]));
 
+  // A small orthogonal router for the committed wires: straight when
+  // clear, else out–channel–in, else a lane detour around the nodes.
+  // Wires register their segments so parallel runs spread instead of
+  // stacking; corners get rounded in roundedPath. Runs fresh on every
+  // redraw, so it tracks drags live.
+  function routeWires(g) {
+    const M = 8;                 // clearance around nodes
+    const obstacles = [];
+    for (const [n, gd] of Object.entries(g.gates))
+      obstacles.push({ n, r: [gd.x - M, gd.y - M,
+                              gd.x + dims(gd)[0] + M,
+                              gd.y + dims(gd)[1] + M] });
+    for (const [n, p] of Object.entries(g.particles))
+      obstacles.push({ n, r: [p.x - M, p.y - M,
+                              p.x + partW(n) + M, p.y + 2 * PR + M] });
+    // a wire is never blocked by its own endpoints' nodes — it starts
+    // and ends on their edges, inside the clearance margin
+    let skip = new Set();
+    const hBlocked = (y, xa, xb) => obstacles.some(
+      ({ n, r: [ax, ay, bx, by] }) => !skip.has(n) &&
+        y > ay && y < by &&
+        Math.max(Math.min(xa, xb), ax) < Math.min(Math.max(xa, xb), bx));
+    const vBlocked = (x, ya, yb) => obstacles.some(
+      ({ n, r: [ax, ay, bx, by] }) => !skip.has(n) &&
+        x > ax && x < bx &&
+        Math.max(Math.min(ya, yb), ay) < Math.min(Math.max(ya, yb), by));
+    const usedV = [], usedH = [];
+    const SPREAD = 8;
+    const vClash = (x, ya, yb) => usedV.some(
+      (s) => Math.abs(s.x - x) < SPREAD &&
+             Math.max(Math.min(ya, yb), s.a) <
+             Math.min(Math.max(ya, yb), s.b));
+    const hClash = (y, xa, xb) => usedH.some(
+      (s) => Math.abs(s.y - y) < SPREAD &&
+             Math.max(Math.min(xa, xb), s.a) + 2 <
+             Math.min(Math.max(xa, xb), s.b) - 2);
+    const register = (pts) => {
+      for (let j = 0; j + 1 < pts.length; j++) {
+        const [x1, y1] = pts[j], [x2, y2] = pts[j + 1];
+        if (Math.abs(y1 - y2) < 0.5)
+          usedH.push({ y: y1, a: Math.min(x1, x2), b: Math.max(x1, x2) });
+        else
+          usedV.push({ x: x1, a: Math.min(y1, y2), b: Math.max(y1, y2) });
+      }
+    };
+
+    const endNode = (e) => e.includes('.') ? e.split('.')[0] : e;
+    return g.links.map((l) => {
+      const a = outXY(g, l[0]), b = inXY(g, l[1]);
+      if (!a || !b) return null;
+      skip = new Set([endNode(l[0]), endNode(l[1])]);
+      const [sx, sy] = a, [dx, dy] = b;
+      let pts = null;
+      if (Math.abs(dy - sy) < 1 && dx > sx + 4 &&
+          !hBlocked(sy, sx + 1, dx - 1) && !hClash(sy, sx, dx))
+        pts = [[sx, sy], [dx, dy]];
+      if (!pts && dx > sx + 2 * SPREAD) {
+        // a vertical channel between the endpoints, fanned around the
+        // midpoint until everything clears
+        for (let k = 0; k < 24 && !pts; k++) {
+          const f = 0.5 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.06;
+          if (f < 0.04 || f > 0.96) continue;
+          const cx = sx + (dx - sx) * f;
+          if (!hBlocked(sy, sx + 1, cx) && !hBlocked(dy, cx, dx - 1) &&
+              !vBlocked(cx, sy, dy) && !vClash(cx, sy, dy) &&
+              !hClash(sy, sx, cx) && !hClash(dy, cx, dx))
+            pts = [[sx, sy], [cx, sy], [cx, dy], [dx, dy]];
+        }
+      }
+      if (!pts) {
+        // detour: out right, along a lane above or below, in from the
+        // left
+        for (let k = 0; k < 10 && !pts; k++) {
+          const out = sx + 14 + k * SPREAD;
+          const inn = dx - 14 - k * SPREAD;
+          if (vClash(out, sy, sy) || vClash(inn, dy, dy)) continue;
+          for (const dir of [1, -1]) {
+            for (let off = 26; off <= 400 && !pts; off += 14) {
+              const ly = dir > 0 ? Math.max(sy, dy) + off
+                                 : Math.min(sy, dy) - off;
+              if (ly < -200) break;
+              if (hBlocked(ly, Math.min(out, inn), Math.max(out, inn))
+                  || hClash(ly, Math.min(out, inn), Math.max(out, inn))
+                  || vBlocked(out, sy, ly) || vBlocked(inn, ly, dy)
+                  || vClash(out, sy, ly) || vClash(inn, ly, dy))
+                continue;
+              pts = [[sx, sy], [out, sy], [out, ly],
+                     [inn, ly], [inn, dy], [dx, dy]];
+            }
+            if (pts) break;
+          }
+        }
+      }
+      if (!pts) pts = [[sx, sy], [dx, dy]];   // give up gracefully
+      register(pts);
+      return pts;
+    });
+  }
+
+  function roundedPath(pts) {
+    if (pts.length < 3)
+      return `M ${pts[0][0]} ${pts[0][1]} L ${pts[1][0]} ${pts[1][1]}`;
+    let d = `M ${pts[0][0]} ${pts[0][1]}`;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const [px, py] = pts[i - 1], [bx, by] = pts[i];
+      const [nx, ny] = pts[i + 1];
+      const din = Math.hypot(bx - px, by - py) || 1;
+      const dout = Math.hypot(nx - bx, ny - by) || 1;
+      const r = Math.min(7, din / 2, dout / 2);
+      d += ` L ${bx - (bx - px) / din * r} ${by - (by - py) / din * r}`
+         + ` Q ${bx} ${by}`
+         + ` ${bx + (nx - bx) / dout * r} ${by + (ny - by) / dout * r}`;
+    }
+    return d + ` L ${pts[pts.length - 1][0]} ${pts[pts.length - 1][1]}`;
+  }
+
   function svgPoint(ev) {
     const r = svg.getBoundingClientRect();
     return [(ev.clientX - r.left - pan.x) / zoom,
@@ -297,20 +480,23 @@ function render({ model, el }) {
             { stroke: C.wire, 'stroke-dasharray': '6 4' });
     outline('stage', stageBoxes, 8, 20, { stroke: C.gateStroke });
 
-    // wires next, under the nodes
+    // wires next, under the nodes — routed orthogonally with rounded
+    // corners, like the results diagram
+    const routed = routeWires(g);
     g.links.forEach((l, i) => {
-      const a = outXY(g, l[0]), b = inXY(g, l[1]);
-      if (!a || !b) return;
+      const pts = routed[i];
+      if (!pts) return;
+      const d = roundedPath(pts);
       const sel = (selected?.kind === 'link' && selected.key === i)
                   || inMultiOf('link', i);
       layer.appendChild(h('path', {
-        d: wirePath(...a, ...b), fill: 'none',
+        d, fill: 'none',
         stroke: sel ? C.select : C.wire, 'stroke-width': sel ? 3 : 2,
         'data-link': i, style: 'cursor: pointer',
       }));
       // a fatter invisible hit area so wires are clickable
       layer.appendChild(h('path', {
-        d: wirePath(...a, ...b), fill: 'none', stroke: 'transparent',
+        d, fill: 'none', stroke: 'transparent',
         'stroke-width': 10, 'data-link': i, style: 'cursor: pointer',
       }));
     });
@@ -514,38 +700,61 @@ function render({ model, el }) {
                            40 + Math.floor(i / 4) * 150];
   const partSlot = (i) => [24, 60 + i * 70];
 
-  addGateBtn.onclick = () => {
+  // one add path for click (default slot) and palette-drag (at the
+  // drop point)
+  function addObject(kind, at) {
     const g = graph();
-    const name = nextName('g', g.gates);
-    const [x, y] = freeSpot(Object.values(g.gates), gateSlot);
     const copy = JSON.parse(JSON.stringify(g));
-    copy.gates[name] = { x, y, angle: 0 };
+    if (kind === 'particle') {
+      const name = nextName('p', g.particles);
+      const [x, y] = at
+        ? [Math.max(0, at[0] - PR), Math.max(0, at[1] - PR)]
+        : freeSpot(Object.values(g.particles), partSlot);
+      copy.particles[name] = { x, y, sign: 1, weight: 1 };
+    } else {
+      const proto = kind === 'phase' ? { kind: 'phase', phase: 0 }
+                  : kind === 'delay' ? { kind: 'delay' }
+                  : { angle: 0 };
+      const prefix = kind === 'phase' ? 'φ'
+                   : kind === 'delay' ? 'd' : 'g';
+      const name = nextName(prefix, g.gates);
+      const [w0, h0] = dims(proto);
+      const [x, y] = at
+        ? [Math.max(0, at[0] - w0 / 2), Math.max(0, at[1] - h0 / 2)]
+        : freeSpot(Object.values(g.gates), gateSlot);
+      copy.gates[name] = { x, y, ...proto };
+    }
     commit(copy);
+  }
+
+  // palette items add on click, or drag onto the canvas to drop the
+  // new object at the pointer; releasing anywhere else cancels
+  let palDrag = null;
+  for (const [btn, kind] of [[addGateBtn, 'gate'],
+                             [addPartBtn, 'particle'],
+                             [addPlateBtn, 'phase'],
+                             [addDelayBtn, 'delay']])
+    btn.addEventListener('mousedown', (ev) => {
+      ev.preventDefault();
+      palDrag = kind;
+      document.body.style.cursor = 'copy';
+    });
+  const _palUp = (ev) => {
+    if (!palDrag) return;
+    const kind = palDrag;
+    palDrag = null;
+    document.body.style.cursor = '';
+    const r = svg.getBoundingClientRect();
+    if (ev.clientX >= r.left && ev.clientX <= r.right &&
+        ev.clientY >= r.top && ev.clientY <= r.bottom)
+      addObject(kind, [(ev.clientX - r.left - pan.x) / zoom,
+                       (ev.clientY - r.top - pan.y) / zoom]);
+    else if ((ev.composedPath ? ev.composedPath() : []).some(
+        (n) => n.classList && n.classList.contains('qb-palette')))
+      // released back over the palette: a plain click, default slot
+      addObject(kind, null);
   };
-  addPlateBtn.onclick = () => {
-    const g = graph();
-    const name = nextName('φ', g.gates);
-    const [x, y] = freeSpot(Object.values(g.gates), gateSlot);
-    const copy = JSON.parse(JSON.stringify(g));
-    copy.gates[name] = { x, y, kind: 'phase', phase: 0 };
-    commit(copy);
-  };
-  addDelayBtn.onclick = () => {
-    const g = graph();
-    const name = nextName('d', g.gates);
-    const [x, y] = freeSpot(Object.values(g.gates), gateSlot);
-    const copy = JSON.parse(JSON.stringify(g));
-    copy.gates[name] = { x, y, kind: 'delay' };
-    commit(copy);
-  };
-  addPartBtn.onclick = () => {
-    const g = graph();
-    const name = nextName('p', g.particles);
-    const [x, y] = freeSpot(Object.values(g.particles), partSlot);
-    const copy = JSON.parse(JSON.stringify(g));
-    copy.particles[name] = { x, y, sign: 1, weight: 1 };
-    commit(copy);
-  };
+  document.addEventListener('mouseup', _palUp);
 
   // stage… / diagram group… name the multi-selection (or the single
   // selected gate); an empty name clears the assignment
@@ -695,6 +904,24 @@ function render({ model, el }) {
     }
   }
 
+  // Dialog input semantics: a bare number — optionally with a ° —
+  // means DEGREES (what users almost always want); anything else is a
+  // radians expression in the model files' syntax. degSpec turns the
+  // input into the stored spec, previewDeg evaluates for the live
+  // readout.
+  const BARE_DEG = /^-?\d+(\.\d+)?\s*[°º˚]?$/;
+  const degSpec = (s) => {
+    // stored exactly as typed, so re-editing presents what was
+    // entered; a bare number gets its implied degree mark
+    if (!BARE_DEG.test(s)) return s;
+    return /[°º˚]$/.test(s) ? s : s + '°';
+  };
+  const previewDeg = (s) => {
+    if (BARE_DEG.test(s)) return parseFloat(s);
+    const v = radEval(s);
+    return v === null ? null : v * 180 / Math.PI;
+  };
+
   function angleDialog(title, initial, onOk) {
     const box = document.createElement('div');
     box.className = 'qb-dialog';
@@ -716,9 +943,9 @@ function render({ model, el }) {
     box.append(head, input, row);
     root.appendChild(box);
     const update = () => {
-      const v = radEval(input.value);
+      const v = previewDeg(input.value.trim());
       preview.textContent = v === null ? '= ?°'
-        : `= ${Math.round(v * 180 / Math.PI * 100) / 100}°`;
+        : `= ${Math.round(v * 100) / 100}°`;
     };
     update();
     input.addEventListener('input', update);
@@ -829,16 +1056,17 @@ function render({ model, el }) {
       const gname = grp.dataset.gate;
       const field = isPlate(copy.gates[gname]) ? 'phase' : 'angle';
       angleDialog(
-        `${field} for ${gname} — radians, the model files' syntax: `
-        + '0, pi/6, rad(30), acos(4/5), 0.5',
+        `${field} for ${gname} — degrees (30, 22.5°), or a radians `
+        + 'expression: pi/6, rad(30), acos(4/5)',
         copy.gates[gname][field] ?? 0,
         (s) => {
           const fresh = JSON.parse(JSON.stringify(graph()));
           const gd = fresh.gates[gname];
           if (!gd) return;
-          // stored verbatim; the app validates the spec and reports
-          // anything unparseable in the problems list
-          gd[field] = /^-?\d+(\.\d+)?$/.test(s) ? parseFloat(s) : s;
+          // a bare number means degrees and stores as rad(n);
+          // expressions store verbatim — the app validates and
+          // reports anything unparseable in the problems list
+          gd[field] = degSpec(s);
           commit(fresh);
         });
       return;
@@ -972,6 +1200,21 @@ function render({ model, el }) {
       const node = coll[drag.key];
       node.x = Math.max(0, x - drag.dx);
       node.y = Math.max(0, y - drag.dy);
+      // snap: a connected wire within a few pixels of horizontal pulls
+      // the node the rest of the way (smallest nudge wins)
+      const ownerOf = (e) => e.includes('.') ? e.split('.')[0] : e;
+      let snap = null;
+      for (const l of g.links) {
+        const oS = ownerOf(l[0]), oD = ownerOf(l[1]);
+        if ((oS === drag.key) === (oD === drag.key)) continue;
+        const a = outXY(g, l[0]), b = inXY(g, l[1]);
+        if (!a || !b) continue;
+        const d = oS === drag.key ? b[1] - a[1] : a[1] - b[1];
+        if (Math.abs(d) < 7 &&
+            (snap === null || Math.abs(d) < Math.abs(snap)))
+          snap = d;
+      }
+      if (snap !== null) node.y += snap;
       for (const o of drag.others || []) {
         coll[o.k].x = Math.max(0, node.x + o.ox);
         coll[o.k].y = Math.max(0, node.y + o.oy);
@@ -1051,10 +1294,156 @@ function render({ model, el }) {
   model.on('change:graph', redraw);
   model.on('change:angle_labels', redraw);
   redraw();
+  return () => document.removeEventListener('mouseup', _palUp);
 }
 
 export default { render };
 """
+
+
+_DIAGRAM_CSS = """
+.qd-root { background: #fff; border: 1px solid #ddd;
+           border-radius: 8px; }
+.qd-root svg { display: block; width: 100%; height: auto;
+               cursor: grab; user-select: none;
+               -webkit-user-select: none; }
+.qd-root svg.panning { cursor: grabbing; }
+"""
+
+_DIAGRAM_ESM = r"""
+function h(tag, attrs = {}, ...children) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  for (const c of children)
+    el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+  return el;
+}
+
+function render({ model, el }) {
+  el.innerHTML = '';
+  const root = document.createElement('div');
+  root.className = 'qd-root';
+  el.appendChild(root);
+
+  function draw() {
+    const g = model.get('geometry') || {};
+    root.innerHTML = '';
+    if (!g.boxes) return;
+    const W = g.x1 - g.x0, H = g.y1 - g.y0;
+    const fy = (y) => g.y1 - y;          // layout y grows up; svg down
+    const S = g.scale;                   // px per layout unit at natural size
+    const svg = h('svg', { viewBox: `${g.x0} 0 ${W} ${H}` });
+    root.appendChild(svg);
+
+    for (const b of g.boxes.concat(
+        (g.stadiums || []).map((s) => ({ ...s, fill: g.value_fill,
+                                         stroke: g.value_stroke })))) {
+      const hgt = b.y2 - b.y;
+      const rect = h('rect', {
+        x: b.x, y: fy(b.y2), width: b.x2 - b.x, height: hgt,
+        rx: Math.min(b.corner * 1.5 / S, hgt / 2),
+        fill: b.fill, stroke: b.stroke, 'stroke-width': 1.2 / S,
+      });
+      if (b.amp) {
+        const tip = h('title');
+        tip.textContent = `amplitude: ${b.amp}`
+          + (b.pr ? `\nPr: ${b.pr}` : '');
+        rect.appendChild(tip);
+      }
+      svg.appendChild(rect);
+    }
+    for (const seg of g.dots || [])
+      svg.appendChild(h('polyline', {
+        points: seg.map((p) => `${p.x},${fy(p.y)}`).join(' '),
+        fill: 'none', stroke: '#000000', 'stroke-width': 1 / S,
+        'stroke-dasharray': `${3 / S} ${3 / S}`,
+      }));
+    for (const seg of g.wires || [])
+      svg.appendChild(h('polyline', {
+        points: seg.map((p) => `${p.x},${fy(p.y)}`).join(' '),
+        fill: 'none', stroke: g.wire_color, 'stroke-width': 1.3 / S,
+      }));
+    for (const a of g.arrows || []) {
+      const s = 5.4 / S;   // matches the chart's size-45 triangles
+      svg.appendChild(h('path', {
+        d: `M 0 ${-s} L ${0.62 * s} ${0.55 * s} L ${-0.62 * s} ${0.55 * s} Z`,
+        fill: g.wire_color,
+        transform: `translate(${a.x} ${fy(a.y)}) rotate(${a.angle})`,
+      }));
+    }
+    for (const tx of g.texts || [])
+      tx.lines.forEach((line, k) => {
+        svg.appendChild(h('text', {
+          x: tx.x, y: fy(tx.y - k * g.line_h),
+          'text-anchor': 'middle', 'dominant-baseline': 'central',
+          'font-size': tx.size / S, 'font-weight': tx.weight,
+          fill: tx.color,
+          'font-family': 'sans-serif', 'pointer-events': 'none',
+        }, line));
+      });
+
+    // wheel zooms around the cursor, drag pans, double-click resets
+    const home = { x: g.x0, y: 0, w: W, h: H };
+    let vb = { ...home };
+    const apply = () =>
+      svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+    svg.addEventListener('wheel', (ev) => {
+      ev.preventDefault();
+      const r = svg.getBoundingClientRect();
+      const mx = vb.x + (ev.clientX - r.left) / r.width * vb.w;
+      const my = vb.y + (ev.clientY - r.top) / r.height * vb.h;
+      const f = Math.exp(ev.deltaY * (ev.ctrlKey ? 0.01 : 0.002));
+      const w = Math.min(home.w, Math.max(home.w / 40, vb.w * f));
+      const k = w / vb.w;
+      vb = { x: mx - (mx - vb.x) * k, y: my - (my - vb.y) * k,
+             w, h: vb.h * k };
+      apply();
+    }, { passive: false });
+    let pan = null;
+    svg.addEventListener('mousedown', (ev) => {
+      pan = { x: ev.clientX, y: ev.clientY, vx: vb.x, vy: vb.y };
+      svg.classList.add('panning');
+    });
+    const _move = (ev) => {
+      if (!pan) return;
+      const r = svg.getBoundingClientRect();
+      vb.x = pan.vx - (ev.clientX - pan.x) / r.width * vb.w;
+      vb.y = pan.vy - (ev.clientY - pan.y) / r.height * vb.h;
+      apply();
+    };
+    const _up = () => {
+      pan = null;
+      svg.classList.remove('panning');
+    };
+    window.addEventListener('mousemove', _move);
+    window.addEventListener('mouseup', _up);
+    root._cleanup = () => {
+      window.removeEventListener('mousemove', _move);
+      window.removeEventListener('mouseup', _up);
+    };
+    svg.addEventListener('dblclick', () => {
+      vb = { ...home };
+      apply();
+    });
+  }
+
+  model.on('change:geometry', draw);
+  draw();
+  return () => root._cleanup && root._cleanup();
+}
+
+export default { render };
+"""
+
+
+class DiagramWidget(anywidget.AnyWidget):
+    """The results diagram drawn natively from diagram_geometry's
+    output — the same layout, router, and geometry as the Altair and
+    TikZ renderers, presented in the builder's own SVG idiom. Wheel
+    zooms, drag pans, double-click resets; no vl-convert, WASM-safe."""
+    _esm = _DIAGRAM_ESM
+    _css = _DIAGRAM_CSS
+    geometry = traitlets.Dict({}).tag(sync=True)
 
 
 class BuilderWidget(anywidget.AnyWidget):

@@ -73,11 +73,15 @@ class QLogger(StreamHandler):
 def symbolic_angle(spec):
     """The display form of a gate-angle spec when it is symbolic ('pi/6',
     'rad(30)', 'theta1'): the expression verbatim. None when the spec is
-    numeric (callers show degrees instead)."""
+    numeric — including the builder's degree-marked entries ('30°') —
+    so callers show degrees instead."""
     if not isinstance(spec, str):
         return None
+    probe = spec.strip()
+    if probe and probe[-1] in '°º˚':
+        probe = probe[:-1].strip()
     try:
-        float(spec)
+        float(probe)
         return None
     except ValueError:
         return spec

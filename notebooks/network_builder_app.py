@@ -61,13 +61,12 @@ async def initialization():
     import copy
     import yaml
 
-    from quantish.altair_diagram import (circuit_chart,
-                                         svg_diagram_iframe)
+    from quantish.altair_diagram import diagram_geometry
     from quantish.builder import (angle_degrees, coherence_warnings,
                                   config_to_graph,
                                   config_to_yaml, graph_to_config,
                                   validate_graph)
-    from quantish.builder_widget import BuilderWidget
+    from quantish.builder_widget import BuilderWidget, DiagramWidget
     from quantish.display import coord_sort_key, cs_point_sort_key
     from quantish.util import angle_label
     from quantish.simulation import Simulation
@@ -87,7 +86,7 @@ async def initialization():
         angle_degrees,
         angle_label,
         Simulation,
-        circuit_chart,
+        DiagramWidget,
         coherence_warnings,
         config_to_graph,
         config_to_yaml,
@@ -95,9 +94,9 @@ async def initialization():
         copy,
         cs_point_sort_key,
         graph_to_config,
+        diagram_geometry,
         mo,
         model_paths,
-        svg_diagram_iframe,
         validate_graph,
         yaml,
     )
@@ -111,11 +110,14 @@ def _(mo):
     Build a gate network on the canvas below, then run it with the real
     quantish engine and save it as a model YAML file.
 
-    - **+ gate**, **+ φ plate**, **+ delay**, and **+ particle** add
-      components; drag them anywhere. A φ plate is a pure phase plate:
-      an angle-0 gate used through its control wire, rotating every
-      traversing weight by $e^{i\varphi}$. A delay gate is a portless
-      pass-through — wire it by its body ports like a particle.
+    - The icon palette beside the canvas adds components — circuit
+      elements on top, the two group kinds (run stage, diagram group)
+      below the divider; hover over an icon for its name. Drag components
+      anywhere. A φ plate is a pure
+      phase plate: an angle-0 gate used through its control wire,
+      rotating every traversing weight by $e^{i\varphi}$. A delay gate
+      is a portless pass-through — wire it by its body ports like a
+      particle.
     - Drag from an **output port** (right side) and drop on a free
       **input port** (left side) to wire them together.
     - Double-click a gate body to set its measurement angle (a φ
@@ -132,10 +134,10 @@ def _(mo):
       diagram alike (double-click resets the diagram).
     - Shift-click (or ⌘-click) toggles an object in the selection —
       one kind at a time; clicking a different kind starts over.
-      Shift-drag a box to sweep up gates. Then **stage…** names the
-      selected gates' execution stage (drawn as a teal box) and
-      **diagram group…** their display group (a dashed box; an empty
-      name clears either). Ungrouped gates get automatic stages
+      Shift-drag a box to sweep up gates. Then the palette's stage
+      icon names their execution stage (drawn as a teal box) and the
+      group icon their display group (a dashed box; an empty name
+      clears either). Ungrouped gates get automatic stages
       derived from the wiring, and a stage may contain internal
       wiring — the engine fires it in dependency order.
     - Run stages *are* the diagram groups until you create a group
@@ -481,28 +483,24 @@ def _(Addict, Simulation, builder_config, mo, run_network_btn):
 
 
 @app.cell(hide_code=True)
-def _(circuit_chart, mo, sim_built, svg_diagram_iframe):
+def _(DiagramWidget, diagram_geometry, mo, sim_built):
     mo.stop(sim_built is None)
 
     def _():
-        # width-tracking interactive SVG: same look as the deployed
-        # charts, wheel-zooms around the cursor, drags to pan,
-        # double-click resets. Without vl-convert (the WASM build),
-        # fall back to the Vega chart, whose wheel-zoom serves the
-        # same purpose at fixed width.
-        try:
-            chart = circuit_chart(sim_built, has_run=True)
-        except Exception as exc:  # noqa: BLE001 — show, don't crash the app
-            return mo.md(f'_circuit diagram failed: {exc}_')
+        # the one renderer: the results diagram drawn natively by the
+        # builder's SVG widget from the shared layout/router geometry —
+        # width-tracking, wheel-zoom around the cursor, drag to pan,
+        # double-click to reset; no vl-convert, WASM-safe
         try:
             return mo.vstack([
                 mo.md('<span style="font-size: 0.85em">scroll/pinch '
-                      'to zoom · drag to pan · double-click to reset'
-                      '</span>'),
-                mo.Html(svg_diagram_iframe(chart)),
+                      'to zoom · drag to pan · double-click to reset '
+                      '· hover over a port for its values</span>'),
+                mo.ui.anywidget(DiagramWidget(
+                    geometry=diagram_geometry(sim_built, has_run=True))),
             ], gap=0)
-        except Exception:  # noqa: BLE001 — vl-convert unavailable
-            return chart
+        except Exception as exc:  # noqa: BLE001 — show, don't crash the app
+            return mo.md(f'_circuit diagram failed: {exc}_')
 
     _()
     return

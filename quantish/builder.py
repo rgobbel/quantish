@@ -35,9 +35,19 @@ from quantish.util import SEP, WIRES
 
 
 def angle_degrees(spec) -> float:
-    """The degrees value of an angle spec in the model files' syntax —
-    radians, symbolic expressions included ('pi/6', 'rad(30)', 0.5).
-    Raises ValueError for anything qify cannot parse."""
+    """The degrees value of an angle spec: the model files' radians
+    syntax ('pi/6', 'rad(30)', 0.5), or the builder dialog's
+    degree-marked entries ('30°', '22.5º'), kept verbatim so editing
+    presents exactly what was typed. Raises ValueError for anything
+    unparseable."""
+    if isinstance(spec, str):
+        s = spec.strip()
+        if s and s[-1] in '°º˚':
+            try:
+                return float(s[:-1].strip())
+            except ValueError:
+                raise ValueError(f'{s!r} is not a number of degrees') \
+                    from None
     val = qify(0 if spec in (None, '') else spec)
     return float(val.degrees)
 
@@ -138,7 +148,12 @@ def validate_graph(graph) -> list[str]:
             continue
         field = 'phase' if g.get('kind') == 'phase' else 'angle'
         try:
-            angle_degrees(g.get(field, 0))
+            _deg = angle_degrees(g.get(field, 0))
+            if abs(_deg) > 360:
+                problems.append(
+                    f'{name}: {field} {g.get(field)!r} is '
+                    f'{_deg:.0f}° — more than a full turn, usually a '
+                    'degrees-vs-radians mix-up')
         except sym.SympifyError:  # sympy's own message is noise
             problems.append(f'{name}: {field} {g.get(field)!r} is not '
                             'a valid expression')
@@ -254,6 +269,12 @@ def graph_to_config(graph, title: str) -> dict:
         name: {'weight': p.get('weight', 1), 'sign': p.get('sign', 1)}
         for name, p in sorted(graph.get('particles', {}).items())}
     def _spec(v):
+        # the builder's degree-marked entries become the YAML's
+        # radians syntax; everything else passes through verbatim
+        if isinstance(v, str):
+            s = v.strip()
+            if s and s[-1] in '°º˚':
+                return f'rad({float(s[:-1].strip()):g})'
         return v if isinstance(v, (int, float)) else str(v)
 
     config['gates'] = {

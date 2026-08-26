@@ -9,6 +9,7 @@ stadium-shaped value blobs where a dangling output's value lands
 outside any gate. Pan/zoom and hover tooltips come free.
 """
 import math
+import re
 import textwrap
 
 import altair as alt
@@ -20,7 +21,7 @@ from quantish.tikz_diagram import (CONTROL_HALF_W, GATE_WIDTH, PORT_DY,
                                    WIRE_STUB_LEN,
                                    compute_layout, route_wires,
                                    spec_from_simulation)
-from quantish.util import SEP, subscript_digits
+from quantish.util import angle_label, SEP, subscript_digits
 
 # The palette. Edit these hex values and save; the app picks the change
 # up on the next ▶ Run (module autoreload). Input (particle) and output
@@ -48,114 +49,16 @@ def _sub(s) -> str:
     return subscript_digits(str(s))
 
 
-_SVG_PANZOOM_JS = """
-const svg = document.querySelector('svg');
-const vb0 = svg.viewBox.baseVal;
-const home = { x: vb0.x, y: vb0.y, w: vb0.width, h: vb0.height };
-let vb = { ...home };
-function apply() {
-  svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
-}
-svg.addEventListener('wheel', (e) => {
-  e.preventDefault();
-  const r = svg.getBoundingClientRect();
-  const mx = vb.x + (e.clientX - r.left) / r.width * vb.w;
-  const my = vb.y + (e.clientY - r.top) / r.height * vb.h;
-  const f = Math.exp(e.deltaY * 0.002);
-  const w = Math.min(home.w, Math.max(home.w / 40, vb.w * f));
-  const k = w / vb.w;
-  vb = { x: mx - (mx - vb.x) * k, y: my - (my - vb.y) * k,
-         w, h: vb.h * k };
-  apply();
-}, { passive: false });
-let pan = null;
-svg.addEventListener('mousedown', (e) => {
-  pan = { x: e.clientX, y: e.clientY, vx: vb.x, vy: vb.y };
-  svg.classList.add('panning');
-});
-window.addEventListener('mousemove', (e) => {
-  if (!pan) return;
-  const r = svg.getBoundingClientRect();
-  vb.x = pan.vx - (e.clientX - pan.x) / r.width * vb.w;
-  vb.y = pan.vy - (e.clientY - pan.y) / r.height * vb.h;
-  apply();
-});
-window.addEventListener('mouseup', () => {
-  pan = null;
-  svg.classList.remove('panning');
-});
-svg.addEventListener('dblclick', () => {
-  vb = { ...home };
-  apply();
-});
-"""
-
-
-def responsive_svg(chart) -> str:
-    """The chart as an SVG that scales uniformly with its container —
-    geometry and text together, aspect preserved — via viewBox. Raises
-    when vl-convert (a native wheel; absent under WASM) is missing, so
-    callers can fall back to the interactive fixed-size chart."""
-    import re as _re
-
-    import altair as alt
-    import vl_convert as vlc
-
-    # the marimo data transformer stores data behind virtual-file URLs
-    # vl-convert cannot fetch; inline it for the standalone render
-    with alt.data_transformers.enable('default', max_rows=None):
-        spec = chart.to_json()
-    svg = vlc.vegalite_to_svg(spec)
-    m = _re.search(r'<svg[^>]*>', svg)
-    tag = m.group(0)
-    w = _re.search(r'width="([\d.]+)"', tag)
-    h = _re.search(r'height="([\d.]+)"', tag)
-    new_tag = tag
-    if w and h and 'viewBox' not in tag:
-        new_tag = new_tag.replace(
-            '<svg', f'<svg viewBox="0 0 {w.group(1)} {h.group(1)}"', 1)
-    new_tag = _re.sub(r'\s(?:width|height)="[\d.]+"', '', new_tag)
-    new_tag = new_tag.replace(
-        '<svg', '<svg style="width: 100%; height: auto; display: block"',
-        1)
-    return svg.replace(tag, new_tag, 1)
-
-
-def svg_diagram_iframe(chart) -> str:
-    """The chart as a self-contained <iframe> of hand-driven
-    interactive SVG: it tracks the container width at the diagram's
-    true aspect ratio, and inside it the wheel zooms around the cursor,
-    dragging pans, and a double-click resets — the same read-the-text
-    affordance as the Vega chart's wheel zoom, with no external
-    dependencies. Raises without vl-convert (the WASM build); callers
-    fall back to the interactive fixed-size chart."""
-    import html as _html
-    import re as _re
-
-    svg = responsive_svg(chart)
-    vb = _re.search(r'viewBox="0 0 ([\d.]+) ([\d.]+)"', svg)
-    aspect = f'{vb.group(1)} / {vb.group(2)}' if vb else '3 / 1'
-    doc = ('<!DOCTYPE html><html><head><meta charset="utf-8"><style>'
-           'html, body { margin: 0; padding: 0; overflow: hidden;'
-           ' background: #fff; }'
-           ' svg { cursor: grab; } svg.panning { cursor: grabbing; }'
-           '</style></head><body>'
-           + svg
-           + '<script>' + _SVG_PANZOOM_JS + '</script></body></html>')
-    return (f'<iframe srcdoc="{_html.escape(doc, quote=True)}" '
-            f'style="width: 100%; aspect-ratio: {aspect}; '
-            'border: none; display: block"></iframe>')
-
-
-def circuit_chart(sim, has_run: bool = False, scale: float = 46.0,
-                  width: int | None = None,
-                  angle_overrides: dict | None = None):
-    """The circuit as a layered Altair chart. With has_run, every port
-    box contains its value block (rows and columns spread to make room),
-    dangling valued outputs get stadium blobs past their stub wires, and
-    the same values appear as hover tooltips. The chart renders at its
-    natural width, capped at MAX_WIDTH (pass width to override).
-    angle_overrides replaces a gate's angle-label text ({'φ': 'φ(x)'})."""
+def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
+                     angle_overrides: dict | None = None) -> dict:
+    """Everything the circuit drawing is made of, as plain
+    JSON-serializable lists in layout coordinates (y grows upward):
+    boxes (fill/stroke/corner px, hover amp/Pr), texts (multi-line
+    blocks anchored on their first line, line_h apart), wires and dots
+    (polylines), arrows (position + clockwise angle, 0 = up), stadiums,
+    and the padded bounds. One geometry, three presenters: the Altair
+    chart below, the TikZ renderer's twin, and the builder's native
+    SVG widget."""
     spec = spec_from_simulation(sim)
     L = compute_layout(spec)
     routes = route_wires(spec, L)
@@ -239,13 +142,21 @@ def circuit_chart(sim, has_run: bool = False, scale: float = 46.0,
                           size=13, color='#222222', weight='bold'))
         angle_text = ((angle_overrides or {}).get(gname)
                       or _sub(gdata.get('angle', '')))
+        _gph = getattr(sim.gates.get(gname), 'phase', None)
+        if (_gph is not None and abs(complex(_gph.v)) > 1e-12
+                and gname not in (angle_overrides or {})):
+            _phspec = ((sim.config.get('gates', {}).get(gname) or {})
+                       .get('phase', 0))
+            angle_text += ', φ ' + _sub(
+                angle_label(_phspec, float(_gph.degrees), '°'))
         texts.append(dict(x=cx, y=top - 0.60 * KH, lines=[angle_text],
                           size=10, color='#777777', weight='normal'))
         deg = float(gdata.get('deg', 0.0))
-        # compass needle: 0.75 of the gate width, centered vertically on
-        # the two header text lines
-        ccx = left + 0.75 * (right - left)
-        ccy = top - 0.42 * KH
+        # compass needle: just to the right of the gate name, anchored
+        # to the name's own position so it sits identically before and
+        # after a run
+        ccx = cx + 0.115 * (len(gname) + 1) / 2 + 0.45
+        ccy = top - 0.24 * KH
         dx_c, dy_c = math.cos(math.radians(deg)), math.sin(math.radians(deg))
         wires.append([dict(route=f'{gname}~c', order=0,
                            x=ccx - 0.26 * dx_c, y=ccy - 0.26 * dy_c),
@@ -311,10 +222,42 @@ def circuit_chart(sim, has_run: bool = False, scale: float = 46.0,
     for dname, (dx_, dy_) in L.delay_xy.items():
         pos = f'{dname}{SEP}control'
         vals = value_lines(pos) if pos in parsed.links else []
+        _ph = getattr(sim.gates.get(dname), 'phase', None)
+        _is_plate = _ph is not None and abs(complex(_ph.v)) > 1e-12
+        if _is_plate:
+            # a phase plate: its phase — and the resulting aggregate
+            # angle of what passed through — are the whole story;
+            # magnitudes are unaffected (full values stay on hover)
+            _override = (angle_overrides or {}).get(dname)
+            _spec = ((sim.config.get('gates', {}).get(dname) or {})
+                     .get('phase', 0))
+            _angles = re.findall(r'∠\S+', ' '.join(vals))
+            vals = ([_override if _override
+                     else _sub(angle_label(_spec, float(_ph.degrees),
+                                           '°'))]
+                    + _angles)
         lines = ([_sub(dname)] + vals) if vals else [_sub(dname)]
         w, h = measure(lines, 2 * CONTROL_HALF_W)
         emit_box(dx_ * KX, dy_ * KY, w, h, lines, DELAY_FILL, DELAY_STROKE,
                  corner=3, tip=value_lines(pos))
+        if _is_plate:
+            # the same compass needle full gates carry, angled by the
+            # phase, just to the right of the plate's name (the name is
+            # the first display line, centered in the box)
+            _deg = float(_ph.degrees)
+            _ncx = dx_ * KX + 0.115 * (len(dname) + 1) / 2 + 0.38
+            _ncy = dy_ * KY + (len(lines) - 1) * LINE_H / 2
+            _dxc, _dyc = (math.cos(math.radians(_deg)),
+                          math.sin(math.radians(_deg)))
+            wires.append([dict(route=f'{dname}~c', order=0,
+                               x=_ncx - 0.22 * _dxc,
+                               y=_ncy - 0.22 * _dyc),
+                          dict(route=f'{dname}~c', order=1,
+                               x=_ncx + 0.22 * _dxc,
+                               y=_ncy + 0.22 * _dyc)])
+            arrows.append(dict(x=_ncx + 0.22 * _dxc,
+                               y=_ncy + 0.22 * _dyc,
+                               angle=(90 - _deg) % 360))
         edge_clip[clip_key((dx_ - CONTROL_HALF_W) * KX, dy_ * KY)] = dx_ * KX - w / 2
         edge_clip[clip_key((dx_ + CONTROL_HALF_W) * KX, dy_ * KY)] = dx_ * KX + w / 2
         frames[dname] = (dx_ * KX - w / 2, dy_ * KY - h / 2,
@@ -486,15 +429,37 @@ def circuit_chart(sim, has_run: bool = False, scale: float = 46.0,
         x0, x1 = min(x0, p['x']), max(x1, p['x'])
         y0, y1 = min(y0, p['y']), max(y1, p['y'])
     pad = 0.4
-    xscale = alt.Scale(domain=[x0 - pad, x1 + pad])
-    yscale = alt.Scale(domain=[y0 - pad, y1 + pad])
+    return dict(boxes=boxes, texts=texts, wires=wires, arrows=arrows,
+                dots=dots, stadiums=stadiums, line_h=LINE_H,
+                wire_color=WIRE_COLOR, value_fill=VALUE_FILL,
+                value_stroke=VALUE_STROKE, scale=scale,
+                x0=x0 - pad, y0=y0 - pad, x1=x1 + pad, y1=y1 + pad)
+
+
+def circuit_chart(sim, has_run: bool = False, scale: float = 46.0,
+                  width: int | None = None,
+                  angle_overrides: dict | None = None):
+    """The circuit as a layered Altair chart over diagram_geometry.
+    With has_run, every port box contains its value block (rows and
+    columns spread to make room), dangling valued outputs get stadium
+    blobs past their stub wires, and the same values appear as hover
+    tooltips. The chart renders at its natural width, capped at
+    MAX_WIDTH (pass width to override). angle_overrides replaces a
+    gate's angle-label text ({'φ': 'φ(x)'})."""
+    g = diagram_geometry(sim, has_run=has_run, scale=scale,
+                         angle_overrides=angle_overrides)
+    boxes, texts, wires = g['boxes'], g['texts'], g['wires']
+    arrows, dots, stadiums = g['arrows'], g['dots'], g['stadiums']
+    x0, y0, x1, y1 = g['x0'], g['y0'], g['x1'], g['y1']
+    xscale = alt.Scale(domain=[x0, x1])
+    yscale = alt.Scale(domain=[y0, y1])
     xe = alt.X('x:Q', scale=xscale, axis=None)
     ye = alt.Y('y:Q', scale=yscale, axis=None)
     # natural_px is the width at which geometry and font sizes match
     # exactly; the rendered width never exceeds MAX_WIDTH (or the
     # caller's explicit width), and a smaller circuit keeps its natural
     # size — never stretched, which would distort the drawn angles
-    x_extent = x1 - x0 + 2 * pad
+    x_extent = x1 - x0
     natural_px = x_extent * scale
     if width is None:
         width = int(min(natural_px, MAX_WIDTH))
@@ -502,7 +467,7 @@ def circuit_chart(sim, has_run: bool = False, scale: float = 46.0,
     # its rendered width, shrink the height by the same factor, so
     # boxes and their contents are not stretched tall
     fit = min(1.0, width / natural_px)
-    height = int((y1 - y0 + 2 * pad) * scale * fit)
+    height = int((y1 - y0) * scale * fit)
     # pixel-sized glyphs (text, arrowheads, particle dots) don't follow
     # the scales, so two live factors are applied to their sizes:
     # WF — how far the container squeezes the natural width (never
