@@ -30,16 +30,36 @@ from fractions import Fraction
 
 import sympy as sym
 
-from quantish.qnumber import qify
+from quantish.qnumber import qify, reserved_name
 from quantish.util import SEP, WIRES
 
 
-def angle_degrees(spec) -> float:
+def variables_env(variables) -> tuple[dict, list[str]]:
+    """Resolve a model's variables mapping into qified values, in
+    definition order (later entries may use earlier ones), exactly as
+    the engine does. Returns (env, problems) — problems instead of an
+    exception, so every bad definition is reported at once."""
+    env, problems = {}, []
+    for name, expr in (variables or {}).items():
+        if reserved_name(str(name)):
+            problems.append(f'variable {name} shadows a builtin math '
+                            'name')
+            continue
+        try:
+            env[str(name)] = qify(expr, env)
+        except Exception as exc:  # noqa: BLE001 — report and continue
+            reason = str(exc).splitlines()[0]
+            problems.append(f'variable {name}: cannot use {expr!r} — '
+                            f'{reason}')
+    return env, problems
+
+
+def angle_degrees(spec, env=None) -> float:
     """The degrees value of an angle spec: the model files' radians
-    syntax ('pi/6', 'rad(30)', 0.5), or the builder dialog's
-    degree-marked entries ('30°', '22.5º'), kept verbatim so editing
-    presents exactly what was typed. Raises ValueError for anything
-    unparseable."""
+    syntax ('pi/6', 'rad(30)', 0.5, a variable name resolved through
+    env), or the builder dialog's degree-marked entries ('30°',
+    '22.5º'), kept verbatim so editing presents exactly what was
+    typed. Raises ValueError for anything unparseable."""
     if isinstance(spec, str):
         s = spec.strip()
         if s and s[-1] in '°º˚':
@@ -48,7 +68,7 @@ def angle_degrees(spec) -> float:
             except ValueError:
                 raise ValueError(f'{s!r} is not a number of degrees') \
                     from None
-    val = qify(0 if spec in (None, '') else spec)
+    val = qify(0 if spec in (None, '') else spec, env)
     return float(val.degrees)
 
 
@@ -88,9 +108,10 @@ def _endpoint(e: str, gates) -> tuple:
     return None, None
 
 
-def validate_graph(graph) -> list[str]:
-    """Human-readable problems that keep the graph from running."""
-    problems = []
+def validate_graph(graph, variables=None) -> list[str]:
+    """Human-readable problems that keep the graph from running.
+    Angle and phase specs resolve through the model's variables."""
+    env, problems = variables_env(variables)
     gates = graph.get('gates', {})
     particles = graph.get('particles', {})
     links = [tuple(l) for l in graph.get('links', [])]
@@ -148,7 +169,7 @@ def validate_graph(graph) -> list[str]:
             continue
         field = 'phase' if g.get('kind') == 'phase' else 'angle'
         try:
-            _deg = angle_degrees(g.get(field, 0))
+            _deg = angle_degrees(g.get(field, 0), env)
             if abs(_deg) > 360:
                 problems.append(
                     f'{name}: {field} {g.get(field)!r} is '
@@ -259,12 +280,21 @@ def derive_stages(graph) -> dict[str, list[str]]:
     return stages
 
 
-def graph_to_config(graph, title: str) -> dict:
-    """The model-config dict the Simulation loads (no defaults mixed in)."""
+def graph_to_config(graph, title: str, caption: str | None = None,
+                    variables: dict | None = None,
+                    symbolic: bool | None = None) -> dict:
+    """The model-config dict the Simulation loads (no defaults mixed
+    in). caption, variables, and symbolic ride along when given; angle
+    and weight specs referencing the variables stay verbatim."""
     gates = graph.get('gates', {})
     delays = sorted((n for n, g in gates.items()
                      if g.get('kind') == 'delay'), key=_natural)
-    config = {'title': title, 'run_stages': derive_stages(graph)}
+    config = {'title': title}
+    if caption:
+        config['caption'] = str(caption)
+    if symbolic:
+        config['symbolic'] = True
+    config['run_stages'] = derive_stages(graph)
     config['particles'] = {
         name: {'weight': p.get('weight', 1), 'sign': p.get('sign', 1)}
         for name, p in sorted(graph.get('particles', {}).items())}
@@ -284,6 +314,8 @@ def graph_to_config(graph, title: str) -> dict:
         for name, g in sorted(gates.items()) if name not in delays}
     if delays:
         config['delay_gates'] = delays
+    if variables:
+        config['variables'] = {str(k): v for k, v in variables.items()}
     config['links'] = {src: dst for src, dst in graph.get('links', [])}
 
     # diagram groups, only when the user assigned any (without them,
@@ -367,14 +399,9 @@ def config_to_graph(config) -> tuple[dict, list[str]]:
     sim = Simulation(Addict(base))   # resolves variables, checks wiring
 
     notes = []
-    for key, note in (
-            ('caption', 'the caption is not carried into the builder'),
-            ('variables', 'variable definitions are not carried into '
-                          'the builder (their values are kept)'),
-            ('wire_labels',
-             'wire labels are not carried into the builder')):
-        if config.get(key):
-            notes.append(note)
+    if config.get('wire_labels'):
+        notes.append('wire labels are not carried into the builder')
+    env, _ = variables_env(config.get('variables'))
 
     stage_of = {g: s for s, gs in config['run_stages'].items() for g in gs}
     # diagram groups, minus the singleton padding graph_to_config adds
@@ -394,10 +421,11 @@ def config_to_graph(config) -> tuple[dict, list[str]]:
         gd = {'x': 170 + col * 200, 'y': 40 + row * 150}
 
         def _keep(field, spec, resolved_deg):
-            # the original spec survives when it parses on its own;
-            # variable references resolve to their value, with a note
+            # the original spec survives verbatim — variable references
+            # included, now that the variables travel with the model;
+            # only a spec even the variables can't explain falls back
             try:
-                angle_degrees(spec)
+                angle_degrees(spec, env)
             except Exception:  # noqa: BLE001 — any unparseable spec
                 expr = _angle_expr(resolved_deg)
                 notes.append(f'{name}: {field} {spec} loaded as its '
@@ -434,19 +462,10 @@ def config_to_graph(config) -> tuple[dict, list[str]]:
         graph['gates'][name] = gd
 
     for i, (name, p) in enumerate(config['particles'].items()):
+        # weight specs stay verbatim — the variables travel with the
+        # model, so 'q45' or '0.5+0.87j' both survive the round trip
         spec = p.get('weight', 1)
-        w = complex(sim.particles[name].weight)
-        if w.imag == 0:
-            w = w.real
-            w = int(w) if w == int(w) else w
-        else:
-            w = f'{w.real:.12g}{w.imag:+.12g}j'
-        # only a spec that needs the model's variables is worth a note
-        # (a literal like '1+0j' loses nothing by becoming 1)
-        try:
-            qify(spec)
-        except Exception:  # noqa: BLE001 — a variable reference
-            notes.append(f'{name}: weight {spec} loaded as its value {w}')
+        w = spec if isinstance(spec, (int, float)) else str(spec)
         graph['particles'][name] = {'x': 24, 'y': 60 + i * 70,
                                     'sign': int(p.get('sign', 1)),
                                     'weight': w}
@@ -460,7 +479,20 @@ def config_to_graph(config) -> tuple[dict, list[str]]:
 def config_to_yaml(config) -> str:
     """The config in the model files' style: block YAML, sections in the
     conventional order, flow mappings for the one-line entries."""
-    lines = [f"title: {config['title']}", '', 'run_stages:']
+    def _scalar(v):
+        s = str(v)
+        return f"'{s.replace(chr(39), chr(39) * 2)}'" \
+            if isinstance(v, str) else s
+
+    lines = [f"title: {config['title']}"]
+    if config.get('caption'):
+        cap = str(config['caption'])
+        if ': ' in cap or cap[:1] in '\'"#&*[]{}':
+            cap = f"'{cap.replace(chr(39), chr(39) * 2)}'"
+        lines += ['', f'caption: {cap}']
+    if config.get('symbolic'):
+        lines += ['', 'symbolic: true']
+    lines += ['', 'run_stages:']
     for stage, gates in config['run_stages'].items():
         lines.append(f"  {stage}: [{', '.join(gates)}]")
     if 'diagram_groups' in config:
@@ -482,6 +514,10 @@ def config_to_yaml(config) -> str:
     if config.get('delay_gates'):
         lines += ['', f"delay_gates: "
                       f"[{', '.join(config['delay_gates'])}]"]
+    if config.get('variables'):
+        lines += ['', 'variables:']
+        for vname, vval in config['variables'].items():
+            lines.append(f'  {vname}: {_scalar(vval)}')
     lines += ['', 'links:']
     for src, dst in config['links'].items():
         lines.append(f'  {src}: {dst}')

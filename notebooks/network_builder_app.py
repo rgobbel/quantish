@@ -63,9 +63,9 @@ async def initialization():
 
     from quantish.altair_diagram import diagram_geometry
     from quantish.builder import (angle_degrees, coherence_warnings,
-                                  config_to_graph,
-                                  config_to_yaml, graph_to_config,
-                                  validate_graph)
+                                  config_to_graph, config_to_yaml,
+                                  graph_to_config, validate_graph,
+                                  variables_env)
     from quantish.builder_widget import BuilderWidget, DiagramWidget
     from quantish.display import coord_sort_key, cs_point_sort_key
     from quantish.util import angle_label
@@ -83,6 +83,7 @@ async def initialization():
     return (
         Addict,
         BuilderWidget,
+        CalcMode,
         angle_degrees,
         angle_label,
         Simulation,
@@ -97,7 +98,9 @@ async def initialization():
         diagram_geometry,
         mo,
         model_paths,
+        qn,
         validate_graph,
+        variables_env,
         yaml,
     )
 
@@ -146,13 +149,16 @@ def _(mo):
     - The **Stages & diagram groups** panel below the canvas shows the
       full assignment as editable YAML: rename, regroup, and reorder
       there, then **apply stages & groups**.
+    - The **title**, **caption**, **calculation mode**, and
+      **Variables** are all editable above the canvas and travel into
+      the YAML; angle and weight specs may reference the variables by
+      name ('Q1'), and loaded models keep those references verbatim.
     - To modify an existing model, pick or upload one and press
       **⬆ load into builder** — it replaces the canvas; **✕ clear** (in
       the canvas toolbar) starts over empty, with a confirmation —
       and undo can bring the canvas back. The **title** (in the YAML) and the **file
-      name** (of the saved file) are separate fields. Angles load as
-      their numeric values; captions, variable definitions, and wire
-      labels aren't carried over.
+      name** (of the saved file) are separate fields. Wire labels are the
+      one thing not yet carried over.
     """)
     return
 
@@ -207,6 +213,9 @@ def _(config_to_graph, load_btn, mo, model_paths, model_pick,
         set_pending({'graph': graph, 'notes': notes,
                      'title': config.get('title') or 'my_network',
                      'file': PurePath(source).stem,
+                     'caption': config.get('caption') or '',
+                     'variables': config.get('variables') or {},
+                     'symbolic': bool(config.get('symbolic')),
                      'source': source})
         return None
 
@@ -262,15 +271,30 @@ def _(confirm_load_btn, get_pending, keep_canvas_btn, set_loaded,
 
 @app.cell(hide_code=True)
 def _(get_loaded, mo):
-    # the model's title (goes into the YAML) and its file name (names
-    # the saved file) are separate things
-    _loaded = get_loaded()
+    # the model's whole header is editable: title (into the YAML) and
+    # file name (of the saved file) are separate; caption, variables,
+    # and the calculation mode ride into the YAML too
+    _loaded = get_loaded() or {}
     model_title = mo.ui.text(
-        value=_loaded['title'] if _loaded else 'my_network',
-        label='title')
+        value=_loaded.get('title') or 'my_network', label='title')
     file_name = mo.ui.text(
-        value=(_loaded or {}).get('file') or 'my_network',
-        label='file name')
+        value=_loaded.get('file') or 'my_network', label='file name')
+    mode_pick = mo.ui.dropdown(
+        options=['float', 'symbolic'],
+        value='symbolic' if _loaded.get('symbolic') else 'float',
+        label='calculation mode')
+    caption_input = mo.ui.text_area(
+        value=_loaded.get('caption') or '', rows=2, full_width=True,
+        label='caption')
+
+    def _vars_text(vs):
+        return '\n'.join(
+            f"{k}: '{v}'" if isinstance(v, str) else f'{k}: {v}'
+            for k, v in (vs or {}).items())
+
+    variables_editor = mo.ui.text_area(
+        value=_vars_text(_loaded.get('variables')), rows=6,
+        full_width=True)
     _report = None
     if _loaded and _loaded.get('source'):
         _msg = f"loaded **{_loaded['source']}**"
@@ -278,9 +302,37 @@ def _(get_loaded, mo):
             _msg += '\n' + '\n'.join(f'- {n}' for n in _loaded['notes'])
         _report = mo.md(_msg)
     mo.vstack(
-        [mo.hstack([model_title, file_name], justify='start', gap=1)]
-        + ([_report] if _report is not None else []), align='start')
-    return file_name, model_title
+        [mo.hstack([model_title, file_name, mode_pick],
+                   justify='start', gap=1),
+         caption_input,
+         mo.accordion({'Variables (name: expression, YAML)':
+                       variables_editor})]
+        + ([_report] if _report is not None else []), align='stretch')
+    return (caption_input, file_name, mode_pick, model_title,
+            variables_editor)
+
+
+@app.cell(hide_code=True)
+def _(mo, variables_editor, yaml):
+    # the parsed variables mapping; parse trouble shows here, and
+    # definitions the engine can't evaluate show in the status line
+    def _():
+        text = variables_editor.value.strip()
+        if not text:
+            return {}, None
+        try:
+            v = yaml.safe_load(text)
+            if v is None:
+                return {}, None
+            if not isinstance(v, dict):
+                raise ValueError('expected a name: expression mapping')
+            return {str(k): val for k, val in v.items()}, None
+        except Exception as exc:  # noqa: BLE001 — show, don't crash
+            return {}, mo.md(f'**variables not parseable** — {exc}')
+
+    model_vars, _err = _()
+    _err
+    return (model_vars,)
 
 
 @app.cell(hide_code=True)
@@ -295,18 +347,25 @@ def _(BuilderWidget, get_loaded, mo):
 
 @app.cell(hide_code=True)
 def _(angle_degrees, angle_label, builder, builder_widget,
-      coherence_warnings, graph_to_config, mo, model_title,
-      validate_graph):
+      caption_input, coherence_warnings, graph_to_config, mo,
+      mode_pick, model_title, model_vars, validate_graph,
+      variables_env):
     # The live translation of the canvas: either the list of problems
-    # keeping it from running, or the derived model config.
+    # keeping it from running, or the derived model config — caption,
+    # variables, and calculation mode included.
     _graph = builder.value.get('graph') or {}
-    problems = validate_graph(_graph)
+    problems = validate_graph(_graph, variables=model_vars)
     builder_config = None
     if not problems:
         try:
-            builder_config = graph_to_config(_graph, model_title.value)
+            builder_config = graph_to_config(
+                _graph, model_title.value,
+                caption=caption_input.value.strip() or None,
+                variables=model_vars or None,
+                symbolic=mode_pick.value == 'symbolic')
         except ValueError as exc:  # a wiring loop
             problems = [str(exc)]
+    _env, _ = variables_env(model_vars)
 
     # display labels for the canvas ('pi/6 (30.0°)'); a spec the
     # engine cannot parse shows flagged, with the specifics in the
@@ -319,7 +378,8 @@ def _(angle_degrees, angle_label, builder, builder_widget,
             _f = 'phase' if _gd.get('kind') == 'phase' else 'angle'
             _spec = _gd.get(_f, 0)
             try:
-                out[_n] = angle_label(_spec, angle_degrees(_spec), '°')
+                out[_n] = angle_label(_spec,
+                                      angle_degrees(_spec, _env), '°')
             except Exception:  # noqa: BLE001 — reported via problems
                 out[_n] = f'⚠ {_spec}'
         return out
@@ -392,8 +452,9 @@ def _(builder, builder_config, mo):
 
 
 @app.cell(hide_code=True)
-def _(apply_stages_btn, builder, copy, file_name, mo, model_title,
-      set_loaded, stage_editor, yaml):
+def _(apply_stages_btn, builder, caption_input, copy, file_name, mo,
+      mode_pick, model_title, model_vars, set_loaded, stage_editor,
+      yaml):
     # applying re-creates the canvas widget from the edited assignments
     # (positions are kept); errors show here instead
     def _apply():
@@ -436,6 +497,9 @@ def _(apply_stages_btn, builder, copy, file_name, mo, model_title,
         set_loaded({'graph': graph, 'notes': [],
                     'title': model_title.value,
                     'file': file_name.value,
+                    'caption': caption_input.value,
+                    'variables': model_vars,
+                    'symbolic': mode_pick.value == 'symbolic',
                     'source': 'the stages & groups editor'})
         return None
 
@@ -452,13 +516,17 @@ def _(builder_config, mo):
 
 
 @app.cell(hide_code=True)
-def _(Addict, Simulation, builder_config, mo, run_network_btn):
+def _(Addict, CalcMode, Simulation, builder_config, mo, qn,
+      run_network_btn):
     # sim_built is None until a successful run of the CURRENT network;
     # any canvas change recreates the button unpressed, clearing stale
     # results (the same staleness scheme as the main app)
     def _build():
         if not (run_network_btn.value and builder_config):
             return None, None
+        CalcMode.default('Symbolic' if builder_config.get('symbolic')
+                         else 'Float')
+        qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
         base = {'string_precision': 2, 'max_symbolic_len': 40,
                 'loglevel': 'warning'}
         base.update(builder_config)
