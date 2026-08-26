@@ -13,8 +13,11 @@ The builder widget edits a plain dict:
 An angle (or a φ plate's phase) is a spec in the model files' own
 syntax — radians, expressions included: 0, 'pi/6', 'rad(30)', 0.5 —
 kept verbatim through load, edit, and save; validate_graph reports
-specs qify cannot parse. A link source is a particle name ('p1') or a
-gate output
+specs qify cannot parse. A top-level wire_labels dict carries the
+book's wire-segment names, keyed as in the model files: by link
+source, by '>gate.port' for a labeled null input, or by an unlinked
+output for a labeled null output. A link source is a particle name
+('p1') or a gate output
 ('g1.upper'), and a destination is always a gate input ('g2.control').
 A gate with kind 'phase' is a phase plate — an angle-0 gate with a
 phase, used through its control wire only. A gate with kind 'delay'
@@ -163,6 +166,15 @@ def validate_graph(graph, variables=None) -> list[str]:
         if eg in plates and ew != 'control':
             problems.append(f'{end}: a phase plate only uses its '
                             'control wire')
+
+    for key in (graph.get('wire_labels') or {}):
+        end = str(key)[1:] if str(key).startswith('>') else str(key)
+        eg, ew = _endpoint(end, gates)
+        if eg is None and end not in particles:
+            problems.append(f'wire label {key}: no such wire or port')
+        elif eg is not None and eg not in delays and ew is not None \
+                and ew not in WIRES:
+            problems.append(f'wire label {key}: unknown wire {ew}')
 
     for name, g in sorted(gates.items()):
         if g.get('kind') == 'delay':
@@ -317,6 +329,9 @@ def graph_to_config(graph, title: str, caption: str | None = None,
     if variables:
         config['variables'] = {str(k): v for k, v in variables.items()}
     config['links'] = {src: dst for src, dst in graph.get('links', [])}
+    if graph.get('wire_labels'):
+        config['wire_labels'] = {str(k): str(v) for k, v
+                                 in graph['wire_labels'].items()}
 
     # diagram groups, only when the user assigned any (without them,
     # the engine already treats the run stages as the diagram groups).
@@ -399,8 +414,6 @@ def config_to_graph(config) -> tuple[dict, list[str]]:
     sim = Simulation(Addict(base))   # resolves variables, checks wiring
 
     notes = []
-    if config.get('wire_labels'):
-        notes.append('wire labels are not carried into the builder')
     env, _ = variables_env(config.get('variables'))
 
     stage_of = {g: s for s, gs in config['run_stages'].items() for g in gs}
@@ -470,6 +483,9 @@ def config_to_graph(config) -> tuple[dict, list[str]]:
                                     'sign': int(p.get('sign', 1)),
                                     'weight': w}
     graph['links'] = [[src, dst] for src, dst in config['links'].items()]
+    if config.get('wire_labels'):
+        graph['wire_labels'] = {str(k): str(v) for k, v
+                                in config['wire_labels'].items()}
     graph['stage_order'] = list(config['run_stages'])
     graph['dgroup_order'] = [d for d in (config.get('diagram_groups')
                                          or {})]
@@ -521,4 +537,9 @@ def config_to_yaml(config) -> str:
     lines += ['', 'links:']
     for src, dst in config['links'].items():
         lines.append(f'  {src}: {dst}')
+    if config.get('wire_labels'):
+        lines += ['', 'wire_labels:']
+        for key, label in config['wire_labels'].items():
+            k = f"'{key}'" if key.startswith('>') else key
+            lines.append(f'  {k}: {label}')
     return '\n'.join(lines) + '\n'

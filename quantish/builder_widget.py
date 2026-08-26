@@ -26,7 +26,9 @@ Interactions:
   double-click   on a name: rename (a particle's prompt takes the sign
                  too; a stage or diagram-group box label renames the
                  whole group) - gate body: edit its angle - phase
-                 plate body: its phase - particle body: flip its sign
+                 plate body: its phase - particle body: flip its sign -
+                 a wire or port: edit the wire label (an unconnected
+                 port labels a null input/output stub)
   keyboard       Delete removes the selection; ⌘Z / ⇧⌘Z undo and redo
 """
 import anywidget
@@ -501,6 +503,40 @@ function render({ model, el }) {
       }));
     });
 
+    // wire labels: on the wire near its source; plus labeled stubs at
+    // unconnected ports ('>g.port' null inputs, bare-key null outputs)
+    const wl = g.wire_labels || {};
+    const wlText = (x, y, label) => layer.appendChild(h('text', {
+      x, y, 'text-anchor': 'middle', 'font-size': 11,
+      'font-style': 'italic', fill: '#000', 'pointer-events': 'none',
+    }, subName(label)));
+    g.links.forEach((l, i) => {
+      if (!wl[l[0]] || !routed[i]) return;
+      const [x0, y0] = routed[i][0];
+      wlText(x0 + 24, y0 - 7, wl[l[0]]);
+    });
+    for (const [key, label] of Object.entries(wl)) {
+      if (key.startsWith('>')) {
+        const end = key.slice(1);
+        if (dstTaken.has(end)) continue;
+        const p = inXY(g, end);
+        if (!p) continue;
+        layer.appendChild(h('line', {
+          x1: p[0] - 30, y1: p[1], x2: p[0] - 2, y2: p[1],
+          stroke: C.wire, 'stroke-width': 2,
+        }));
+        wlText(p[0] - 18, p[1] - 7, label);
+      } else if (!srcTaken.has(key)) {
+        const p = outXY(g, key);
+        if (!p) continue;
+        layer.appendChild(h('line', {
+          x1: p[0] + 2, y1: p[1], x2: p[0] + 30, y2: p[1],
+          stroke: C.wire, 'stroke-width': 2,
+        }));
+        wlText(p[0] + 18, p[1] - 7, label);
+      }
+    }
+
     for (const [name, gd] of Object.entries(g.gates)) {
       const [w0, h0] = dims(gd);
       const plate = isPlate(gd);
@@ -828,15 +864,22 @@ function render({ model, el }) {
     redraw();
   }, { passive: false });
 
+  const dropLabels = (copy, pred) => {
+    for (const key of Object.keys(copy.wire_labels || {}))
+      if (pred(key.startsWith('>') ? key.slice(1) : key))
+        delete copy.wire_labels[key];
+  };
   const dropGate = (copy, k) => {
     delete copy.gates[k];
     copy.links = copy.links.filter(
       (l) => l[0] !== k && l[1] !== k &&
              !l[0].startsWith(k + '.') && !l[1].startsWith(k + '.'));
+    dropLabels(copy, (e) => e === k || e.startsWith(k + '.'));
   };
   const dropParticle = (copy, k) => {
     delete copy.particles[k];
     copy.links = copy.links.filter((l) => l[0] !== k);
+    dropLabels(copy, (e) => e === k);
   };
 
   function deleteSelected() {
@@ -985,6 +1028,21 @@ function render({ model, el }) {
     commit(copy);
   }
 
+  function editWireLabel(key) {
+    const cur = (graph().wire_labels || {})[key] || '';
+    const raw = window.prompt(
+      `wire label for ${key} (empty to remove)`, cur);
+    if (raw === null) return;
+    const copy = JSON.parse(JSON.stringify(graph()));
+    copy.wire_labels = copy.wire_labels || {};
+    const s = raw.trim();
+    if (s) copy.wire_labels[key] = s;
+    else delete copy.wire_labels[key];
+    if (!Object.keys(copy.wire_labels).length)
+      delete copy.wire_labels;
+    commit(copy);
+  }
+
   const NAME_OK = /^[^\s.]+$/;
 
   function checkName(copy, nn, current) {
@@ -1014,6 +1072,18 @@ function render({ model, el }) {
       b === name ? nn
         : b.startsWith(name + '.') ? nn + b.slice(name.length) : b,
     ]);
+    if (copy.wire_labels) {
+      const renamed = {};
+      for (const [key, lab] of Object.entries(copy.wire_labels)) {
+        const gt = key.startsWith('>');
+        const end = gt ? key.slice(1) : key;
+        const nend = end === name ? nn
+          : end.startsWith(name + '.') ? nn + end.slice(name.length)
+          : end;
+        renamed[(gt ? '>' : '') + nend] = lab;
+      }
+      copy.wire_labels = renamed;
+    }
     selected = null;
     clearMulti();
     commit(copy);
@@ -1039,6 +1109,10 @@ function render({ model, el }) {
         parts[k === name ? s : k] = v;
       copy.particles = parts;
       copy.links = copy.links.map(([a, b]) => [a === name ? s : a, b]);
+      if (copy.wire_labels && copy.wire_labels[name] !== undefined) {
+        copy.wire_labels[s] = copy.wire_labels[name];
+        delete copy.wire_labels[name];
+      }
       selected = null;
     }
     copy.particles[s].sign = sign;
@@ -1085,9 +1159,35 @@ function render({ model, el }) {
     const t = ev.target;
     const [x, y] = svgPoint(ev);
     if (t.dataset.outport) {
+      const okey = `op:${t.dataset.outport}`;
+      if (lastDown.key === okey && ev.timeStamp - lastDown.t < 400) {
+        // double-click on an out-port labels its wire (or, when
+        // unconnected, its null-output stub)
+        lastDown = { key: null, t: 0 };
+        wire = null;
+        redraw();
+        editWireLabel(t.dataset.outport);
+        return;
+      }
+      lastDown = { key: okey, t: ev.timeStamp };
       wire = { src: t.dataset.outport, x, y };
       redraw();
       return;
+    }
+    if (t.dataset.inport && !ev.shiftKey) {
+      const ikey = `ip:${t.dataset.inport}`;
+      if (lastDown.key === ikey && ev.timeStamp - lastDown.t < 400) {
+        // double-click on an in-port labels the incoming wire, or a
+        // '>port' null-input stub when nothing enters there
+        lastDown = { key: null, t: 0 };
+        drag = null;
+        const port = t.dataset.inport;
+        const link = graph().links.find((l) => l[1] === port);
+        editWireLabel(link ? link[0] : '>' + port);
+        return;
+      }
+      lastDown = { key: ikey, t: ev.timeStamp };
+      // fall through: a single press on an in-port drags the node
     }
     // a stage / diagram-group box label: double-click renames
     if (t.dataset && t.dataset.grouplabel !== undefined) {
@@ -1162,6 +1262,13 @@ function render({ model, el }) {
       return;
     }
     if (kind === 'link') {
+      const lkey = `link:${key}`;
+      if (lastDown.key === lkey && ev.timeStamp - lastDown.t < 400) {
+        lastDown = { key: null, t: 0 };
+        editWireLabel(graph().links[key][0]);
+        return;
+      }
+      lastDown = { key: lkey, t: ev.timeStamp };
       clearMulti();
       selected = { kind: 'link', key };
       redraw();

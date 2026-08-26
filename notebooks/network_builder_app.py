@@ -157,8 +157,10 @@ def _(mo):
       **⬆ load into builder** — it replaces the canvas; **✕ clear** (in
       the canvas toolbar) starts over empty, with a confirmation —
       and undo can bring the canvas back. The **title** (in the YAML) and the **file
-      name** (of the saved file) are separate fields. Wire labels are the
-      one thing not yet carried over.
+      name** (of the saved file) are separate fields. Wire labels load, save, and
+      edit too: double-click a wire — or a port — to name that wire
+      segment (an unconnected port labels a null input or output
+      stub, drawn as a short labeled wire).
     """)
     return
 
