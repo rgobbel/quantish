@@ -61,12 +61,15 @@ async def initialization():
     import copy
     import yaml
 
-    from quantish.altair_diagram import circuit_chart
-    from quantish.builder import (coherence_warnings, config_to_graph,
+    from quantish.altair_diagram import (circuit_chart,
+                                         svg_diagram_iframe)
+    from quantish.builder import (angle_degrees, coherence_warnings,
+                                  config_to_graph,
                                   config_to_yaml, graph_to_config,
                                   validate_graph)
     from quantish.builder_widget import BuilderWidget
     from quantish.display import coord_sort_key, cs_point_sort_key
+    from quantish.util import angle_label
     from quantish.simulation import Simulation
 
     # the model library, for loading an existing model into the builder
@@ -81,6 +84,8 @@ async def initialization():
     return (
         Addict,
         BuilderWidget,
+        angle_degrees,
+        angle_label,
         Simulation,
         circuit_chart,
         coherence_warnings,
@@ -92,6 +97,7 @@ async def initialization():
         graph_to_config,
         mo,
         model_paths,
+        svg_diagram_iframe,
         validate_graph,
         yaml,
     )
@@ -105,26 +111,44 @@ def _(mo):
     Build a gate network on the canvas below, then run it with the real
     quantish engine and save it as a model YAML file.
 
-    - **+ gate**, **+ φ plate**, and **+ particle** add components; drag
-      them anywhere. A φ plate is a pure phase plate: an angle-0 gate
-      used through its control wire, rotating every traversing weight
-      by $e^{i\varphi}$.
+    - **+ gate**, **+ φ plate**, **+ delay**, and **+ particle** add
+      components; drag them anywhere. A φ plate is a pure phase plate:
+      an angle-0 gate used through its control wire, rotating every
+      traversing weight by $e^{i\varphi}$. A delay gate is a portless
+      pass-through — wire it by its body ports like a particle.
     - Drag from an **output port** (right side) and drop on a free
       **input port** (left side) to wire them together.
-    - Double-click a gate to set its measurement angle (a φ plate: its
-      phase); double-click a particle to flip its sign. Click a
-      component or wire and press **delete selected** (or the Delete
-      key) to remove it.
-    - Shift-click gates to select several, then **stage…** names their
-      execution stage and **diagram group…** their display group (an
-      empty name clears it). Ungrouped gates get automatic stages
-      derived from the wiring. A stage may contain internal wiring —
-      the engine fires such a stage in dependency order.
+    - Double-click a gate body to set its measurement angle (a φ
+      plate: its phase) — in the model files' own syntax, radians with
+      expressions: `0`, `pi/6`, `rad(30)`, `acos(4/5)`, `0.5`.
+      Anything unparseable is flagged on the gate and detailed in the
+      status line. Double-click a particle to flip its sign.
+      Double-click a **name** to rename (a particle's prompt takes the
+      sign too; a stage or group box label renames the whole group,
+      and a group that exactly matches a stage shares its box). Click a component or wire and press **delete
+      selected** (or the Delete key) to remove it. **↩/↪** (or ⌘Z/⇧⌘Z)
+      undo and redo. Scroll (or pinch) zooms around the cursor and
+      dragging empty space pans — on the canvas and the results
+      diagram alike (double-click resets the diagram).
+    - Shift-click (or ⌘-click) toggles an object in the selection —
+      one kind at a time; clicking a different kind starts over.
+      Shift-drag a box to sweep up gates. Then **stage…** names the
+      selected gates' execution stage (drawn as a teal box) and
+      **diagram group…** their display group (a dashed box; an empty
+      name clears either). Ungrouped gates get automatic stages
+      derived from the wiring, and a stage may contain internal
+      wiring — the engine fires it in dependency order.
+    - Run stages *are* the diagram groups until you create a group
+      that isn't exactly a stage — that promotes every named stage to
+      a diagram group of its own, which you can then edit.
     - The **Stages & diagram groups** panel below the canvas shows the
       full assignment as editable YAML: rename, regroup, and reorder
       there, then **apply stages & groups**.
     - To modify an existing model, pick or upload one and press
-      **⬆ load into builder** — it replaces the canvas. Angles load as
+      **⬆ load into builder** — it replaces the canvas; **✕ clear** (in
+      the canvas toolbar) starts over empty, with a confirmation —
+      and undo can bring the canvas back. The **title** (in the YAML) and the **file
+      name** (of the saved file) are separate fields. Angles load as
       their numeric values; captions, variable definitions, and wire
       labels aren't carried over.
     """)
@@ -135,7 +159,9 @@ def _(mo):
 def _(mo):
     # the last model loaded into the builder: {'graph', 'title', 'notes'}
     get_loaded, set_loaded = mo.state(None)
-    return get_loaded, set_loaded
+    # a parsed load waiting for the really-replace-the-canvas step
+    get_pending, set_pending = mo.state(None)
+    return get_loaded, get_pending, set_loaded, set_pending
 
 
 @app.cell(hide_code=True)
@@ -152,9 +178,13 @@ def _(mo, model_paths):
 
 @app.cell(hide_code=True)
 def _(config_to_graph, load_btn, mo, model_paths, model_pick,
-      model_upload, set_loaded, yaml):
-    # loading replaces the canvas: the widget below is re-created from
-    # the loaded graph, and further edits proceed from there
+      model_upload, set_pending, yaml):
+    # loading replaces the canvas, so a parsed load only lands as
+    # "pending" here — the next cell applies it directly when the
+    # canvas is empty, and asks first when it isn't. (This cell must
+    # not read the canvas itself: it would re-run when the load
+    # replaces the widget, and mis-read the freshly loaded canvas as
+    # one that needs another confirmation.)
     def _load():
         if not load_btn.value:
             return None
@@ -171,9 +201,11 @@ def _(config_to_graph, load_btn, mo, model_paths, model_pick,
             graph, notes = config_to_graph(config)
         except Exception as exc:  # noqa: BLE001 — show, don't crash the app
             return mo.md(f'**could not load {source}** — {exc}')
-        set_loaded({'graph': graph, 'notes': notes,
-                    'title': config.get('title') or 'my_network',
-                    'source': source})
+        from pathlib import PurePath
+        set_pending({'graph': graph, 'notes': notes,
+                     'title': config.get('title') or 'my_network',
+                     'file': PurePath(source).stem,
+                     'source': source})
         return None
 
     _load()
@@ -181,34 +213,87 @@ def _(config_to_graph, load_btn, mo, model_paths, model_pick,
 
 
 @app.cell(hide_code=True)
+def _(builder, get_pending, mo, set_loaded, set_pending):
+    # the really? step when a load would wipe a populated canvas; an
+    # empty canvas loads straight through
+    confirm_load_btn = mo.ui.run_button(label='replace the canvas')
+    keep_canvas_btn = mo.ui.run_button(label='keep what I have')
+
+    def _():
+        _p = get_pending()
+        if _p is None:
+            return None
+        _g = builder.value.get('graph') or {}
+        if not (_g.get('gates') or _g.get('particles')):
+            set_pending(None)
+            set_loaded(_p)
+            return None
+        return mo.vstack([
+            mo.md(f"⚠ the canvas holds {len(_g.get('gates') or {})} "
+                  f"gate(s) and {len(_g.get('particles') or {})} "
+                  f"particle(s) — really replace it with "
+                  f"**{_p['source']}**?"),
+            mo.hstack([confirm_load_btn, keep_canvas_btn],
+                      justify='start', gap=1),
+        ], align='start')
+
+    _()
+    return confirm_load_btn, keep_canvas_btn
+
+
+@app.cell(hide_code=True)
+def _(confirm_load_btn, get_pending, keep_canvas_btn, set_loaded,
+      set_pending):
+    def _():
+        _p = get_pending()
+        if _p is None:
+            return
+        if confirm_load_btn.value:
+            set_pending(None)
+            set_loaded(_p)
+        elif keep_canvas_btn.value:
+            set_pending(None)
+
+    _()
+    return
+
+
+@app.cell(hide_code=True)
 def _(get_loaded, mo):
+    # the model's title (goes into the YAML) and its file name (names
+    # the saved file) are separate things
     _loaded = get_loaded()
-    project_name = mo.ui.text(
+    model_title = mo.ui.text(
         value=_loaded['title'] if _loaded else 'my_network',
-        label='project')
+        label='title')
+    file_name = mo.ui.text(
+        value=(_loaded or {}).get('file') or 'my_network',
+        label='file name')
     _report = None
-    if _loaded:
+    if _loaded and _loaded.get('source'):
         _msg = f"loaded **{_loaded['source']}**"
         if _loaded['notes']:
             _msg += '\n' + '\n'.join(f'- {n}' for n in _loaded['notes'])
         _report = mo.md(_msg)
-    mo.vstack([x for x in (project_name, _report) if x is not None],
-              align='start')
-    return (project_name,)
+    mo.vstack(
+        [mo.hstack([model_title, file_name], justify='start', gap=1)]
+        + ([_report] if _report is not None else []), align='start')
+    return file_name, model_title
 
 
 @app.cell(hide_code=True)
 def _(BuilderWidget, get_loaded, mo):
     _loaded = get_loaded()
-    builder = mo.ui.anywidget(
-        BuilderWidget(graph=_loaded['graph']) if _loaded
-        else BuilderWidget())
+    builder_widget = (BuilderWidget(graph=_loaded['graph']) if _loaded
+                      else BuilderWidget())
+    builder = mo.ui.anywidget(builder_widget)
     builder
-    return (builder,)
+    return builder, builder_widget
 
 
 @app.cell(hide_code=True)
-def _(builder, coherence_warnings, graph_to_config, mo, project_name,
+def _(angle_degrees, angle_label, builder, builder_widget,
+      coherence_warnings, graph_to_config, mo, model_title,
       validate_graph):
     # The live translation of the canvas: either the list of problems
     # keeping it from running, or the derived model config.
@@ -217,9 +302,27 @@ def _(builder, coherence_warnings, graph_to_config, mo, project_name,
     builder_config = None
     if not problems:
         try:
-            builder_config = graph_to_config(_graph, project_name.value)
+            builder_config = graph_to_config(_graph, model_title.value)
         except ValueError as exc:  # a wiring loop
             problems = [str(exc)]
+
+    # display labels for the canvas ('pi/6 (30.0°)'); a spec the
+    # engine cannot parse shows flagged, with the specifics in the
+    # problems list above
+    def _labels():
+        out = {}
+        for _n, _gd in (_graph.get('gates') or {}).items():
+            if _gd.get('kind') == 'delay':
+                continue
+            _f = 'phase' if _gd.get('kind') == 'phase' else 'angle'
+            _spec = _gd.get(_f, 0)
+            try:
+                out[_n] = angle_label(_spec, angle_degrees(_spec), '°')
+            except Exception:  # noqa: BLE001 — reported via problems
+                out[_n] = f'⚠ {_spec}'
+        return out
+
+    builder_widget.angle_labels = _labels()
 
     def _():
         n_g = len(_graph.get('gates', {}))
@@ -287,8 +390,8 @@ def _(builder, builder_config, mo):
 
 
 @app.cell(hide_code=True)
-def _(apply_stages_btn, builder, copy, mo, project_name, set_loaded,
-      stage_editor, yaml):
+def _(apply_stages_btn, builder, copy, file_name, mo, model_title,
+      set_loaded, stage_editor, yaml):
     # applying re-creates the canvas widget from the edited assignments
     # (positions are kept); errors show here instead
     def _apply():
@@ -329,7 +432,8 @@ def _(apply_stages_btn, builder, copy, mo, project_name, set_loaded,
         if errors:
             return mo.md('\n'.join(f'- {e}' for e in errors))
         set_loaded({'graph': graph, 'notes': [],
-                    'title': project_name.value,
+                    'title': model_title.value,
+                    'file': file_name.value,
                     'source': 'the stages & groups editor'})
         return None
 
@@ -377,14 +481,28 @@ def _(Addict, Simulation, builder_config, mo, run_network_btn):
 
 
 @app.cell(hide_code=True)
-def _(circuit_chart, mo, sim_built):
+def _(circuit_chart, mo, sim_built, svg_diagram_iframe):
     mo.stop(sim_built is None)
 
     def _():
+        # width-tracking interactive SVG: same look as the deployed
+        # charts, wheel-zooms around the cursor, drags to pan,
+        # double-click resets. Without vl-convert (the WASM build),
+        # fall back to the Vega chart, whose wheel-zoom serves the
+        # same purpose at fixed width.
         try:
-            return circuit_chart(sim_built, has_run=True)
+            chart = circuit_chart(sim_built, has_run=True)
         except Exception as exc:  # noqa: BLE001 — show, don't crash the app
             return mo.md(f'_circuit diagram failed: {exc}_')
+        try:
+            return mo.vstack([
+                mo.md('<span style="font-size: 0.85em">scroll/pinch '
+                      'to zoom · drag to pan · double-click to reset'
+                      '</span>'),
+                mo.Html(svg_diagram_iframe(chart)),
+            ], gap=0)
+        except Exception:  # noqa: BLE001 — vl-convert unavailable
+            return chart
 
     _()
     return
@@ -412,13 +530,13 @@ def _(coord_sort_key, cs_point_sort_key, mo, sim_built):
 
 
 @app.cell(hide_code=True)
-def _(builder_config, config_to_yaml, mo, project_name):
+def _(builder_config, config_to_yaml, file_name, mo):
     mo.stop(builder_config is None)
     _yaml = config_to_yaml(builder_config)
     mo.vstack([
         mo.accordion({'Model YAML': mo.md(f'```yaml\n{_yaml}```')}),
         mo.download(data=_yaml.encode(),
-                    filename=f'{project_name.value}.yaml',
+                    filename=f'{file_name.value}.yaml',
                     label='save model YAML'),
     ], align='start')
     return
