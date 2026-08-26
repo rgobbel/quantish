@@ -12,7 +12,16 @@ from typing import Any, Callable, TypeIs, cast
 
 log = logging.getLogger('quantish')
 
-CALC_MODE = 'Float'
+class Mode(__import__('enum').StrEnum):
+    """The calculation mode as a proper type: qn.Mode.Symbolic reads
+    like a symbol, autocompletes, and typos fail immediately — while
+    each member IS its string, so configs, logs, and == 'Float'
+    comparisons all keep working."""
+    Float = 'Float'
+    Symbolic = 'Symbolic'
+
+
+CALC_MODE = Mode.Float
 PI = m.pi
 I = 1j
 E = m.e
@@ -20,8 +29,12 @@ ZERO_THRESHOLD = 0.0
 
 def set_calc_mode(new_mode: str) -> str:
     global I, PI, E, CALC_MODE, ZERO_THRESHOLD
-    if new_mode in ('Float', 'Symbolic'):
-        CALC_MODE = new_mode
+    canon = {'float': Mode.Float, 'symbolic': Mode.Symbolic}.get(
+        str(new_mode).lower())
+    if canon is None:
+        raise ValueError(f'unknown calculation mode {new_mode!r} — '
+                         'use Mode.Float or Mode.Symbolic')
+    CALC_MODE = canon
     if CALC_MODE == 'Float':
         I = 1j
         PI = m.pi
@@ -49,6 +62,16 @@ class CalcModeMeta(type):
     @mode.setter
     def mode(cls, new_mode):
         set_calc_mode(new_mode)
+
+    def __setattr__(cls, name, value):
+        # `CalcMode.default = 'Symbolic'` and `CalcMode.mode = ...`
+        # both read as mode switches and must act as one — replacing
+        # the classmethod with a string would break every later
+        # constructor. Anything invalid fails loudly in set_calc_mode.
+        if name in ('default', 'mode'):
+            set_calc_mode(value)
+            return
+        super().__setattr__(name, value)
 
 
 class CalcMode(metaclass=CalcModeMeta):
@@ -88,6 +111,16 @@ def issym(x) -> TypeIs[sym.Basic]:
     return rex.match('sympy', type(x).__module__) is not None
 
 otherv = lambda x: x.v if isq(x) else x
+
+def _rounded(v, n):
+    """round() for either backend. sympy's own Expr.round trims the
+    PRECISION to the digit count (Float(1.25).round(1) is a 2-digit
+    Float printing '1.2' but worth 1.19921875); rounding through a
+    Python float keeps the full-precision rounded value."""
+    if issym(v):
+        return (sym.Integer(round(float(v))) if n is None
+                else sym.Float(round(float(v), n)))
+    return round(v, n) if n is not None else round(v)
 
 
 
@@ -417,10 +450,13 @@ class Complex(n.Number):
         return Real(abs(self._value))
 
     def __round__(self, n=None):
-        if self.imag == 0:
-            return Real(round(self.real, n))
-        else:
-            return Complex(round(self.real, n)+round(self.imag, n)*I)
+        # round the underlying values: rounding the Real properties
+        # would re-enter this method and lose the digits argument
+        if bool(self.imag == 0):
+            return Real(_rounded(self.real.v, n))
+        i = sym.I if issym(self._value) else 1j
+        return Complex(_rounded(self.real.v, n)
+                       + _rounded(self.imag.v, n) * i)
 
     def conjugate(self):
         """(x+y*i).conjugate() returns (x-y*i)."""
@@ -522,9 +558,7 @@ class Real(Complex):
         return Real(val)
 
     def __round__(self, ndigits=None):
-        if issym(self._value): val = self._value.round()
-        else: val = round(self._value, ndigits)
-        return Real(val)
+        return Real(_rounded(self._value, ndigits))
 
     def __divmod__(self, other):
         ov = otherv(other)
@@ -693,3 +727,19 @@ def simplify(w):
         w = qify(w)
     simplified = sym.simplify(w.v)
     return w.__class__(simplified)
+
+
+class _QNumberModule(__import__('types').ModuleType):
+    """`qn.CalcMode = 'Symbolic'` reads as a mode switch and must act
+    as one: a plain module-attribute assignment would silently replace
+    the CalcMode class with a string and break every later constructor
+    (the classic symptom: "'str' object has no attribute 'default'")."""
+
+    def __setattr__(self, name, value):
+        if name == 'CalcMode' and not isinstance(value, type):
+            set_calc_mode(value)
+            return
+        super().__setattr__(name, value)
+
+
+__import__('sys').modules[__name__].__class__ = _QNumberModule
