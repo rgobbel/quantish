@@ -85,7 +85,6 @@ class TestGoldenStates(unittest.TestCase):
     def setUpClass(cls):
         logging.getLogger('quantish').setLevel(logging.WARNING)
         CalcMode.default('Float')
-        qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
         with open(GOLDEN_PATH) as f:
             cls.golden = json.load(f)
 
@@ -115,7 +114,6 @@ class TestGoldenStates(unittest.TestCase):
 def regen():
     logging.getLogger('quantish').setLevel(logging.WARNING)
     CalcMode.default('Float')
-    qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
     data = {name: snapshot(run_model(name)) for name in GOLDEN_MODELS}
     with open(GOLDEN_PATH, 'w') as f:
         json.dump(data, f, indent=1, sort_keys=True)

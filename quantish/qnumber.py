@@ -22,29 +22,18 @@ class Mode(__import__('enum').StrEnum):
 
 
 CALC_MODE = Mode.Float
-PI = m.pi
-I = 1j
-E = m.e
-ZERO_THRESHOLD = 0.0
 
 def set_calc_mode(new_mode: str) -> str:
-    global I, PI, E, CALC_MODE, ZERO_THRESHOLD
+    # The constants (PI, I, E, ZERO_THRESHOLD) need no refreshing: they
+    # are mode-adaptive objects that present the right backend on every
+    # use (see _RealConstant below).
+    global CALC_MODE
     canon = {'float': Mode.Float, 'symbolic': Mode.Symbolic}.get(
         str(new_mode).lower())
     if canon is None:
         raise ValueError(f'unknown calculation mode {new_mode!r} — '
                          'use Mode.Float or Mode.Symbolic')
     CALC_MODE = canon
-    if CALC_MODE == 'Float':
-        I = 1j
-        PI = m.pi
-        E = m.e
-        ZERO_THRESHOLD = float_zero_threshold
-    else:
-        I = sym.I
-        PI = sym.pi
-        E = sym.E
-        ZERO_THRESHOLD = 0
     return CALC_MODE
 
 
@@ -155,8 +144,12 @@ def qify(x, env: dict | None = None) -> 'Complex':
     contains unknown names raises — every quantity must be concrete."""
     if isq(x): return x
     elif iscplx(x): return Complex(x)
-    local_env = ({name: (val.v if isq(val) else val)
-                  for name, val in env.items()} if env else None)
+    # sympify knows pi/E/I already; PI is the same constant spelled the
+    # way the qnumber module exports it
+    local_env = {'PI': sym.pi}
+    if env:
+        local_env.update({name: (val.v if isq(val) else val)
+                          for name, val in env.items()})
     xval = _sympify(x, rational=True, locals=local_env)
     free = getattr(xval, 'free_symbols', None)
     if free:
@@ -177,7 +170,7 @@ def qify(x, env: dict | None = None) -> 'Complex':
 # ... — are fair game: sympify's locals take precedence, so the model's
 # meaning wins consistently.)
 RESERVED_NAMES = frozenset({
-    'pi', 'E', 'I', 'oo', 'zoo', 'nan',
+    'pi', 'PI', 'E', 'I', 'oo', 'zoo', 'nan',
     'rad', 'deg', 'sqrt', 'exp', 'log',
     'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'atan2',
 })
@@ -627,56 +620,53 @@ def prod(it):
 
 ZERO = Real(0)
 
-def PI_fn(mode=None):
-    global PI
-    if mode is None:
-        mode = CALC_MODE
-    if mode == 'Float':
-        ret = Real(m.pi, mode)
-    else:
-        ret = Real(sym.pi, mode)
-    PI = ret
-    return ret
 
-def I_fn(mode=None):
-    global I
-    if mode is None:
-        mode = CALC_MODE
-    if mode == 'Float':
-        ret = Complex(1j, mode)
-    else:
-        ret = Complex(sym.I, mode)
-    I = ret
-    return ret
+class _AdaptiveConstant:
+    """Mixin for the named constants: each carries BOTH backends and
+    presents whichever matches the current calculation mode at each
+    use. Bare PI, E, I, ZERO_THRESHOLD — even after
+    `from quantish.qnumber import PI` — stay correct across mode
+    switches: the object adapts instead of being rebound, so nothing
+    ever needs refreshing."""
 
-def E_fn(mode=None):
-    global E
-    if mode is None:
-        mode = CALC_MODE
-    if mode == 'Float':
-        ret = Real(m.e, mode)
-    else:
-        ret = Real(sym.E, mode)
-    E = ret
-    return ret
+    _plain: type  # the ordinary class results and snapshots degrade to
 
+    def __new__(cls, float_value, sym_value=None):
+        if sym_value is None:
+            # deepcopy/pickle round-trips through __getnewargs__ with a
+            # single value: hand back an ordinary snapshot instead
+            return cls._plain(float_value)
+        instance = object.__new__(cls)
+        instance._float_value = float_value
+        instance._sym_value = sym_value
+        return instance
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    @property
+    def _value(self):
+        return (self._float_value if CalcMode.default() == 'Float'
+                else self._sym_value)
+
+    def newme(self, x):
+        # arithmetic results are ordinary numbers, not constants
+        return self._plain(x)
+
+
+class _RealConstant(_AdaptiveConstant, Real):
+    _plain = Real
+
+
+class _ComplexConstant(_AdaptiveConstant, Complex):
+    _plain = Complex
+
+
+PI = _RealConstant(m.pi, sym.pi)
+E = _RealConstant(m.e, sym.E)
+I = _ComplexConstant(1j, sym.I)
 float_zero_threshold = 1e-15
-
-def zero_threshold_fn(mode=None):
-    global ZERO_THRESHOLD
-    if mode is None:
-        mode = CALC_MODE
-    if mode == 'Float':
-        ret = float_zero_threshold
-    else:
-        ret = qify(0)
-    ZERO_THRESHOLD = ret
-    return ret
-
-PI = PI_fn()
-I = I_fn()
-E = E_fn()
-ZERO_THRESHOLD = zero_threshold_fn()
+ZERO_THRESHOLD = _RealConstant(float_zero_threshold, sym.Integer(0))
 
 def enough(x, threshold):
     if not x: return False
@@ -699,6 +689,10 @@ def zerop(x):
     point of every stage.
     """
     if isq(x):
+        if isinstance(x, _AdaptiveConstant):
+            # adaptive constants change value with the mode — never
+            # cache their answer on the instance
+            return _zerop(x.v)
         cached = getattr(x, '_zerop', None)
         if cached is None:
             cached = x._zerop = _zerop(x.v)

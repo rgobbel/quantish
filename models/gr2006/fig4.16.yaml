@@ -8,39 +8,16 @@ run_stages:
    split: [g5, g6]
 
 variables:
-   one: &one "1+0j"
-   minus_one: &minus_one "-1+0j"
-   cweight: &cweight "1"
-   q0: &q0 "0"
-   q10: &q10 "rad(10)"
-   q15: &q15 "rad(15)"
-   q20: &q20 "rad(20)"
-   q30: &q30 "rad(30)"
    # the printed figure's angle names: Q1 on the prepare gates, Q2 on
    # the splits (the printed g2 showed Q1+pi/2; this model uses the
    # corrected circuit — see models/README.md)
    Q1: 'rad(30)'
    Q2: 'rad(20)'
-   q35: &q35 "rad(35)"
-   q40: &q40 "rad(40)"
-   q45: &q45 "rad(45)"
-   q60: &q60 "rad(60)"
-   q90: &q90 "rad(90)"
-   q100: &q100 "rad(100)"
-   q120: &q120 "rad(30+90)"
-   q135: &q135 "rad(135)"
-   q210: &q210 "rad(210)"
-   q2: &q2 "acos(1/3)"
-   qr34: &qr34 "acos(3/4)"
-   qr45: &qr45 "acos(4/5)"
-   qm45: &qm45 "-rad(45)"
-   qm60: &qm60 "-rad(60)"
-   cw: &cw "0"
 
 particles:
-   p1: {sign: 1, weight: *one}
-   p2: {sign: 1, weight: *one}
-   p3: {sign: 1, weight: *one}
+   p1: {sign: 1, weight: 1}
+   p2: {sign: 1, weight: 1}
+   p3: {sign: 1, weight: 1}
 
 gates:
    g1: {angle: Q1}
@@ -69,11 +46,11 @@ links:
 
 # the printed figure's own wire labels (verified against the 2006 PDF)
 wire_labels:
-   g3.control: w1
-   g1.lower: w2
-   g4.control: w3
-   g2.lower: w4
-   g5.upper: w1a
-   g5.lower: w2a
-   g6.upper: w3a
-   g6.lower: w4a
+   g3.control: $w_1$
+   g1.lower: $w_2$
+   g4.control: $w_3$
+   g2.lower: $w_4$
+   g5.upper: $w_{1a}$
+   g5.lower: $w_{2a}$
+   g6.upper: $w_{3a}$
+   g6.lower: $w_{4a}$

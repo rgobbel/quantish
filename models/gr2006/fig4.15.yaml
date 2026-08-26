@@ -5,16 +5,6 @@ caption: Particle *p2* must cross over 0 or 2 times at *g4* and *g5*.
    and thus reestablishing interference at *g2*, as manifested by
    the definite outcome there and at *g3* (compare the previous figure).
 
-variables:
-   zero: &zero '0j'
-   one: &one '1+0j'
-   r60: &r60 '0.5+0.87j'
-   q1: &q1 'rad(30)'
-   q2: &q2 'rad(20)'
-   q15: &q15 'rad(15)'
-   q30: &q30 'rad(30)'
-   q60: &q60 'rad(60)'
-
 run_stages:
    prepare: [g0]
    split: [g1]
@@ -29,8 +19,8 @@ diagram_groups:
    merge_test: [g2, g3]
 
 particles:
-   p1: {sign: 1, weight: *one}
-   p2: {sign: 1, weight: *one}
+   p1: {sign: 1, weight: 1}
+   p2: {sign: 1, weight: 1}
 
 gates:
    g0: {angle: 'rad(30)'}
@@ -67,6 +57,6 @@ links:
 
 # the book labels only the prepare gate's inputs in this figure
 wire_labels:
-   '>g0.control': w1
-   p1: w2
-   '>g0.lower': w3
+   '>g0.control': $w_1$
+   p1: $w_2$
+   '>g0.lower': $w_3$

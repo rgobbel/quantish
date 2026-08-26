@@ -10,7 +10,6 @@ from quantish.double_slit import pixel_probability, screen_curve
 class TestDoubleSlit(unittest.TestCase):
     def setUp(self):
         CalcMode.default('Float')
-        qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
 
     def curves(self, fringes=3, n=81):
         return {mode: screen_curve(n, fringes, mode)[1]

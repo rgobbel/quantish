@@ -128,6 +128,16 @@ const MATHCMD = {alpha:'α',beta:'β',gamma:'γ',delta:'δ',epsilon:'ε',
   leftarrow:'←',ldots:'…',dots:'…',circ:'°',degree:'°'};
 const _subStr = (s) => [...s].map((c) => SUB[c] ?? c).join('');
 const _supStr = (s) => [...s].map((c) => SUP[c] ?? c).join('');
+// $...$ math only — wire labels carry explicit subscripts in the
+// YAML, so they get no automatic digit-subscripting
+const mathOnly = (s) => String(s)
+  .replace(/\$([^$]+)\$/g, (m, seg) => seg
+    .replace(/\\([a-zA-Z]+)/g, (c, w) => MATHCMD[w] ?? c)
+    .replace(/_\{([^{}]*)\}/g, (c, w) => _subStr(w))
+    .replace(/_(\S)/g, (c, w) => _subStr(w))
+    .replace(/\^\{([^{}]*)\}/g, (c, w) => _supStr(w))
+    .replace(/\^(\S)/g, (c, w) => _supStr(w))
+    .replace(/[{}]/g, ''));
 const subName = (s) => String(s)
   .replace(/\$([^$]+)\$/g, (m, seg) => seg
     .replace(/\\([a-zA-Z]+)/g, (c, w) => MATHCMD[w] ?? c)
@@ -537,7 +547,7 @@ function render({ model, el }) {
     const wlText = (x, y, label) => layer.appendChild(h('text', {
       x, y, 'text-anchor': 'middle', 'font-size': 11,
       'font-style': 'italic', fill: '#000', 'pointer-events': 'none',
-    }, subName(label)));
+    }, mathOnly(label)));
     g.links.forEach((l, i) => {
       if (!wl[l[0]] || !routed[i]) return;
       const [x0, y0] = routed[i][0];
@@ -1438,8 +1448,9 @@ export default { render };
 
 _DIAGRAM_CSS = """
 .qd-root { background: #fff; border: 1px solid #ddd;
-           border-radius: 8px; }
-.qd-root svg { display: block; width: 100%; height: auto;
+           border-radius: 8px; height: 480px;
+           resize: vertical; overflow: hidden; }
+.qd-root svg { display: block; width: 100%; height: 100%;
                cursor: grab; user-select: none;
                -webkit-user-select: none; }
 .qd-root svg.panning { cursor: grabbing; }
@@ -1462,6 +1473,7 @@ function render({ model, el }) {
 
   function draw() {
     const g = model.get('geometry') || {};
+    if (root._cleanup) root._cleanup();
     root.innerHTML = '';
     if (!g.boxes) return;
     const W = g.x1 - g.x0, H = g.y1 - g.y0;
@@ -1517,33 +1529,76 @@ function render({ model, el }) {
         }, line));
       });
 
-    // wheel zooms around the cursor, drag pans, double-click resets
-    const home = { x: g.x0, y: 0, w: W, h: H };
-    let vb = { ...home };
-    const apply = () =>
-      svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+    // One-size-fits-all frame: every diagram opens in the same box at
+    // the same natural scale (ppu screen px per layout unit — set so
+    // in-diagram text sizes sit just under the surrounding prose),
+    // left-aligned, with pan/zoom to reach whatever the box cuts off.
+    // Stretching the box (CSS resize) shows more or less of the plane
+    // without rescaling the contents. No zoom-out limit.
+    //
+    // User actions override defaults: the window-level stash carries
+    // the stretched box height and the zoom across widget rebuilds
+    // (model load, show-values toggle, a run). The exact pan position
+    // comes back too when the geometry is the same one it was saved
+    // for; a different geometry re-places at the kept zoom.
+    // Double-click resets zoom and pan (never the box height).
+    const st = window.__qdState = window.__qdState || {};
+    const sig = `${g.x0},${g.x1},${g.y1},${S},${g.boxes.length}`;
+    if (st.boxH) root.style.height = `${st.boxH}px`;
+    const ZOOM = 1.2;                 // natural-scale boost
+    const ppu0 = S * ZOOM;
+    let ppu = st.ppu || ppu0, vx = 0, vy = 0;
+    const apply = () => {
+      const r = root.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      svg.setAttribute('viewBox',
+        `${vx} ${vy} ${r.width / ppu} ${r.height / ppu}`);
+    };
+    const save = () => {
+      st.ppu = ppu;
+      st.sig = sig;
+      st.vx = vx;
+      st.vy = vy;
+    };
+    const place = () => {
+      const r = root.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      const vh = r.height / ppu;
+      vx = g.x0 - 28 / ppu;               // left-aligned, small margin
+      vy = H <= vh ? -(vh - H) / 2 : 0;   // center, or show the top
+      apply();
+    };
+    if (st.sig === sig && st.vx !== undefined) {
+      vx = st.vx;
+      vy = st.vy;
+      apply();
+    } else {
+      place();
+      save();
+    }
     svg.addEventListener('wheel', (ev) => {
       ev.preventDefault();
       const r = svg.getBoundingClientRect();
-      const mx = vb.x + (ev.clientX - r.left) / r.width * vb.w;
-      const my = vb.y + (ev.clientY - r.top) / r.height * vb.h;
-      const f = Math.exp(ev.deltaY * (ev.ctrlKey ? 0.01 : 0.002));
-      const w = Math.min(home.w, Math.max(home.w / 40, vb.w * f));
-      const k = w / vb.w;
-      vb = { x: mx - (mx - vb.x) * k, y: my - (my - vb.y) * k,
-             w, h: vb.h * k };
+      const mx = vx + (ev.clientX - r.left) / ppu;
+      const my = vy + (ev.clientY - r.top) / ppu;
+      const f = Math.exp(-ev.deltaY * (ev.ctrlKey ? 0.01 : 0.002));
+      const k = Math.min(ppu0 * 40, Math.max(ppu0 / 40, ppu * f)) / ppu;
+      ppu *= k;
+      vx = mx - (mx - vx) / k;
+      vy = my - (my - vy) / k;
+      save();
       apply();
     }, { passive: false });
     let pan = null;
     svg.addEventListener('mousedown', (ev) => {
-      pan = { x: ev.clientX, y: ev.clientY, vx: vb.x, vy: vb.y };
+      pan = { x: ev.clientX, y: ev.clientY, vx, vy };
       svg.classList.add('panning');
     });
     const _move = (ev) => {
       if (!pan) return;
-      const r = svg.getBoundingClientRect();
-      vb.x = pan.vx - (ev.clientX - pan.x) / r.width * vb.w;
-      vb.y = pan.vy - (ev.clientY - pan.y) / r.height * vb.h;
+      vx = pan.vx - (ev.clientX - pan.x) / ppu;
+      vy = pan.vy - (ev.clientY - pan.y) / ppu;
+      save();
       apply();
     };
     const _up = () => {
@@ -1552,13 +1607,22 @@ function render({ model, el }) {
     };
     window.addEventListener('mousemove', _move);
     window.addEventListener('mouseup', _up);
+    // stretching the frame extends the view; the scale stays put
+    const ro = new ResizeObserver(() => {
+      const r = root.getBoundingClientRect();
+      if (r.height) st.boxH = Math.round(r.height);
+      apply();
+    });
+    ro.observe(root);
     root._cleanup = () => {
       window.removeEventListener('mousemove', _move);
       window.removeEventListener('mouseup', _up);
+      ro.disconnect();
     };
     svg.addEventListener('dblclick', () => {
-      vb = { ...home };
-      apply();
+      ppu = ppu0;
+      place();
+      save();
     });
   }
 
@@ -1579,6 +1643,302 @@ class DiagramWidget(anywidget.AnyWidget):
     _esm = _DIAGRAM_ESM
     _css = _DIAGRAM_CSS
     geometry = traitlets.Dict({}).tag(sync=True)
+
+
+_WSPLIT_CSS = """
+.qw-root { background: #fff; border: 1px solid #ddd;
+           border-radius: 8px; resize: both; overflow: hidden; }
+.qw-root svg { display: block; user-select: none;
+               -webkit-user-select: none; }
+"""
+
+_WSPLIT_ESM = r"""
+// Vega-Lite's default categorical scheme (tableau10)
+const CAT10 = ['#4c78a8', '#f58518', '#e45756', '#72b7b2',
+               '#54a24b', '#eeca3b', '#b279a2', '#ff9da6'];
+
+function h(tag, attrs = {}, ...children) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  for (const c of children)
+    el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+  return el;
+}
+
+function niceTicks(d0, d1, count) {
+  const span = d1 - d0;
+  const raw = span / Math.max(4, count || 4);
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 5, 10].map((m) => m * mag)
+    .find((s) => raw <= s * 1.2) || 10 * mag;
+  const ticks = [];
+  for (let v = Math.ceil(d0 / step - 1e-9) * step; v <= d1 + 1e-9;
+       v += step)
+    ticks.push(Math.abs(v) < 1e-9 ? 0 : +v.toFixed(10));
+  return ticks;
+}
+
+function render({ model, el }) {
+  el.innerHTML = '';
+  const root = document.createElement('div');
+  root.className = 'qw-root';
+  el.appendChild(root);
+
+  // The zoomable data domain, like the Vega chart's .interactive().
+  // Both the domain and the frame size live in a window-level stash:
+  // the widget is rebuilt on every parameter or selection change, and
+  // the user's zoom and resize must ride through — only an explicit
+  // double-click resets the zoom to the default.
+  const st = window.__qwState = window.__qwState || {};
+  let dom = st.dom ? { ...st.dom } : null;
+  const HOME = [-1.2, 1.2];   // Vega nices the [-1.1, 1.1] domain out
+  const M = { l: 52, r: 8, t: 34, b: 46 };
+  const LEG = 100;
+  // the plot is sized by its frame: grab the frame's corner to
+  // stretch it, and the square plot grows to fill (no size slider)
+  let curSize = st.size || null;
+  let sized = false;
+
+  function draw() {
+    const d = model.get('data') || {};
+    const selected = model.get('selected') || [];
+    root.innerHTML = '';
+    if (!d.vectors) return;
+    if (!dom) dom = { x0: HOME[0], x1: HOME[1], y0: HOME[0], y1: HOME[1] };
+    const size = curSize || d.size || 420;
+    const W = M.l + size + M.r + LEG, H = M.t + size + M.b;
+    if (!sized) {
+      sized = true;
+      curSize = size;
+      root.style.width = `${W}px`;
+      root.style.height = `${H}px`;
+    }
+    const svg = h('svg', { viewBox: `0 0 ${W} ${H}`,
+                           width: W, height: H });
+    root.appendChild(svg);
+    const sx = (v) => M.l + (v - dom.x0) / (dom.x1 - dom.x0) * size;
+    const sy = (v) => M.t + (dom.y1 - v) / (dom.y1 - dom.y0) * size;
+    const color = (name) => CAT10[(d.order || []).indexOf(name) % 10];
+    const dim = (name) =>
+      selected.length && !selected.includes(name);
+
+    // plot frame + clip
+    svg.appendChild(h('clipPath', { id: 'qwclip' },
+      h('rect', { x: M.l, y: M.t, width: size, height: size })));
+
+    // gridlines and axes, in the Vega house style
+    const nTicks = Math.max(4, Math.round(size / 45));
+    const xt = niceTicks(dom.x0, dom.x1, nTicks);
+    const yt = niceTicks(dom.y0, dom.y1, nTicks);
+    // Vega labels ticks at the step's precision ('1.0', not '1')
+    const dec = (ts) => Math.max(0, ...ts.map((v) =>
+      (String(v).split('.')[1] || '').length));
+    const xd = dec(xt), yd = dec(yt);
+    const fmtT = (v, dd) =>
+      (v < 0 ? '\u2212' : '') + Math.abs(v).toFixed(dd);
+    for (const v of xt) {
+      svg.appendChild(h('line', { x1: sx(v), y1: M.t, x2: sx(v),
+        y2: M.t + size, stroke: '#ddd', 'stroke-width': 1 }));
+      svg.appendChild(h('line', { x1: sx(v), y1: M.t + size,
+        x2: sx(v), y2: M.t + size + 5, stroke: '#888' }));
+      svg.appendChild(h('text', { x: sx(v), y: M.t + size + 16,
+        'text-anchor': 'middle', 'font-size': 10, fill: '#000',
+        'font-family': 'sans-serif' }, fmtT(v, xd)));
+    }
+    for (const v of yt) {
+      svg.appendChild(h('line', { x1: M.l, y1: sy(v), x2: M.l + size,
+        y2: sy(v), stroke: '#ddd', 'stroke-width': 1 }));
+      svg.appendChild(h('line', { x1: M.l - 5, y1: sy(v), x2: M.l,
+        y2: sy(v), stroke: '#888' }));
+      svg.appendChild(h('text', { x: M.l - 8, y: sy(v) + 3,
+        'text-anchor': 'end', 'font-size': 10, fill: '#000',
+        'font-family': 'sans-serif' }, fmtT(v, yd)));
+    }
+    svg.appendChild(h('rect', { x: M.l, y: M.t, width: size,
+      height: size, fill: 'none', stroke: '#888', 'stroke-width': 1 }));
+    svg.appendChild(h('text', { x: M.l + size / 2, y: H - 10,
+      'text-anchor': 'middle', 'font-size': 11, 'font-weight': 'bold',
+      fill: '#000', 'font-family': 'sans-serif' }, 'Parallel (Re)'));
+    svg.appendChild(h('text', {
+      x: 14, y: M.t + size / 2, 'text-anchor': 'middle',
+      'font-size': 11, 'font-weight': 'bold', fill: '#000',
+      'font-family': 'sans-serif',
+      transform: `rotate(-90 14 ${M.t + size / 2})`,
+    }, 'Perpendicular (Im)'));
+    if (d.title)
+      svg.appendChild(h('text', { x: M.l + size / 2, y: 18,
+        'text-anchor': 'middle', 'font-size': 13,
+        'font-weight': 'bold', fill: '#000',
+        'font-family': 'sans-serif' }, d.title));
+
+    // the vectors, clipped to the plot
+    const plot = h('g', { 'clip-path': 'url(#qwclip)' });
+    svg.appendChild(plot);
+    for (const name of d.order || []) {
+      const v = d.vectors[name];
+      if (!v) continue;
+      const [re, im] = v;
+      plot.appendChild(h('line', {
+        x1: sx(0), y1: sy(0), x2: sx(re), y2: sy(im),
+        stroke: color(name),
+        'stroke-width': selected.includes(name) ? 5.5 : 4,
+        opacity: dim(name) ? 0.35 : 1,
+      }));
+      plot.appendChild(h('line', {
+        x1: sx(0), y1: sy(0), x2: sx(re), y2: sy(im),
+        stroke: 'transparent', 'stroke-width': 12,
+        'data-item': name, style: 'cursor: pointer',
+      }));
+      plot.appendChild(h('text', {
+        x: sx(re) + 7, y: sy(im), 'text-anchor': 'start',
+        'dominant-baseline': 'central', 'font-size': 11,
+        fill: color(name), opacity: dim(name) ? 0.35 : 1,
+        'font-family': 'sans-serif', 'data-item': name,
+        style: 'cursor: pointer',
+      }, name));
+    }
+
+    // legend, Vega-style
+    const lx = M.l + size + 24;
+    svg.appendChild(h('text', { x: lx, y: M.t + 4, 'font-size': 11,
+      'font-weight': 'bold', fill: '#000',
+      'font-family': 'sans-serif' }, 'component'));
+    (d.order || []).forEach((name, i) => {
+      const y = M.t + 18 + i * 16;
+      const g = h('g', { 'data-item': name,
+                         style: 'cursor: pointer' });
+      g.appendChild(h('circle', { cx: lx + 5, cy: y - 2, r: 5,
+        fill: color(name), opacity: dim(name) ? 0.35 : 1 }));
+      g.appendChild(h('text', { x: lx + 15, y, 'font-size': 10.5,
+        fill: '#000', 'font-family': 'sans-serif',
+        'dominant-baseline': 'central',
+        opacity: dim(name) ? 0.35 : 1 }, name));
+      svg.appendChild(g);
+    });
+
+    // Finder-style selection: click picks, modifier-click toggles,
+    // empty plot space clears
+    svg.addEventListener('mousedown', (ev) => {
+      const item = ev.target.closest && ev.target.closest('[data-item]');
+      const mods = ev.shiftKey || ev.metaKey || ev.ctrlKey;
+      let sel = [...(model.get('selected') || [])];
+      if (item) {
+        const name = item.getAttribute('data-item');
+        if (mods)
+          sel = sel.includes(name) ? sel.filter((s) => s !== name)
+                                   : [...sel, name];
+        else sel = [name];
+      } else if (!mods) {
+        const r = svg.getBoundingClientRect();
+        const px = (ev.clientX - r.left) / r.width * W;
+        const py = (ev.clientY - r.top) / r.height * H;
+        const inPlot = px >= M.l && px <= M.l + size &&
+                       py >= M.t && py <= M.t + size;
+        if (!inPlot) return;
+        pan = { x: ev.clientX, y: ev.clientY, moved: false,
+                d: { ...dom } };
+        return;
+      } else return;
+      model.set('selected', sel);
+      model.save_changes();
+      draw();
+    });
+
+    // wheel zooms the domain around the cursor; drag pans;
+    // double-click resets — matching the Vega .interactive() feel
+    svg.addEventListener('wheel', (ev) => {
+      ev.preventDefault();
+      const r = svg.getBoundingClientRect();
+      if (!r.width || !r.height) return;   // hidden (collapsed section)
+      const px = (ev.clientX - r.left) / r.width * W;
+      const py = (ev.clientY - r.top) / r.height * H;
+      const cx = dom.x0 + (px - M.l) / size * (dom.x1 - dom.x0);
+      const cy = dom.y1 - (py - M.t) / size * (dom.y1 - dom.y0);
+      const f = Math.exp(ev.deltaY * (ev.ctrlKey ? 0.01 : 0.002));
+      const w = Math.min(40, Math.max(0.05, (dom.x1 - dom.x0) * f));
+      const k = w / (dom.x1 - dom.x0);
+      dom = { x0: cx - (cx - dom.x0) * k, x1: cx + (dom.x1 - cx) * k,
+              y0: cy - (cy - dom.y0) * k, y1: cy + (dom.y1 - cy) * k };
+      st.dom = { ...dom };
+      draw();
+    }, { passive: false });
+    svg.addEventListener('dblclick', () => {
+      dom = null;
+      delete st.dom;
+      draw();
+    });
+  }
+
+  let pan = null;
+  const _wsMove = (ev) => {
+    if (!pan) return;
+    pan.moved = true;
+    const size = curSize || 420;
+    const svg = root.querySelector('svg');
+    if (!svg) return;
+    const r = svg.getBoundingClientRect();
+    if (!r.width) return;                  // hidden (collapsed section)
+    const scale = (pan.d.x1 - pan.d.x0) / size *
+      (svg.viewBox.baseVal.width / r.width);
+    dom = {
+      x0: pan.d.x0 - (ev.clientX - pan.x) * scale,
+      x1: pan.d.x1 - (ev.clientX - pan.x) * scale,
+      y0: pan.d.y0 + (ev.clientY - pan.y) * scale,
+      y1: pan.d.y1 + (ev.clientY - pan.y) * scale,
+    };
+    st.dom = { ...dom };
+    draw();
+  };
+  const _wsUp = () => {
+    if (pan && !pan.moved) {
+      // a motionless press on empty plot space clears the selection
+      model.set('selected', []);
+      model.save_changes();
+      draw();
+    }
+    pan = null;
+  };
+  window.addEventListener('mousemove', _wsMove);
+  window.addEventListener('mouseup', _wsUp);
+
+  // frame resize (the CSS resize grip) → refit the square plot
+  const ro = new ResizeObserver(() => {
+    if (curSize == null) return;
+    const r = root.getBoundingClientRect();
+    const s = Math.round(Math.min(r.width - (M.l + M.r + LEG),
+                                  r.height - (M.t + M.b)));
+    if (s >= 120 && Math.abs(s - curSize) > 1) {
+      curSize = s;
+      st.size = s;
+      draw();
+    }
+  });
+  ro.observe(root);
+
+  model.on('change:data', () => draw());
+  model.on('change:selected', () => draw());
+  draw();
+  return () => {
+    window.removeEventListener('mousemove', _wsMove);
+    window.removeEventListener('mouseup', _wsUp);
+    ro.disconnect();
+  };
+}
+
+export default { render };
+"""
+
+
+class WeightSplitWidget(anywidget.AnyWidget):
+    """The weight-split explorer's vector view, drawn natively: the
+    same look as the Vega chart (axes, grid, category colors, legend,
+    Finder-style selection, wheel-zoom/pan/double-click-reset) with the
+    selection synced through the `selected` trait instead of Vega
+    params."""
+    _esm = _WSPLIT_ESM
+    _css = _WSPLIT_CSS
+    data = traitlets.Dict({}).tag(sync=True)
+    selected = traitlets.List([]).tag(sync=True)
 
 
 class BuilderWidget(anywidget.AnyWidget):

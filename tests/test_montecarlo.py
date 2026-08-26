@@ -46,7 +46,6 @@ class TestMonteCarlo(unittest.TestCase):
     def setUpClass(cls):
         logging.getLogger('quantish').setLevel(logging.WARNING)
         CalcMode.default('Float')
-        qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
 
     def test_terminal_matches_exact_distribution(self):
         from quantish.montecarlo import predicted_distribution, sample_terminal

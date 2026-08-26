@@ -187,7 +187,7 @@ def run_pair(sim, theta1, theta2, n_trials: int = 0, rng=None) -> dict:
     result = {
         'exact': probs['diff'] / coupled if coupled > 0 else 0.0,
         'analytical': float(qn.simplify((theta1 - theta2).sin ** 2)),
-        'classical': float(2 * abs(theta1 - theta2) / qn.PI_fn()),
+        'classical': float(2 * abs(theta1 - theta2) / qn.PI),
     }
     if n_trials and rng is not None:
         tally = sample_terminal(cell.result_space, n_trials, rng)

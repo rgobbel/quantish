@@ -1,32 +1,23 @@
 title: Split - observe
 
-symbolic: false
+calculation_mode: float
 
 variables:
-   zero: &zero "0+0j"
-   one: &one "1+0j"
-   eye: &eye "1j"
-   r60: &r60 "0.5+0.87j"
-   q345: &q345 "acos(4/5)"
-   q30: &q30 "rad(30)"
-   q45: &q45 "rad(45)"
+   q30: "rad(30)"
 
-run_stages: &rs
+run_stages: 
    split1: [g1]
    observe: [g3]
    split2: [g2]
 
-diagram_groups: *rs
-
 particles:
-   p1: {weight: *one, sign: 1}
-   p2: {weight: *one, sign: 1}
+   p1: {sign: 1, weight: 1}
+   p2: {sign: 1, weight: 1}
 
 gates:
-   g1: {angle: *q30}
-   g2: {angle: *q30}
+   g1: {angle: q30}
+   g2: {angle: q30}
    g3: {angle: 0}
-
 
 links:
    p1: g1.upper

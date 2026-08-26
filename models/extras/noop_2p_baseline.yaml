@@ -6,7 +6,7 @@ title: No-op 2-particle baseline
 # Independence means part2's wire dest never matches a control input of any
 # active gate, so it should not influence part1's evolution.
 
-symbolic: false
+calculation_mode: float
 
 run_stages:
    step1: [gate1, gateA]

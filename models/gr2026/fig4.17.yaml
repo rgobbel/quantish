@@ -2,8 +2,6 @@ title: Quantish EPR Experiment
 
 caption: The Einstein-Podolsky-Rosen (EPR) experiment. The observations by *p3* at *g3* and *g4* couple *p1* with *p2*.
 
-loglevel: info
-
 run_stages:
    prep: [g1, g2]
    couple1: [g3]
@@ -30,7 +28,6 @@ variables:
    Qc: '3 * pi/8'
 
    Q1: 'pi/6'
-   Q2: 'pi/6'
 
    Q5: '0'
    Q6: 'pi/4'
@@ -84,15 +81,15 @@ links:
 # the book's wire-segment names for the split/merge stages (the prepare
 # and couple stages are unlabeled in the figure)
 wire_labels:
-   g3.control: w1
-   g1.lower: w2
-   g4.control: w3
-   g2.lower: w4
-   g5.upper: w1a
-   g5.lower: w2a
-   g6.upper: w3a
-   g6.lower: w4a
-   g7.upper: w1b
-   g7.lower: w2b
-   g8.upper: w3b
-   g8.lower: w4b
+   g3.control: $w_1$
+   g1.lower: $w_2$
+   g4.control: $w_3$
+   g2.lower: $w_4$
+   g5.upper: $w_{1a}$
+   g5.lower: $w_{2a}$
+   g6.upper: $w_{3a}$
+   g6.lower: $w_{4a}$
+   g7.upper: $w_{1b}$
+   g7.lower: $w_{2b}$
+   g8.upper: $w_{3b}$
+   g8.lower: $w_{4b}$

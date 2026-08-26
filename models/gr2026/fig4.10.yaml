@@ -3,18 +3,7 @@ title: Figure 4.10
 caption: Particles *p2* and *p3* observe *p1*’s position.
 
 variables:
-   zero: &zero  "0j"
-   one: &one  "1+0j"
-   r60: &r60  "0.5+0.87j"
-   q20: &q20 "rad(20)"
-   q30: &q30 "rad(30)"
-   q45: &q45 "rad(45)"
-   q60: &q60 "rad(60)"
-   q90: &q90 "rad(90)"
-   q120: &q120 "rad(120)"
-   q345: &q345 "acos(4/5)"
-   qp4: &qp4 "pi/4"
-   qp8: &qp8 "pi/8"
+   q30: "rad(30)"
 
 run_stages:
    split: [g1]
@@ -26,7 +15,7 @@ particles:
    p3: {sign: 1, weight: 1}
 
 gates:
-   g1: {angle: *q30}
+   g1: {angle: q30}
    g2: {angle: 0}
    g3: {angle: 0}
 

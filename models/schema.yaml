@@ -1,0 +1,78 @@
+# Schema for the model YAMLs in this directory: a yaml-schema (ys)
+# schema — JSON Schema (draft 2020-12) semantics written in YAML
+# (https://github.com/yaml-schema/yaml-schema).
+#
+# Validate from the command line with
+#     ys -f models/schema.yaml models/gr2026/fig4.17.yaml
+# or in Python with quantish.model_schema.validate_model (jsonschema
+# reading this same document — ys has no Python bindings); the test
+# suite (tests/test_model_schema.py) checks every model file.
+#
+# Angle, weight, and phase specs are strings (radian expressions like
+# 'rad(30)' or 'pi/8', or the bare name of a variable) or plain
+# numbers, read in angle_unit ('radians' unless the model says
+# 'degrees'; expression specs carry their own units). Option keys
+# (calculation_mode, sample, …) may also appear in defaults.yaml,
+# which model files override.
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: Quantish model configuration
+type: object
+additionalProperties: false
+required: [title, run_stages, particles, gates, links]
+
+properties:
+  title: {type: string}
+  caption: {type: string}
+  notes: {type: string}
+  calculation_mode:
+    type: string
+    pattern: '(?i)^(float|symbolic)$'
+  angle_unit: {enum: [radians, degrees]}
+  loglevel: {enum: [debug, info, warning, error]}
+  string_precision: {type: integer, minimum: 0}
+  max_symbolic_len: {type: integer, minimum: 0}
+  sample: {type: boolean}
+  n_samples: {type: integer, minimum: 0}
+  epr_stats: {type: boolean}
+  variables:
+    type: object
+    additionalProperties: {$ref: '#/$defs/spec'}
+  run_stages: {$ref: '#/$defs/groups'}
+  diagram_groups: {$ref: '#/$defs/groups'}
+  delay_gates:
+    type: array
+    items: {type: string}
+  particles:
+    type: object
+    minProperties: 1
+    additionalProperties:
+      type: object
+      additionalProperties: false
+      required: [sign]
+      properties:
+        sign: {type: [integer, string]}
+        weight: {$ref: '#/$defs/spec'}
+  gates:
+    type: object
+    minProperties: 1
+    additionalProperties:
+      type: object
+      additionalProperties: false
+      required: [angle]
+      properties:
+        angle: {$ref: '#/$defs/spec'}
+        phase: {$ref: '#/$defs/spec'}
+  links:
+    type: object
+    additionalProperties: {type: string}
+  wire_labels:
+    type: object
+    additionalProperties: {type: string}
+$defs:
+  spec: {type: [string, number]}
+  groups:
+    type: object
+    minProperties: 1
+    additionalProperties:
+      type: array
+      items: {type: string}

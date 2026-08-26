@@ -1,7 +1,7 @@
 import logging
 
 import quantish.qnumber as qn
-from quantish.qnumber import qify, Complex, Real
+from quantish.qnumber import qify, Complex, Real, I, PI, zerop
 from quantish.util import Sign, OTHER
 
 log = logging.getLogger('quantish')
@@ -34,23 +34,23 @@ class FredkinGate:
         self.phase = qify(phase)
         if type(self) is DelayGate:
             return
-        self.twist = self.theta - qn.PI_fn()/2
+        self.twist = self.theta - PI/2
 
         self.cos_theta = self.theta.cos
         self.sin_theta = self.theta.sin
         self.cos2_theta = Complex(self.cos_theta**2)
-        self.cos_sin_theta = self.cos_theta * self.sin_theta * qn.I_fn()
-        self.mcos_sin_theta = self.cos_theta * self.sin_theta * -qn.I_fn()
+        self.cos_sin_theta = self.cos_theta * self.sin_theta * I
+        self.mcos_sin_theta = self.cos_theta * self.sin_theta * -I
         self.sin2_theta = Complex(self.sin_theta**2)
 
         self.cos_twist = self.twist.cos
         self.sin_twist = self.twist.sin
         self.cos2_twist = Complex(self.cos_twist**2)
-        self.cos_sin_twist = qn.I_fn() * self.cos_twist * self.sin_twist
-        self.mcos_sin_twist = -qn.I_fn() * self.cos_twist * self.sin_twist
+        self.cos_sin_twist = I * self.cos_twist * self.sin_twist
+        self.mcos_sin_twist = -I * self.cos_twist * self.sin_twist
         self.sin2_twist = Complex(self.sin_twist**2)
 
-        if not qn.zerop(self.phase):
+        if not zerop(self.phase):
             self.phase_factor = Complex(1).rotate(self.phase)   # e^{iφ}
             self.cos2_theta = self.cos2_theta * self.phase_factor
             self.cos_sin_theta = self.cos_sin_theta * self.phase_factor
@@ -65,7 +65,7 @@ class FredkinGate:
         return 'FredkinGate'
 
     def __repr__(self):
-        if qn.zerop(self.phase):
+        if zerop(self.phase):
             return f'{self.name}({self.theta.degrees:.2f}º)'
         return f'{self.name}({self.theta.degrees:.2f}º, φ={self.phase.degrees:.2f}º)'
 

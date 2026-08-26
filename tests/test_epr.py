@@ -46,7 +46,6 @@ class TestEPRConventions(unittest.TestCase):
     def setUpClass(cls):
         logging.getLogger('quantish').setLevel(logging.WARNING)
         CalcMode.default('Float')
-        qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
 
     def test_one_stage_parity_outcome(self):
         # The coupling-stage-only EPR circuit is a 2006-edition figure (the
@@ -72,11 +71,9 @@ class TestEPRConventions(unittest.TestCase):
         from quantish.epr import run_pair
         for _mode in ('Float', 'Symbolic'):
             CalcMode.default(_mode)
-            qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
             val = qn.qify('pi/8')
             self.assertEqual(complex(deepcopy(val)), complex(val))
         CalcMode.default('Float')
-        qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
         sim = run_sim('gr2026/fig4.17')
         # g5's declared angle is Q5 = 0; storing the same value as a qnumber
         # Real exercises the deepcopy path without perturbing the circuit

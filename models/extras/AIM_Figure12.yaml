@@ -1,7 +1,6 @@
 title: Quantish EPR Experiment, as described in AIM-1026a
 
-
-symbolic: false
+calculation_mode: float
 
 run_stages:
    prepare: [g1, g2]
@@ -9,47 +8,27 @@ run_stages:
    split: [g5, g6]
 
 variables:
-   zero: "0+0j"
-   one: "1+0j"
-   minus_one: "-1+0j"
-   cweight: "1"
    q1: "rad(30)"
-   q2: "acos(1/3)"
    q3: "rad(30)+pi/2"
-   q4: "rad(20)"
-   q90: "rad(90)"
    q45: "sqrt(2)/2+sqrt(2)*I/2"
    qm45: "sqrt(2)/2-sqrt(2)*I/2"
    qpythag: "acos(4/5)"
-   cw: "0"
 
 particles:
-   control1: {sign: 1, weight: "zero"}
-   control2:
-      sign: 1
-      weight: "zero"
-   p1:
-      sign: 1
-      weight: "q45"
-   p2:
-      sign: 1
-      weight: "qm45"
-   p3:
-      sign: 1
-      weight: "one"
+   control1: {sign: 1, weight: 0}
+   control2: {sign: 1, weight: 0}
+   p1: {sign: 1, weight: q45}
+   p2: {sign: 1, weight: qm45}
+   p3: {sign: 1, weight: 1}
+
 gates:
-   g1:
-      angle: "q1"
-   g2:
-      angle: "q3"
-   g3:
-      angle: 0
-   g4:
-      angle: 0
-   g5:
-      angle: "qpythag"
-   g6:
-      angle: "qpythag"
+   g1: {angle: q1}
+   g2: {angle: q3}
+   g3: {angle: 0}
+   g4: {angle: 0}
+   g5: {angle: qpythag}
+   g6: {angle: qpythag}
+
 links:
    control1: g1.control
    control2: g2.control

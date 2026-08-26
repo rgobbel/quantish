@@ -2,15 +2,6 @@ title: Figure 4.5
 
 caption: Using the same measurement angle twice in a row causes no further state-splitting.
 
-variables:
-   zero: &zero "0+0j"
-   one: &one "1+0j"
-   eye: &eye "1j"
-   r60: &r60 "0.5+0.87j"
-   q345: &q345 "acos(4/5)"
-   q30: &q30 "rad(30)"
-   q45: &q45 "rad(45)"
-
 run_stages:
    split1: [g1]
    split2: [g2]
@@ -33,12 +24,12 @@ links:
 # the book's wire-segment names: a = between the gates, b = after g2;
 # '>' marks an empty input, an unlinked port an empty output
 wire_labels:
-   '>g1.control': w1
-   p1: w2
-   '>g1.lower': w3
-   g1.control: w1a
-   g1.upper: w2a
-   g1.lower: w3a
-   g2.control: w1b
-   g2.upper: w2b
-   g2.lower: w3b
+   '>g1.control': $w_1$
+   p1: $w_2$
+   '>g1.lower': $w_3$
+   g1.control: $w_{1a}$
+   g1.upper: $w_{2a}$
+   g1.lower: $w_{3a}$
+   g2.control: $w_{1b}$
+   g2.upper: $w_{2b}$
+   g2.lower: $w_{3b}$

@@ -1,6 +1,6 @@
 title: Zero-angle gate between two others with the same angle
 
-symbolic: false
+calculation_mode: float
 
 run_stages:
    angle1a: [g0]

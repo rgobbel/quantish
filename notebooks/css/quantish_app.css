@@ -29,3 +29,41 @@ summary, summary p, summary span,
 summary h1, summary h2, summary h3, summary h4 {
     color: #000 !important;
 }
+
+/* Results tables sit tight under their titles, with clearly more air
+   above a title than below it, so title and table read as one unit.
+   Marimo renders markdown paragraphs as <span>s (not <p>), so the
+   title selector must cover both. */
+.prose table, .markdown table {
+    margin-top: 0.15em !important;
+    margin-bottom: 0.8em !important;
+}
+.prose :is(p, span):has(+ table),
+.markdown :is(p, span):has(+ table) {
+    margin-bottom: 0 !important;
+}
+
+/* Selected values are black. Non-selected choices and defaults keep
+   the theme gray: an input showing its placeholder stays gray, one
+   showing a typed value turns black; a select always displays a
+   selection, so it is always black; a checked radio/switch label is
+   black while unchecked siblings stay gray. */
+select, option {
+    color: #000 !important;
+}
+input:not(:placeholder-shown), input[type="number"] {
+    color: #000 !important;
+}
+[role="radio"][data-state="checked"] + label,
+label:has(input:checked) {
+    color: #000 !important;
+}
+
+/* Tighter rows: the theme's 8px vertical cell padding makes even
+   one-line-per-row tables (final configuration-space points, marginal
+   probabilities) hard to scan as a whole. */
+.prose table th, .prose table td,
+.markdown table th, .markdown table td {
+    padding-top: 3px !important;
+    padding-bottom: 3px !important;
+}

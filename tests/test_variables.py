@@ -25,7 +25,6 @@ def make_config(**overrides):
 class TestVariables(unittest.TestCase):
     def setUp(self):
         CalcMode.default('Float')
-        qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
 
     def test_variable_references_earlier_variable(self):
         sim = Simulation(make_config())
@@ -99,7 +98,6 @@ class TestThetaRebinding(unittest.TestCase):
 
     def setUp(self):
         CalcMode.default('Float')
-        qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
 
     def fig417_theta_convention(self):
         import yaml
@@ -110,7 +108,7 @@ class TestThetaRebinding(unittest.TestCase):
         with open(models / 'gr2026' / 'fig4.17.yaml') as f:
             cfg.update(yaml.safe_load(f))
         cfg['loglevel'] = 'error'
-        cfg['symbolic'] = False
+        cfg['calculation_mode'] = 'float'
         cfg = Addict(cfg)
         cfg.variables.theta1 = '0'
         cfg.variables.theta2 = '0'

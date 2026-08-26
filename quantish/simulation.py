@@ -1,4 +1,5 @@
 import logging
+import math
 from collections import defaultdict
 from addict import Addict
 import networkx as nx
@@ -244,6 +245,23 @@ class Simulation:
                                     precision=self.precision)
             self.particles[pname] = new_particle
         gates = config.gates
+        # angle_unit says how plain-number angle specs read: 'radians'
+        # (the default) or 'degrees'. A degree-marked string ('30°')
+        # carries its own unit regardless. Expression specs ('rad(30)',
+        # 'pi/8', a variable name) are never converted.
+        degrees = str(config.get('angle_unit',
+                                 'radians')).lower() == 'degrees'
+
+        def angle_spec(v):
+            if isinstance(v, str):
+                s = v.strip()
+                if s and s[-1] in '°º˚':
+                    return math.radians(float(s[:-1].strip()))
+            elif degrees and isinstance(v, (int, float)) \
+                    and not isinstance(v, bool):
+                return math.radians(v)
+            return v
+
         for gname, gval in gates.items():
             # .get, not .angle: Addict would auto-create an empty Dict for
             # a missing key and crash unrecognizably inside qify
@@ -252,8 +270,9 @@ class Simulation:
                 raise ValueError(
                     f"gate '{gname}' declares no angle "
                     f"(found keys: {sorted(gval.keys())})")
-            new_gate = FredkinGate(gname, qify(angle, self.qvars),
-                                   phase=qify(gval.get('phase', 0), self.qvars))
+            new_gate = FredkinGate(
+                gname, qify(angle_spec(angle), self.qvars),
+                phase=qify(angle_spec(gval.get('phase', 0)), self.qvars))
             self.fredkin_gates[gname] = new_gate
             self.gates[gname] = new_gate
         for dgname in config.get('delay_gates', []):

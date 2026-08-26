@@ -57,12 +57,12 @@ def variables_env(variables) -> tuple[dict, list[str]]:
     return env, problems
 
 
-def angle_degrees(spec, env=None) -> float:
-    """The degrees value of an angle spec: the model files' radians
-    syntax ('pi/6', 'rad(30)', 0.5, a variable name resolved through
-    env), or the builder dialog's degree-marked entries ('30°',
-    '22.5º'), kept verbatim so editing presents exactly what was
-    typed. Raises ValueError for anything unparseable."""
+def angle_degrees(spec, env=None, unit: str = 'radians') -> float:
+    """The degrees value of an angle spec: the model files' expression
+    syntax ('pi/6', 'rad(30)', a variable name resolved through env),
+    degree-marked entries ('30°', '22.5º'), or a plain number — read
+    in `unit` (the model's angle_unit), exactly as the engine reads
+    it. Raises ValueError for anything unparseable."""
     if isinstance(spec, str):
         s = spec.strip()
         if s and s[-1] in '°º˚':
@@ -71,6 +71,9 @@ def angle_degrees(spec, env=None) -> float:
             except ValueError:
                 raise ValueError(f'{s!r} is not a number of degrees') \
                     from None
+    elif isinstance(spec, (int, float)) and not isinstance(spec, bool) \
+            and str(unit).lower() == 'degrees':
+        return float(spec)
     val = qify(0 if spec in (None, '') else spec, env)
     return float(val.degrees)
 
@@ -111,9 +114,11 @@ def _endpoint(e: str, gates) -> tuple:
     return None, None
 
 
-def validate_graph(graph, variables=None) -> list[str]:
+def validate_graph(graph, variables=None,
+                   angle_unit: str = 'radians') -> list[str]:
     """Human-readable problems that keep the graph from running.
-    Angle and phase specs resolve through the model's variables."""
+    Angle and phase specs resolve through the model's variables and
+    read plain numbers in angle_unit, as the engine does."""
     env, problems = variables_env(variables)
     gates = graph.get('gates', {})
     particles = graph.get('particles', {})
@@ -181,7 +186,7 @@ def validate_graph(graph, variables=None) -> list[str]:
             continue
         field = 'phase' if g.get('kind') == 'phase' else 'angle'
         try:
-            _deg = angle_degrees(g.get(field, 0), env)
+            _deg = angle_degrees(g.get(field, 0), env, angle_unit)
             if abs(_deg) > 360:
                 problems.append(
                     f'{name}: {field} {g.get(field)!r} is '
@@ -294,29 +299,35 @@ def derive_stages(graph) -> dict[str, list[str]]:
 
 def graph_to_config(graph, title: str, caption: str | None = None,
                     variables: dict | None = None,
-                    symbolic: bool | None = None) -> dict:
+                    symbolic: bool | None = None,
+                    angle_unit: str | None = None,
+                    notes: str | None = None) -> dict:
     """The model-config dict the Simulation loads (no defaults mixed
-    in). caption, variables, and symbolic ride along when given; angle
-    and weight specs referencing the variables stay verbatim."""
+    in). caption, variables, symbolic, angle_unit, and notes ride
+    along when given; angle and weight specs referencing the variables
+    stay verbatim. symbolic is tri-state: None leaves the key out of
+    the YAML entirely (the loader's defaults decide), True/False write
+    it explicitly; angle_unit None likewise omits the key (plain
+    numbers then read as radians)."""
     gates = graph.get('gates', {})
     delays = sorted((n for n, g in gates.items()
                      if g.get('kind') == 'delay'), key=_natural)
     config = {'title': title}
     if caption:
         config['caption'] = str(caption)
-    if symbolic:
-        config['symbolic'] = True
+    if notes:
+        config['notes'] = str(notes)
+    if angle_unit is not None:
+        config['angle_unit'] = str(angle_unit).lower()
+    if symbolic is not None:
+        config['calculation_mode'] = 'symbolic' if symbolic else 'float'
     config['run_stages'] = derive_stages(graph)
     config['particles'] = {
         name: {'weight': p.get('weight', 1), 'sign': p.get('sign', 1)}
         for name, p in sorted(graph.get('particles', {}).items())}
     def _spec(v):
-        # the builder's degree-marked entries become the YAML's
-        # radians syntax; everything else passes through verbatim
-        if isinstance(v, str):
-            s = v.strip()
-            if s and s[-1] in '°º˚':
-                return f'rad({float(s[:-1].strip()):g})'
+        # degree-marked entries ('30°') are engine-legal specs and pass
+        # through verbatim, like everything else
         return v if isinstance(v, (int, float)) else str(v)
 
     config['gates'] = {
@@ -506,8 +517,19 @@ def config_to_yaml(config) -> str:
         if ': ' in cap or cap[:1] in '\'"#&*[]{}':
             cap = f"'{cap.replace(chr(39), chr(39) * 2)}'"
         lines += ['', f'caption: {cap}']
-    if config.get('symbolic'):
-        lines += ['', 'symbolic: true']
+    if config.get('notes'):
+        txt = str(config['notes'])
+        if '\n' in txt:
+            lines += ['', 'notes: |-'] + [f'  {ln}'
+                                          for ln in txt.split('\n')]
+        else:
+            if ': ' in txt or txt[:1] in '\'"#&*[]{}':
+                txt = f"'{txt.replace(chr(39), chr(39) * 2)}'"
+            lines += ['', f'notes: {txt}']
+    _opts = [f'{k}: {config[k]}'
+             for k in ('calculation_mode', 'angle_unit') if k in config]
+    if _opts:
+        lines += [''] + _opts
     lines += ['', 'run_stages:']
     for stage, gates in config['run_stages'].items():
         lines.append(f"  {stage}: [{', '.join(gates)}]")

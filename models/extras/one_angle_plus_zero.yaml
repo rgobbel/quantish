@@ -1,5 +1,5 @@
 title: Single Gate
-symbolic: true
+calculation_mode: symbolic
 
 run_stages:
    gate_angle: [g0]

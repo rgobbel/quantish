@@ -85,7 +85,6 @@ async def initialization():
     from quantish.qnumber import CalcMode
 
     CalcMode.default('Float')
-    qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
     logging.basicConfig(level=logging.WARNING)
     logging.getLogger('quantish').setLevel(logging.WARNING)
 

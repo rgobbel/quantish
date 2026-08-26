@@ -104,6 +104,70 @@ def _(
 
 
 @app.cell(hide_code=True)
+def _(
+    DiagramWidget,
+    build_sim,
+    diagram_geometry,
+    mo,
+    show_values,
+    sim,
+    sim_model,
+):
+    # The circuit diagram, always current for the model loaded above.
+    # Before a run it shows wiring only, but laid out (via the shadow
+    # run below) exactly as the results view; once ▶ Run has computed
+    # results the values fill in, in place (the switch below toggles
+    # them). Any change to the model, angles, or mode resets sim to
+    # None until the next run, dropping back to the values-hidden view.
+    #
+    # Drawn natively (the builder's renderer over diagram_geometry) in
+    # a one-size-fits-all frame: every model opens at the same natural
+    # text scale, left-aligned, with wheel-zoom around the cursor, drag to
+    # pan, double-click to reset, values on hover; the frame's bottom
+    # edge stretches to show more without rescaling. The title and
+    # caption sit above it as real markdown — better than the Vega
+    # title, which had to strip the caption's emphasis.
+    def _native():
+        try:
+            # A shadow run pins the layout: the pre-run diagram (and
+            # the values-off view after a run) is laid out exactly as
+            # the results view will be, so pressing ▶ Run — or
+            # toggling show values — only fills in or clears the value
+            # text, moving nothing.
+            _s = sim
+            if _s is None:
+                try:
+                    _s = build_sim()
+                    _s.run()
+                except Exception:  # noqa: BLE001 — fall back to plain wiring
+                    _s = None
+            if _s is not None:
+                _show = sim is not None and show_values.value
+                return mo.ui.anywidget(DiagramWidget(
+                    geometry=diagram_geometry(_s, has_run=True,
+                                              show_values=_show)))
+            return mo.ui.anywidget(DiagramWidget(
+                geometry=diagram_geometry(sim_model, has_run=False)))
+        except Exception as exc:  # noqa: BLE001 — show, don't crash the app
+            return mo.md(f'_circuit diagram failed: {exc}_')
+
+    _s0 = sim if sim is not None else sim_model
+    _cap = getattr(_s0, 'caption', '') or ''
+    mo.vstack(
+        [
+            mo.md(f'**{_s0.title}**' + (f' — {_cap}' if _cap else '')),
+            _native(),
+            mo.md('_Scroll/pinch to zoom, drag to pan, double-click to '
+                  'reset; drag the frame\'s bottom-right corner to make '
+                  'room; after a run, hover over a port for its '
+                  'values._'),
+        ] +
+        ([mo.hstack([show_values], justify='start')]
+         if sim is not None else []), align='stretch')
+    return
+
+
+@app.cell(hide_code=True)
 def _(build_sim, mo, mode_pick, model_pick, run_btn):
     # Gated on the button. Rather than mo.stop (whose descendants all
     # display "this cell wasn't run because an ancestor was stopped"),
@@ -120,60 +184,47 @@ def _(build_sim, mo, mode_pick, model_pick, run_btn):
 
     sim = _() if run_btn.value else None
 
+    # Exactly one status text shows here — the run summary once the
+    # model has run, the how-to before that — with the Run button
+    # alongside either way, so a run swaps the words without moving
+    # anything else.
     def _():
         if sim is not None:
             angles = ', '.join(f'{g}={float(gate.theta.degrees):.1f}º'
                                for g, gate in sim.fredkin_gates.items())
-            return mo.md(
+            msg = mo.md(
                 f"Ran **{sim.title}** ({mode_pick.value} mode) — {angles}; "
                 f"{len(sim.run_stages)} steps, "
                 f"{len(sim.result_space.index)} final configuration-space point(s), "
                 f"total probability "
                 f"{sum(float(p.probability) for p in sim.result_space.index.values()):.6f}")
+        else:
+            msg = mo.md(
+                'Once a model has been loaded and its parameters set, '
+                'the `▶ Run simulation` button will execute the loaded '
+                'model, with the currently-set parameters. Results '
+                'displays will appear after execution is complete.')
+        return mo.vstack([msg, run_btn], align='start')
 
     _()
     return (sim,)
 
 
 @app.cell(hide_code=True)
-def _(circuit_chart, mo, show_values, sim, sim_model):
-    # The circuit diagram, always current for the model loaded above.
-    # Before a run it shows the wiring alone; once ▶ Run has computed
-    # results it fills with values (the switch above it toggles back to
-    # the plain view) — and because any change to the model, angles, or
-    # mode resets sim to None until the next run, it automatically
-    # drops back to the plain wiring view whenever the settings on
-    # screen are not the ones that were run.
-    def _chart():
-        try:
-            # displayed directly: mo.ui.altair_chart's selection wrapper
-            # chokes on layered interactive charts
-            if sim is not None:
-                return circuit_chart(sim, has_run=show_values.value)
-            return circuit_chart(sim_model, has_run=False)
-        except Exception as exc:  # noqa: BLE001 — show, don't crash the app
-            return mo.md(f'_circuit diagram failed: {exc}_')
-
-    # align='stretch' so the chart gets the cell's real width — left to
-    # the default it collapses and squishes the diagram
-    mo.vstack(
-        ([mo.hstack([show_values], justify='start')]
-         if sim is not None else [])
-        + [
-            _chart(),
-            mo.md('_Scroll to zoom, drag to pan, double-click to reset; '
-                  'after a run, hover over a port or value blob for its '
-                  'values._'),
-        ], align='stretch')
-    return
+def _(mo):
+    # displayed in the run-status cell above, next to whichever status
+    # text applies
+    run_btn = mo.ui.run_button(label='▶ Run simulation')
+    return (run_btn,)
 
 
 @app.cell(hide_code=True)
 def _(NetworkGraph, mo, sim):
-    # The weight-evolution graph, right under the circuit diagram once
-    # the model has run. Shown directly — mo.ui.altair_chart injects a
-    # selection param, which Vega-Lite rejects on layered charts that
-    # carry configure_* options.
+    # The weight-evolution graph, after the Run button and behind an
+    # accordion so a run doesn't reshuffle the layout above it. Shown
+    # directly — mo.ui.altair_chart injects a selection param, which
+    # Vega-Lite rejects on layered charts that carry configure_*
+    # options.
     mo.stop(sim is None)
 
     def _():
@@ -182,24 +233,9 @@ def _(NetworkGraph, mo, sim):
         except Exception as exc:  # noqa: BLE001 — surface, don't crash the app
             return mo.md(f'_network graph failed: {exc}_')
 
-    mo.vstack([
-        mo.md('### Weight evolution graphic '
-              '(configuration-space points × stages)'),
-        _(),
-    ])
+    mo.accordion({'### Weight evolution graphic '
+                  '(configuration-space points × stages)': _()})
     return
-
-
-@app.cell(hide_code=True)
-def _(mo):
-    run_btn = mo.ui.run_button(label='▶ Run simulation')
-    mo.md(f'''Once a model has been loaded and its parameters set, the `▶Run simulation` button will execute the loaded model, with the currently-set parameters.
-
-    Results displays will appear after execution is complete.
-
-    {run_btn}
-    ''')
-    return (run_btn,)
 
 
 @app.cell(hide_code=True)
@@ -459,38 +495,26 @@ def _(
     mc_button,
     mc_cancel,
     mc_job_slot,
-    mc_mode,
-    mc_refresh,
     mc_seed,
+    mc_tick_get,
     mc_trials,
     mc_trials_text,
     md_table,
     mo,
     sim,
 ):
-    mc_button  # re-render when a job starts
-    mc_refresh  # ...and on every tick while the progress view shows it
+    mc_button      # re-render when a job starts
+    mc_tick_get()  # ...and on every worker chunk and at completion
     _explanation = mo.md(r"""
-    Monte Carlo sampling can be run in either or both of two modes:
-
-    - **terminal** — each trial draws one final configuration-space point from the
-      evolved superposition with probability $\lvert w\rvert^2$. This is
-      the faithful simulation of a real experiment: interference stays
-      intact until observation, and frequencies converge on the exact
-      values as trials grow.
-    - **path** — each trial walks the configuration-space point graph one stage at a
-      time, picking a successor in proportion to the amplitude it
-      received. That yields a world-line story per trial, but choosing
-      per stage amounts to *collapsing at every stage*: where configuration-space points
-      interfere, path statistics will diverge from the
-      exact values — the divergence measures how much interference
-      matters.
+    Each trial draws one final configuration-space point from the
+    evolved superposition with probability $\lvert w\rvert^2$ — the
+    faithful simulation of a real experiment: interference stays
+    intact until observation, and frequencies converge on the exact
+    values as trials grow.
     """)
 
     def _progress(_job):
         pct = 100 * _job['progress'] / max(1, _job['total'])
-        # the refresh element is rendered only here, so it stops
-        # ticking as soon as the job finishes
         return mo.hstack([
             mo.Html(f'<progress value="{_job["progress"]}" '
                     f'max="{_job["total"]}" style="width: 24em">'
@@ -498,7 +522,6 @@ def _(
             mo.md(f'{pct:.0f}% — {_job["progress"]:,} of '
                   f'{_job["total"]:,} draws'),
             mc_cancel,
-            mc_refresh,
         ], justify='start', gap=1, align='center')
 
     def _results(_job):
@@ -555,7 +578,7 @@ def _(
     mo.accordion({'## Monte Carlo Sampling\n\n<span style="font-size:0.85em">Optional sampled trials on top of the exact run above</span>':
         mo.vstack([
             _explanation,
-            mo.hstack([mc_trials, mc_trials_text, mc_mode, mc_seed,
+            mo.hstack([mc_trials, mc_trials_text, mc_seed,
                        mc_button], wrap=True),
             _results_area(),
         ])})
@@ -680,16 +703,7 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(
-    mo,
-    ws_components,
-    ws_sign,
-    ws_size,
-    ws_theta,
-    ws_view,
-    ws_wmag,
-    ws_wphase,
-):
+def _(mo, ws_components, ws_sign, ws_theta, ws_view, ws_wmag, ws_wphase):
     mo.accordion({'## Weight-split Explorer\n\n'
                   '<span style="font-size:0.85em">An interactive tool '
                   'showing what happens to weights going through a '
@@ -701,10 +715,10 @@ def _(
     $c_{3b} = -i\,w\sin\theta\cos\theta$ (cross); $c_2 = c_{2a}+c_{2b}$,
     $c_3 = c_{3a}+c_{3b}$. A minus-sign particle swaps the roles.
 
-    **Note:** Individual components can be selected by clicking on either their vectors on the chart or their entry in the legend. Shift-click toggles a component's selected state.
+    **Note:** Individual components can be selected by clicking on either their vectors on the chart or their entry in the legend. Shift-click toggles a component's selected state. Drag the chart's bottom-right corner to resize it; double-click the chart to reset the zoom.
     """),
-        mo.hstack([ws_theta, ws_sign, ws_wmag, ws_wphase, ws_components,
-                   ws_size], wrap=True),
+        mo.hstack([ws_theta, ws_sign, ws_wmag, ws_wphase, ws_components],
+                  wrap=True),
         ws_view,
     ])})
     return
@@ -782,7 +796,7 @@ async def initialization():
             f'{_base}/public/wheels/quantish-0.1.0-py3-none-any.whl',
         ], deps=False)
         await micropip.install(['sympy', 'scipy', 'networkx', 'pandas',
-                                'altair', 'pyyaml'])
+                                'altair', 'pyyaml', 'anywidget'])
         _resp = await pyfetch(f'{_base}/public/models.json')
         for _rel, _text in _json.loads(await _resp.string()).items():
             _p = Path('/wasm-data/models') / _rel
@@ -828,12 +842,12 @@ async def initialization():
     from quantish.qnumber import CalcMode
 
     CalcMode.default('Float')
-    qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
     logging.basicConfig(level=logging.WARNING)
     logging.getLogger('quantish').setLevel(logging.WARNING)
 
     from quantish.config_space import GatePort
-    from quantish.altair_diagram import circuit_chart
+    from quantish.altair_diagram import circuit_chart, diagram_geometry
+    from quantish.builder_widget import DiagramWidget, WeightSplitWidget
     from quantish.display import coord_sort_key, cs_point_sort_key, gate_io
     from quantish.epr import run_epr_experiment, supports_epr
     from quantish.gate import FredkinGate
@@ -852,22 +866,22 @@ async def initialization():
     return (
         Addict,
         CalcMode,
+        DiagramWidget,
+        EDITOR_UI,
         FredkinGate,
         GatePort,
         MODELS_TOP,
         NetworkGraph,
-        EDITOR_UI,
         Simulation,
         WASM_MODE,
-        alt,
-        circuit_chart,
+        WeightSplitWidget,
         cmath,
         coord_sort_key,
         cs_point_sort_key,
+        diagram_geometry,
         gate_io,
         math,
         mo,
-        pd,
         qn,
         run_epr_experiment,
         supports_epr,
@@ -945,8 +959,7 @@ def _(
             return math.radians(cur['deg'])
 
         CalcMode.default(mode_pick.value)
-        qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
-        config = load_config(model_pick.value)
+        config = load_config(model_pick.value)[0]
         for g in gate_names:
             config.gates[g].angle = angle_for(g)
         return Simulation(config)
@@ -961,9 +974,12 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(mo):
+def _(mo, sim):
     # Only shown once the model has been run (the plain wiring view is
-    # all there is before that); its state persists across runs.
+    # all there is before that). Depending on sim recreates the switch
+    # at every run, so a run always opens in the values view no matter
+    # where the switch was left.
+    sim
     show_values = mo.ui.switch(value=True, label='show values')
     return (show_values,)
 
@@ -974,16 +990,30 @@ def _(Addict, MODELS_TOP, Simulation, mo, model_pick, yaml):
         with open(MODELS_TOP / 'defaults.yaml') as f:
             cfg = yaml.safe_load(f)
         with open(path) as f:
-            cfg.update(yaml.safe_load(f))
+            model = yaml.safe_load(f)
+        # variables merge deeply: the defaults' standard names (zero,
+        # one, eye) stay available underneath the model's own
+        default_vars = dict(cfg.get('variables') or {})
+        cfg.update(model)
+        if default_vars:
+            cfg['variables'] = {**default_vars,
+                                **(model.get('variables') or {})}
         cfg['loglevel'] = 'warning'
-        return Addict(cfg)
+        return Addict(cfg), model
 
-    base_config = load_config(model_pick.value)
+    base_config, _model_raw = load_config(model_pick.value)
 
-    mode_pick = mo.ui.radio(['Float', 'Symbolic'], value='Float',
-                            label='math mode', inline=True)
+    # the radio follows a mode the model file itself sets (a
+    # case-independent string); otherwise it opens on Float
+    mode_pick = mo.ui.radio(
+        ['Float', 'Symbolic'],
+        value={'symbolic': 'Symbolic', 'float': 'Float'}.get(
+            str(_model_raw.get('calculation_mode') or '').lower(),
+            'Float'),
+        label='math mode', inline=True)
     units_pick = mo.ui.radio(['degrees', 'radians'], value='degrees',
-                             label='typed numbers are', inline=True)
+                             label='displayed angle values are',
+                             inline=True)
 
     # ONE state for all gate angles: {gate: {'deg': float, 'expr': str|None}}.
     # marimo's state reactivity keys on the getter being referenced as a
@@ -996,11 +1026,28 @@ def _(Addict, MODELS_TOP, Simulation, mo, model_pick, yaml):
             d = deg % 360.0
             return d - 360.0 if d > 180.0 else d
 
-        base_sim = Simulation(load_config(model_pick.value))
+        def spec_expr(g):
+            # Only a genuinely symbolic string spec is worth carrying
+            # verbatim; numeric and degree-marked specs are represented
+            # by 'deg' (whose value came through the Simulation, so
+            # angle_unit and degree marks are already applied).
+            spec = base_config.gates[g].angle
+            if not isinstance(spec, str):
+                return None
+            s = spec.strip()
+            if s and s[-1] in '°º˚':
+                return None
+            try:
+                float(s)
+                return None
+            except ValueError:
+                return s
+
+        base_sim = Simulation(load_config(model_pick.value)[0])
         names = list(base_sim.fredkin_gates.keys())
         angles = mo.state({
             g: {'deg': round(centered(float(gate.theta.degrees)) * 2) / 2,
-                'expr': str(base_config.gates[g].angle)}
+                'expr': spec_expr(g)}
             for g, gate in base_sim.fredkin_gates.items()})
         # the model's variables, so typed expressions can use them by name
         return names, angles, dict(base_sim.qvars)
@@ -1078,11 +1125,19 @@ def _(
             return cb
 
         def shown(cur):
-            # The entry mirrors the current math mode: symbolic form when in
-            # Symbolic mode (and one exists), numeric degrees otherwise.
-            if mode_pick.value == 'Symbolic' and cur['expr']:
-                return cur['expr']
-            return f"{cur['deg']:.1f}º"
+            # Displayed angle values follow the math mode: Symbolic
+            # shows the model's own symbolic spec while it is untouched
+            # (a slider or typed number clears it), and the simplest
+            # exact form of the set angle otherwise; Float shows a
+            # number in the selected units.
+            if mode_pick.value == 'Symbolic':
+                if cur['expr']:
+                    return cur['expr']
+                return str(qn.sym.Rational(str(cur['deg'])) *
+                           qn.sym.pi / 180)
+            if units_pick.value == 'degrees':
+                return f"{cur['deg']:.1f}º"
+            return f"{math.radians(cur['deg']):.4f}"
 
         return mo.ui.dictionary({
             g: mo.ui.text(value=shown(angles_get()[g]), on_change=text_cb(g))
@@ -1151,43 +1206,31 @@ def _(mo):
                100000, 200000, 500000, 1000000],
         value=20000, label='trials', show_value=True)
     mc_trials_text = mo.ui.text(value='', placeholder='custom trial count')
-    # terminal is the faithful simulation of a real experiment and the
-    # default; path (per-stage collapse) is opt-in for comparison
-    mc_mode = mo.ui.dropdown(options=['terminal', 'path', 'both'],
-                             value='terminal', label='mode')
     mc_seed = mo.ui.number(value=42, label='seed')
     mc_button = mo.ui.run_button(label='Run Monte Carlo')
     mc_cancel = mo.ui.run_button(label='Cancel')
-    # ticks the progress display while a sampling job runs; rendered
-    # (and therefore ticking) only during a run
-    mc_refresh = mo.ui.refresh(default_interval='400ms')
-    return (
-        mc_button,
-        mc_cancel,
-        mc_mode,
-        mc_refresh,
-        mc_seed,
-        mc_trials,
-        mc_trials_text,
-    )
+    return mc_button, mc_cancel, mc_seed, mc_trials, mc_trials_text
 
 
 @app.cell(hide_code=True)
-def _():
-    # shared, mutable job slot for the background Monte Carlo worker —
-    # plain dict on purpose: the worker thread updates it and the
-    # refresh-driven display cell polls it (marimo state setters must
-    # not be called from threads)
+def _(mo):
+    # Shared, mutable job slot for the background Monte Carlo worker,
+    # plus a version counter the worker bumps (it runs in a mo.Thread,
+    # so state setters reach the frontend). The display cell depends
+    # on the counter and re-renders as sampling progresses — no
+    # polling, and results land even if the section is collapsed
+    # while the job runs.
     mc_job_slot = {}
-    return (mc_job_slot,)
+    mc_tick_get, mc_tick_set = mo.state(0)
+    return mc_job_slot, mc_tick_get, mc_tick_set
 
 
 @app.cell(hide_code=True)
 def _(
     mc_button,
     mc_job_slot,
-    mc_mode,
     mc_seed,
+    mc_tick_set,
     mc_trials,
     mc_trials_text,
     mo,
@@ -1201,9 +1244,9 @@ def _(
     # instead (no Cancel — closing the tab is the escape hatch).
     mo.stop(sim is None)
     if mc_button.value:
-        import random as _random
         import sys as _sys
         import threading
+        import time as _time
 
         _prev = mc_job_slot.get('job')
         if _prev is not None and not _prev['done']:
@@ -1213,57 +1256,73 @@ def _(
             _n = max(1, int(mc_trials_text.value.strip()))
         except ValueError:
             _n = int(mc_trials.value)
-        _modes = [m for m in ('terminal', 'path')
-                  if mc_mode.value in (m, 'both')]
+        _modes = ['terminal']
         _job = {'cancel': threading.Event(), 'done': False,
                 'progress': 0, 'total': _n * len(_modes),
                 'n_trials': _n, 'modes': _modes, 'sim': sim,
                 'results': None, 'n_done': {}, 'error': None}
         mc_job_slot['job'] = _job
 
-        def _worker(tick=None):
+        # Everything the worker touches is bound through parameter
+        # defaults: cell-local names are module globals under marimo's
+        # per-cell mangling, and a rerun of this cell (any control
+        # change) deletes them — a thread still holding them by name
+        # would die with NameError mid-run.
+        def _worker(tick=None, job=_job, job_n=_n, job_sim=sim,
+                    seed=int(mc_seed.value), bump=mc_tick_set,
+                    clock=_time.monotonic):
+            import random
             from collections import Counter
             from quantish.montecarlo import (predicted_distribution,
                                              sample_paths, sample_terminal)
+            last_bump = 0.0
             try:
-                rng = _random.Random(int(mc_seed.value))
-                res = {'predicted': predicted_distribution(sim.result_space)}
+                rng = random.Random(seed)
+                res = {'predicted':
+                       predicted_distribution(job_sim.result_space)}
                 chunk_size = 2000
                 done = 0
-                for m in _job['modes']:
+                for m in job['modes']:
                     tally = Counter()
                     dead = 0
-                    remaining = _n
-                    while remaining and not _job['cancel'].is_set():
+                    remaining = job_n
+                    while remaining and not job['cancel'].is_set():
                         k = min(chunk_size, remaining)
                         if m == 'terminal':
-                            tally += sample_terminal(sim.result_space, k, rng)
+                            tally += sample_terminal(job_sim.result_space,
+                                                     k, rng)
                         else:
-                            t, d = sample_paths(sim.initial_point,
-                                                len(sim.run_stages), k, rng)
+                            t, d = sample_paths(job_sim.initial_point,
+                                                len(job_sim.run_stages),
+                                                k, rng)
                             tally += t
                             dead += d
                         remaining -= k
                         done += k
-                        _job['progress'] = done
+                        job['progress'] = done
                         if tick is not None:
                             tick(k)
+                        elif clock() - last_bump > 0.25:
+                            last_bump = clock()
+                            bump(lambda v: v + 1)
                     res[m] = tally
                     if m == 'path':
                         res['path_dead_ends'] = dead
-                    _job['n_done'][m] = _n - remaining
-                _job['results'] = res
+                    job['n_done'][m] = job_n - remaining
+                job['results'] = res
             except Exception as exc:  # noqa: BLE001 — surface in the display
-                _job['error'] = repr(exc)
+                job['error'] = repr(exc)
             finally:
-                _job['done'] = True
+                job['done'] = True
+                if tick is None:
+                    bump(lambda v: v + 1)  # final render, full results
 
         if _sys.platform == 'emscripten':
             with mo.status.progress_bar(total=_job['total'],
                                         title='sampling…') as _bar:
                 _worker(tick=_bar.update)
         else:
-            threading.Thread(target=_worker, daemon=True).start()
+            mo.Thread(target=_worker, daemon=True).start()
     return
 
 
@@ -1398,10 +1457,6 @@ def _(mo):
         options=['c2', 'c3', 'c2a', 'c2b', 'c3a', 'c3b'],
         value=['c2', 'c3', 'c2a', 'c2b', 'c3a', 'c3b'],
         label='components')
-    # one value drives both chart dimensions, so the 1:1 aspect (which
-    # keeps the unit circle circular) can't be broken by stretching
-    ws_size = mo.ui.slider(300, 1000, step=25, value=500,
-                           label='chart size (px)', show_value=True)
     # the mouse selection, persisted across parameter changes (the chart
     # is rebuilt on every slider move; the param is reseeded from here)
     ws_sel_get, ws_sel_set = mo.state(())
@@ -1410,7 +1465,6 @@ def _(mo):
         ws_sel_get,
         ws_sel_set,
         ws_sign,
-        ws_size,
         ws_theta,
         ws_wmag,
         ws_wphase,
@@ -1420,19 +1474,17 @@ def _(mo):
 @app.cell(hide_code=True)
 def _(
     FredkinGate,
-    alt,
+    WeightSplitWidget,
     cmath,
     cpair,
     latex_weight,
     math,
     mo,
-    pd,
     phase_deg,
     qn,
     ws_components,
     ws_sel_get,
     ws_sign,
-    ws_size,
     ws_theta,
     ws_wmag,
     ws_wphase,
@@ -1446,49 +1498,7 @@ def _(
                 'c2a': c2a, 'c2b': c2b, 'c3a': c3a, 'c3b': c3b}
         order = ['c2', 'c3', 'c2a', 'c2b', 'c3a', 'c3b']
         sel = [c for c in order if c in ws_components.value]
-        frame = pd.DataFrame({
-            'parallel': [data[c].real for c in sel],
-            'perpendicular': [data[c].imag for c in sel],
-            'component': sel,
-        })
-        # Finder-style selection: click a vector or a legend entry to
-        # make it the selection; shift/cmd/ctrl-click toggles items in and
-        # out; click empty space to clear. One selection with on='click'
-        # AND bind='legend' receives both event streams (verified in the
-        # compiled Vega), so the legend highlighting tracks mark clicks
-        # and vice versa — no difference which you click.
-        mods = 'event.shiftKey || event.metaKey || event.ctrlKey'
-        seed = [{'component': c} for c in ws_sel_get() if c in sel]
-        picked = alt.selection_point(name='picked', fields=['component'],
-                                     on='click', bind='legend', toggle=mods,
-                                     **({'value': seed} if seed else {}))
-        base = alt.Chart(frame)
-        vectors = base.mark_rule().encode(
-            x2=alt.datum(0.0),
-            x=alt.X('parallel:Q', axis=alt.Axis(title='Parallel (Re)'),
-                    scale=alt.Scale(domain=[-1.1, 1.1])),
-            y2=alt.datum(0.0),
-            y=alt.Y('perpendicular:Q', axis=alt.Axis(title='Perpendicular (Im)'),
-                    scale=alt.Scale(domain=[-1.1, 1.1])),
-            color=alt.Color('component:N', sort=order,
-                            scale=alt.Scale(domain=order)),
-            strokeWidth=alt.when(picked).then(alt.value(4.0))
-                           .otherwise(alt.value(2.5)),
-            opacity=alt.when(picked).then(alt.value(1.0))
-                       .otherwise(alt.value(0.35)),
-        ).add_params(picked)
-        labels = base.mark_text(align='left', baseline='middle', dx=7).encode(
-            x='parallel:Q', y='perpendicular:Q', text='component:N',
-            color=alt.Color('component:N', sort=order,
-                            scale=alt.Scale(domain=order)),
-            opacity=alt.when(picked).then(alt.value(1.0))
-                       .otherwise(alt.value(0.35)),
-        )
         sign_str = '+' if ws_sign.value else '−'
-        # .interactive(): mouse-wheel zoom, drag to pan
-        chart = (vectors + labels).properties(
-            title=f'θ = {ws_theta.value}º, sign = {sign_str}',
-            width=int(ws_size.value), height=int(ws_size.value)).interactive()
         lines = []
         for name in sel:
             val = data[name]
@@ -1503,30 +1513,33 @@ def _(
     \end{{aligned}}
     $$
     """
-        # mo.ui.altair_chart carries the 'picked' selection back to
-        # Python so the capture cell below can persist it
-        widget = mo.ui.altair_chart(chart, chart_selection=False,
-                                    legend_selection=False)
-        return widget, mo.hstack([widget, mo.md(latex)],
-                                 align='center', justify='start')
+        # native SVG (builder-renderer idiom): Finder-style selection
+        # synced through the widget's `selected` trait, wheel zoom, drag
+        # pan, and a resizable frame in place of the old size slider
+        native = mo.ui.anywidget(WeightSplitWidget(
+            data={'vectors': {c: [data[c].real, data[c].imag]
+                              for c in sel},
+                  'order': sel,
+                  'title': f'θ = {ws_theta.value}º, sign = {sign_str}',
+                  'size': 500},
+            selected=[c for c in ws_sel_get() if c in sel]))
+        view = mo.hstack([native, mo.md(latex)],
+                         align='center', justify='start')
+        return native, view
 
-    ws_chart, ws_view = _()
-    return ws_chart, ws_view
+    ws_native, ws_view = _()
+    return ws_native, ws_view
 
 
 @app.cell(hide_code=True)
-def _(ws_chart, ws_sel_get, ws_sel_set):
-    # Persist the explorer's mouse selection. A freshly rebuilt chart
-    # reports no selection until clicked, so an empty report never clears
-    # a remembered selection — clearing happens by toggling items off.
+def _(ws_native, ws_sel_get, ws_sel_set):
+    # Persist the explorer's mouse selection across parameter changes:
+    # the widget is rebuilt on every slider move and reseeded from this
+    # state. An explicit empty (clicking empty plot space) clears it.
     def _():
-        try:
-            comps = tuple(ws_chart.selections.get('picked', {})
-                          .get('component', ()))
-        except Exception:  # noqa: BLE001 — selection shape varies by marimo version
-            return
-        if comps and comps != tuple(ws_sel_get()):
-            ws_sel_set(comps)
+        _nsel = (ws_native.value or {}).get('selected')
+        if _nsel is not None and tuple(_nsel) != tuple(ws_sel_get()):
+            ws_sel_set(tuple(_nsel))
 
     _()
     return

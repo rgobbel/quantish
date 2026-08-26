@@ -100,7 +100,14 @@ def main():
     else:
         config_dict = {}
     with open(config_path, 'r') as f:
-        config_dict.update(yaml.safe_load(f))
+        model_dict = yaml.safe_load(f)
+    # variables merge deeply: the defaults' standard names (zero, one,
+    # eye) stay available underneath a model's own variables
+    default_vars = dict(config_dict.get('variables') or {})
+    config_dict.update(model_dict)
+    if default_vars:
+        config_dict['variables'] = {**default_vars,
+                                    **(model_dict.get('variables') or {})}
     config = Addict(config_dict)
     for item in args.set_vars:
         name, sep, expr = item.partition('=')
@@ -108,12 +115,13 @@ def main():
             raise SystemExit(f"--set expects NAME=EXPR, got '{item}'")
         config.variables[name.strip()] = expr.strip()
     if args.calculation_mode is not None:
-        config.symbolic = args.calculation_mode == 'symbolic'
-    symbolic = config.symbolic or False
+        config.calculation_mode = args.calculation_mode
+    # calculation_mode is a case-independent string ('float' or
+    # 'symbolic'); the legacy boolean 'symbolic' key still works
+    _mode = config.get('calculation_mode') or (
+        'symbolic' if config.get('symbolic') else 'float')
+    symbolic = str(_mode).lower() == 'symbolic'
     CalcMode.default('Symbolic' if symbolic else 'Float')
-    qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
-    qn.I = qn.I_fn()
-    qn.PI = qn.PI_fn()
     if args.loglevel is not None:
         loglevel = args.loglevel.upper()
     elif 'loglevel' in config.keys():

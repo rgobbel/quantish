@@ -5,7 +5,7 @@ title: No-op 2-particle with zero-angle gate interposed
 # If the interposed zero-angle gate does NOT break the no-op, output should match
 # noop_2p_baseline (single point: part1 at gate2.upper, part2 at gateB.upper, both w=1).
 
-symbolic: false
+calculation_mode: float
 
 run_stages:
    step1: [gate1, gateA]

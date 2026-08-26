@@ -5,7 +5,7 @@ title: No-op 2-particle with gate2 angle offset by +90 degrees
 # gates may be necessary for the no-op behavior.
 # pi/6 + pi/2 = 2*pi/3.
 
-symbolic: false
+calculation_mode: float
 
 run_stages:
    step1: [gate1, gateA]

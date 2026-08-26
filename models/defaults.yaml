@@ -1,9 +1,16 @@
-## options in this file will override those set in individual config files, if the --use-common
-## option is set (defaults to True)
+## Baseline options, loaded first when --use-defaults is set (the
+## default). Options set in an individual model file override these.
 
-symbolic: false             # symbolic or numerical processing. Symbolic uses exact values when possible.
+calculation_mode: float     # float or symbolic (case-independent). Symbolic uses exact values when possible.
 
 string_precision: 2         # float precision to use when printing weight values. Does not affect computation
 max_symbolic_len: 40        # in Symbolic mode, expressions longer than this display as floats instead
 
-sample: false
+sample: false               # Monte Carlo sampling mode
+n_samples: 100              # trials per sampling run (when sample is true)
+epr_stats: false            # collect EPR statistics (the fig4.17 models set it)
+
+variables:                  # standard names available to every model; a model's own variables merge on top
+   zero: '0'
+   one: '1'
+   eye: 'I'                 # the square root of negative one

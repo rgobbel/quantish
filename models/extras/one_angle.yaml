@@ -1,5 +1,5 @@
 title: Single Gate
-symbolic: false
+calculation_mode: float
 
 run_stages:
    gate_only: [g0]

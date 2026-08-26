@@ -3,7 +3,7 @@ title: No-op with zero-angle gate interposed (1 particle)
 # 1 particle through gate1(theta) -> gate0(0) -> gate2(theta).
 # If gate0 truly is a no-op, output should match noop_baseline.
 
-symbolic: false
+calculation_mode: float
 
 run_stages:
    split1: [gate1]

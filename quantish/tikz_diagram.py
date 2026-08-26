@@ -1354,8 +1354,11 @@ def emit_tex(circuit: Circuit, L: Layout, routes: list[Route],
 
 
 def wire_label_tex(label: str) -> str:
-    """A wire label as math with everything after the leading letters
-    subscripted, matching the book: 'w2' → $w_{2}$, 'w2a' → $w_{2a}$."""
+    """A wire label as TeX. The YAML labels carry explicit math
+    ('$w_{2a}$') and pass through as the TeX they already are; a bare
+    name falls back to the book's subscripting ('w2a' → $w_{2a}$)."""
+    if label.startswith('$') and label.endswith('$'):
+        return label
     m = re.fullmatch(r'([A-Za-z]+)(\d\w*)', label)
     if m:
         return rf"${m.group(1)}_{{{m.group(2)}}}$"

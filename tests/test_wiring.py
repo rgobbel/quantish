@@ -27,7 +27,6 @@ def make_config(**overrides):
 class TestWiring(unittest.TestCase):
     def setUp(self):
         CalcMode.default('Float')
-        qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
 
     def test_valid_model_loads(self):
         sim = Simulation(make_config())

@@ -90,17 +90,18 @@ class TestModeControl:
             qn.set_calc_mode(prev)
 
     def test_switch_updates_derived_globals(self):
+        # the constants are mode-adaptive objects: nothing is rebound
+        # on a switch, the same object presents the matching backend
         prev = CalcMode.default()
         try:
             qn.set_calc_mode('Float')
             assert qn.ZERO_THRESHOLD == qn.float_zero_threshold
+            assert isinstance(qn.I.v, complex)
             qn.set_calc_mode('Symbolic')
             assert qn.ZERO_THRESHOLD == 0
-            assert qn.I is sym.I
+            assert qn.I.v is sym.I
         finally:
             qn.set_calc_mode(prev)
-            qn.zero_threshold_fn()
-            qn.I_fn()
 
 
 # ------------------------------------------------------------- parsing
@@ -363,9 +364,39 @@ class TestPlumbing:
         assert bool(qify('1/10'))
 
     def test_mode_constants(self, mode):
-        assert close(qn.PI_fn(), math.pi)
-        assert close(qn.I_fn(), 1j)
-        assert close(qn.E_fn(), math.e)
-        th = qn.zero_threshold_fn()
-        assert (th == qn.float_zero_threshold if mode == 'Float'
-                else close(th, 0))
+        assert close(qn.PI, math.pi)
+        assert close(qn.I, 1j)
+        assert close(qn.E, math.e)
+        assert (qn.ZERO_THRESHOLD == qn.float_zero_threshold
+                if mode == 'Float' else close(qn.ZERO_THRESHOLD, 0))
+
+    def test_constants_track_mode_through_imports(self):
+        # even a from-imported binding follows a later mode switch
+        from quantish.qnumber import PI
+        prev = CalcMode.default()
+        try:
+            qn.set_calc_mode('Symbolic')
+            assert PI.v is sym.pi
+            assert (PI / 2).v == sym.pi / 2
+            qn.set_calc_mode('Float')
+            assert PI.v == math.pi
+        finally:
+            qn.set_calc_mode(prev)
+
+
+class TestPIAlias:
+    """qify('PI') is the same constant as qify('pi') in both modes —
+    the module exports PI, so expressions may spell it either way."""
+
+    def test_pi_alias_both_modes(self):
+        import math
+        for mode in ('Float', 'Symbolic'):
+            qn.CalcMode.default(mode)
+            assert float(qn.qify('PI')) == pytest.approx(math.pi)
+            assert float(qn.qify('PI/2')) == pytest.approx(math.pi / 2)
+        qn.CalcMode.default('Float')
+
+    def test_model_variable_still_wins(self):
+        qn.CalcMode.default('Float')
+        assert float(qn.qify('x + PI', {'x': qn.Real(1)})) == \
+            pytest.approx(1 + 3.141592653589793)

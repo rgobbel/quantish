@@ -2,16 +2,6 @@ title: Figure 4.16
 
 caption: As in previous models, this shows the effect of connecting the lower output of *g1*.
 
-variables:
-   zero: '0j'
-   one: '1+0j'
-   r60: '0.5+0.87j'
-   q1: 'rad(30)'
-   q2: 'rad(20)'
-   q15: 'rad(15)'
-   q30: 'rad(30)'
-   q60: 'rad(60)'
-
 run_stages:
    prepare: [g0]
    split: [g1]
@@ -21,8 +11,8 @@ run_stages:
    test: [g3]
 
 particles:
-   p1: {sign: 1, weight: one}
-   p2: {sign: 1, weight: one}
+   p1: {sign: 1, weight: 1}
+   p2: {sign: 1, weight: 1}
 
 gates:
    g0: {angle: 'rad(30)'}

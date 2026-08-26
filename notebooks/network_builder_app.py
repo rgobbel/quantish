@@ -56,7 +56,6 @@ async def initialization():
     from quantish.qnumber import CalcMode
 
     CalcMode.default('Float')
-    qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
 
     import copy
     import yaml
@@ -284,13 +283,25 @@ def _(
     # isn't. (This cell must not read the canvas itself: it would
     # re-run when the load replaces the widget, and mis-read the
     # freshly loaded canvas as one that needs another confirmation.)
+    def _tri_mode(config):
+        # calculation_mode is a case-independent string; None when the
+        # YAML leaves the mode unset (legacy boolean 'symbolic' still
+        # read on upload of old files)
+        mode = config.get('calculation_mode')
+        if mode is not None:
+            return str(mode).lower() == 'symbolic'
+        if 'symbolic' in config:
+            return bool(config['symbolic'])
+        return None
+
     def _load():
         if new_btn.value:
             set_pending({'graph': {'gates': {}, 'particles': {},
                                    'links': []},
                          'notes': [], 'title': 'my_network',
                          'file': 'my_network', 'caption': '',
-                         'variables': {}, 'symbolic': False,
+                         'variables': {}, 'symbolic': None,
+                         'angle_unit': None, 'model_notes': '',
                          'source': 'a new empty model'})
             return None
         if upload_go_btn.value and model_upload.contents():
@@ -313,7 +324,9 @@ def _(
                      'file': PurePath(source).stem,
                      'caption': config.get('caption') or '',
                      'variables': config.get('variables') or {},
-                     'symbolic': bool(config.get('symbolic')),
+                     'symbolic': _tri_mode(config),
+                     'angle_unit': config.get('angle_unit'),
+                     'model_notes': config.get('notes') or '',
                      'source': source})
         return None
 
@@ -396,13 +409,25 @@ def _(get_loaded, mo):
         value=_loaded.get('title') or 'my_network', label='title')
     file_name = mo.ui.text(
         value=_loaded.get('file') or 'my_network', label='file name')
+    # tri-state: '-' leaves the calculation mode out of the YAML
+    # (the loader's defaults decide at run time)
     mode_pick = mo.ui.dropdown(
-        options=['Float', 'Symbolic'],
-        value='Symbolic' if _loaded.get('symbolic') else 'Float',
+        options=['-', 'Float', 'Symbolic'],
+        value={None: '-', False: 'Float',
+               True: 'Symbolic'}[_loaded.get('symbolic')],
         label='calculation mode')
+    # tri-state like the mode: '-' omits angle_unit from the YAML
+    # (plain-number angles then read as radians)
+    unit_pick = mo.ui.dropdown(
+        options=['-', 'radians', 'degrees'],
+        value=_loaded.get('angle_unit') or '-',
+        label='angle unit')
     caption_input = mo.ui.text_area(
         value=_loaded.get('caption') or '', rows=2, full_width=True,
         label='caption')
+    notes_input = mo.ui.text_area(
+        value=_loaded.get('model_notes') or '', rows=3, full_width=True,
+        label='notes')
 
     def _vars_text(vs):
         return '\n'.join(
@@ -421,10 +446,11 @@ def _(get_loaded, mo):
         _report = mo.md(_msg)
     mo.vstack(
         ([_report] if _report is not None else [])
-        + [mo.hstack([model_title, file_name, mode_pick],
+        + [mo.hstack([model_title, file_name, mode_pick, unit_pick],
                      justify='start', gap=0.75)],
         align='stretch')
-    return caption_input, file_name, mode_pick, model_title, variables_editor
+    return (caption_input, file_name, mode_pick, model_title,
+            notes_input, unit_pick, variables_editor)
 
 
 @app.cell(hide_code=True)
@@ -473,14 +499,18 @@ def _(
     mode_pick,
     model_title,
     model_vars,
+    notes_input,
+    unit_pick,
     validate_graph,
     variables_env,
 ):
     # The live translation of the canvas: either the list of problems
     # keeping it from running, or the derived model config — caption,
-    # variables, and calculation mode included.
+    # notes, variables, calculation mode, and angle unit included.
     _graph = builder.value.get('graph') or {}
-    problems = validate_graph(_graph, variables=model_vars)
+    _unit = None if unit_pick.value == '-' else unit_pick.value
+    problems = validate_graph(_graph, variables=model_vars,
+                              angle_unit=_unit or 'radians')
     builder_config = None
     if not problems:
         try:
@@ -488,7 +518,10 @@ def _(
                 _graph, model_title.value,
                 caption=caption_input.value.strip() or None,
                 variables=model_vars or None,
-                symbolic=mode_pick.value == 'Symbolic')
+                symbolic={'-': None, 'Float': False,
+                          'Symbolic': True}[mode_pick.value],
+                angle_unit=_unit,
+                notes=notes_input.value.strip() or None)
         except ValueError as exc:  # a wiring loop
             problems = [str(exc)]
     _env, _ = variables_env(model_vars)
@@ -504,8 +537,9 @@ def _(
             _f = 'phase' if _gd.get('kind') == 'phase' else 'angle'
             _spec = _gd.get(_f, 0)
             try:
-                out[_n] = angle_label(_spec,
-                                      angle_degrees(_spec, _env), '°')
+                out[_n] = angle_label(
+                    _spec, angle_degrees(_spec, _env,
+                                         _unit or 'radians'), '°')
             except Exception:  # noqa: BLE001 — reported via problems
                 out[_n] = f'⚠ {_spec}'
         return out
@@ -534,10 +568,12 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(caption_input, mo, variables_editor):
-    # both entirely optional, so they live below the canvas
-    mo.accordion({'#### Caption and variables (optional)': mo.vstack([
+def _(caption_input, mo, notes_input, variables_editor):
+    # all entirely optional, so they live below the canvas
+    mo.accordion({'#### Caption, notes, and variables (optional)':
+                  mo.vstack([
         caption_input,
+        notes_input,
         mo.md('<span style="font-size: 0.9em">**variables** '
               '(name: expression, YAML)</span>'),
         variables_editor], align='stretch')})
@@ -560,9 +596,9 @@ def _(Addict, CalcMode, Simulation, builder_config, mo, qn, run_network_btn):
     def _build():
         if not (run_network_btn.value and builder_config):
             return None, None
-        CalcMode.default('Symbolic' if builder_config.get('symbolic')
-                         else 'Float')
-        qn.ZERO_THRESHOLD = qn.zero_threshold_fn()
+        CalcMode.default(
+            'Symbolic' if str(builder_config.get('calculation_mode')
+                              or '').lower() == 'symbolic' else 'Float')
         base = {'string_precision': 2, 'max_symbolic_len': 40,
                 'loglevel': 'warning'}
         base.update(builder_config)

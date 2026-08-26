@@ -2,21 +2,6 @@ title: Figure 4.14
 
 caption: Like figure 4.14, but here we've connected the lower output of *g1* as well.
 
-variables:
-   zero: &zero '0j'
-   one: &one '1+0j'
-   r60: &r60 '0.5+0.87j'
-   q1: &q1 'rad(20)'
-   q2: &q2 'rad(30)'
-   q15: &q15 'rad(15)'
-   q40: &q40 'rad(40)'
-   q45: &q45 'rad(45)'
-   q30: &q30 'rad(30)'
-   q60: &q60 'rad(60)'
-   q85: &q85 'rad(85)'
-   q10: &q10 'rad(10)'
-   q120: &q120 'rad(120)'
-
 run_stages:
    prep: [g0]
    split: [g1]
@@ -25,8 +10,8 @@ run_stages:
    test: [g3]
 
 particles:
-   p1: {sign: 1, weight: *one}
-   p2: {sign: 1, weight: *one}
+   p1: {sign: 1, weight: 1}
+   p2: {sign: 1, weight: 1}
 
 gates:
    g0: {angle: 'rad(30)'}
@@ -52,4 +37,3 @@ links:
    g2.control: g3.control
    g2.upper: g3.upper
    g2.lower: g3.lower
-
