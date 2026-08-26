@@ -339,7 +339,8 @@ def _(mo):
     mo.md(r"""
     ## Simulation results
 
-    (best viewed with a wide window on a large screen)
+    These are best viewed with a wide window on a large screen. The black rectangles are screens, 
+    which will light up where particles fired at the apparatus land.
     """)
     return
 
