@@ -283,10 +283,20 @@ def _(
         def label(p):
             return f'`{p.short_config(key=lambda c: coord_sort_key(sim, c)).replace("|", " ")}`'
 
+        # the product sign, in a math serif so it doesn't read as a
+        # gateway glyph, with the explanation on hover
+        _prod = ('<span title="the product of this branch&#39;s '
+                 'per-particle components, shown as one multiplier: a '
+                 'merged configuration-space point stores only its '
+                 'first branch&#39;s per-particle components" '
+                 'style="font-family: STIXTwoMath, STIXGeneral, '
+                 '\'Cambria Math\', \'Times New Roman\', serif">'
+                 '∏</span>')
+
         def particle_cell(w, parent, contrib):
             # A merged configuration-space point stores only its FIRST branch's per-particle
             # components; for other branches show just the branch's overall
-            # multiplier Π (recovered as branch w / input w).
+            # multiplier ∏ (recovered as branch w / input w).
             facts = {name: f for name, f in w.particles.items() if f is not None}
             try:
                 expected = complex(parent.weight)
@@ -299,9 +309,10 @@ def _(
                 return '<br>'.join(f'{name}: {math_weight(f)}'
                                    for name, f in facts.items()) or '—'
             try:
-                return f'Π: {math_weight(complex(contrib) / complex(parent.weight))}'
+                return (f'{_prod}: '
+                        f'{math_weight(complex(contrib) / complex(parent.weight))}')
             except (TypeError, ValueError, ZeroDivisionError):
-                return 'Π: ?'
+                return f'{_prod}: ?'
 
         def controlled_gates(cs_point, stage):
             # per-configuration-space point positional check, as in the engine

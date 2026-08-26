@@ -86,10 +86,15 @@ def symbolic_angle(spec):
 def angle_label(spec, degrees, degree_sign='º'):
     """Diagram label for a gate angle: a symbolic spec shows verbatim
     with its value in degrees appended, 'pi/6 (30.0º)'; a numeric spec
-    shows just the degrees."""
+    shows just the degrees. Long decimal literals inside the spec are
+    shortened for display — rad(36.87), not rad(36.8698976458)."""
     symbolic = symbolic_angle(spec)
     deg = f'{float(degrees):.1f}{degree_sign}'
-    return f'{symbolic} ({deg})' if symbolic is not None else deg
+    if symbolic is None:
+        return deg
+    shown = re.sub(r'\d+\.\d{3,}',
+                   lambda mt: f'{float(mt.group()):.2f}', symbolic)
+    return f'{shown} ({deg})'
 
 
 _SUBSCRIPT_DIGITS = str.maketrans('0123456789', '₀₁₂₃₄₅₆₇₈₉')

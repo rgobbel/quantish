@@ -48,6 +48,105 @@ def _sub(s) -> str:
     return subscript_digits(str(s))
 
 
+_SVG_PANZOOM_JS = """
+const svg = document.querySelector('svg');
+const vb0 = svg.viewBox.baseVal;
+const home = { x: vb0.x, y: vb0.y, w: vb0.width, h: vb0.height };
+let vb = { ...home };
+function apply() {
+  svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+}
+svg.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const r = svg.getBoundingClientRect();
+  const mx = vb.x + (e.clientX - r.left) / r.width * vb.w;
+  const my = vb.y + (e.clientY - r.top) / r.height * vb.h;
+  const f = Math.exp(e.deltaY * 0.002);
+  const w = Math.min(home.w, Math.max(home.w / 40, vb.w * f));
+  const k = w / vb.w;
+  vb = { x: mx - (mx - vb.x) * k, y: my - (my - vb.y) * k,
+         w, h: vb.h * k };
+  apply();
+}, { passive: false });
+let pan = null;
+svg.addEventListener('mousedown', (e) => {
+  pan = { x: e.clientX, y: e.clientY, vx: vb.x, vy: vb.y };
+  svg.classList.add('panning');
+});
+window.addEventListener('mousemove', (e) => {
+  if (!pan) return;
+  const r = svg.getBoundingClientRect();
+  vb.x = pan.vx - (e.clientX - pan.x) / r.width * vb.w;
+  vb.y = pan.vy - (e.clientY - pan.y) / r.height * vb.h;
+  apply();
+});
+window.addEventListener('mouseup', () => {
+  pan = null;
+  svg.classList.remove('panning');
+});
+svg.addEventListener('dblclick', () => {
+  vb = { ...home };
+  apply();
+});
+"""
+
+
+def responsive_svg(chart) -> str:
+    """The chart as an SVG that scales uniformly with its container —
+    geometry and text together, aspect preserved — via viewBox. Raises
+    when vl-convert (a native wheel; absent under WASM) is missing, so
+    callers can fall back to the interactive fixed-size chart."""
+    import re as _re
+
+    import altair as alt
+    import vl_convert as vlc
+
+    # the marimo data transformer stores data behind virtual-file URLs
+    # vl-convert cannot fetch; inline it for the standalone render
+    with alt.data_transformers.enable('default', max_rows=None):
+        spec = chart.to_json()
+    svg = vlc.vegalite_to_svg(spec)
+    m = _re.search(r'<svg[^>]*>', svg)
+    tag = m.group(0)
+    w = _re.search(r'width="([\d.]+)"', tag)
+    h = _re.search(r'height="([\d.]+)"', tag)
+    new_tag = tag
+    if w and h and 'viewBox' not in tag:
+        new_tag = new_tag.replace(
+            '<svg', f'<svg viewBox="0 0 {w.group(1)} {h.group(1)}"', 1)
+    new_tag = _re.sub(r'\s(?:width|height)="[\d.]+"', '', new_tag)
+    new_tag = new_tag.replace(
+        '<svg', '<svg style="width: 100%; height: auto; display: block"',
+        1)
+    return svg.replace(tag, new_tag, 1)
+
+
+def svg_diagram_iframe(chart) -> str:
+    """The chart as a self-contained <iframe> of hand-driven
+    interactive SVG: it tracks the container width at the diagram's
+    true aspect ratio, and inside it the wheel zooms around the cursor,
+    dragging pans, and a double-click resets — the same read-the-text
+    affordance as the Vega chart's wheel zoom, with no external
+    dependencies. Raises without vl-convert (the WASM build); callers
+    fall back to the interactive fixed-size chart."""
+    import html as _html
+    import re as _re
+
+    svg = responsive_svg(chart)
+    vb = _re.search(r'viewBox="0 0 ([\d.]+) ([\d.]+)"', svg)
+    aspect = f'{vb.group(1)} / {vb.group(2)}' if vb else '3 / 1'
+    doc = ('<!DOCTYPE html><html><head><meta charset="utf-8"><style>'
+           'html, body { margin: 0; padding: 0; overflow: hidden;'
+           ' background: #fff; }'
+           ' svg { cursor: grab; } svg.panning { cursor: grabbing; }'
+           '</style></head><body>'
+           + svg
+           + '<script>' + _SVG_PANZOOM_JS + '</script></body></html>')
+    return (f'<iframe srcdoc="{_html.escape(doc, quote=True)}" '
+            f'style="width: 100%; aspect-ratio: {aspect}; '
+            'border: none; display: block"></iframe>')
+
+
 def circuit_chart(sim, has_run: bool = False, scale: float = 46.0,
                   width: int | None = None,
                   angle_overrides: dict | None = None):
@@ -132,17 +231,21 @@ def circuit_chart(sim, has_run: bool = False, scale: float = 46.0,
         left = gx * KX
         right = left + GATE_WIDTH * KX
         cx = (left + right) / 2
-        texts.append(dict(x=cx, y=top - 0.24, lines=[_sub(gname)],
+        # the header rides halfway with the row stretch, so the gap
+        # between the angle text and the control box stays modest when
+        # value blocks spread the rows
+        KH = 1 + (KY - 1) * 0.5
+        texts.append(dict(x=cx, y=top - 0.24 * KH, lines=[_sub(gname)],
                           size=13, color='#222222', weight='bold'))
         angle_text = ((angle_overrides or {}).get(gname)
                       or _sub(gdata.get('angle', '')))
-        texts.append(dict(x=cx, y=top - 0.60, lines=[angle_text],
+        texts.append(dict(x=cx, y=top - 0.60 * KH, lines=[angle_text],
                           size=10, color='#777777', weight='normal'))
         deg = float(gdata.get('deg', 0.0))
         # compass needle: 0.75 of the gate width, centered vertically on
         # the two header text lines
         ccx = left + 0.75 * (right - left)
-        ccy = top - 0.42
+        ccy = top - 0.42 * KH
         dx_c, dy_c = math.cos(math.radians(deg)), math.sin(math.radians(deg))
         wires.append([dict(route=f'{gname}~c', order=0,
                            x=ccx - 0.26 * dx_c, y=ccy - 0.26 * dy_c),
@@ -217,17 +320,23 @@ def circuit_chart(sim, has_run: bool = False, scale: float = 46.0,
         frames[dname] = (dx_ * KX - w / 2, dy_ * KY - h / 2,
                          dx_ * KX + w / 2, dy_ * KY + h / 2)
 
-    # particles
-    particle_pts = []
+    # particles: stadium blobs sized to their names (a fixed circle
+    # clips longer names like AIM_Figure12's control1/control2)
     for pname, (px, py) in L.particle_xy.items():
         sign = spec.topology['topo']['particle_signs'].get(pname, 1)
-        particle_pts.append(dict(x=px * KX, y=py * KY))
-        texts.append(dict(x=px * KX, y=py * KY,
-                          lines=[f'{"+" if sign > 0 else "−"}{_sub(pname)}'],
+        label = f'{"+" if sign > 0 else "−"}{_sub(pname)}'
+        pw = 2 * PORT_PAD + CHAR_W * (len(label) + 1)
+        ph = 2 * PORT_PAD + LINE_H
+        cx, cy = px * KX, py * KY
+        boxes.append(dict(x=cx - pw / 2, x2=cx + pw / 2,
+                          y=cy - ph / 2, y2=cy + ph / 2,
+                          fill=PARTICLE_FILL, stroke=VALUE_STROKE,
+                          corner=int(ph * scale / 2), amp='', pr=''))
+        texts.append(dict(x=cx, y=cy, lines=[label],
                           size=11, color='#333333', weight='bold'))
-        # the particle's wire starts at the blob: snap its first point
-        # to the circle's center; the solid circle drawn above covers it
-        edge_clip[clip_key((px + 0.4) * KX, py * KY)] = px * KX
+        # the particle's wire starts at the blob: clip its first point
+        # to the stadium's right edge
+        edge_clip[clip_key((px + 0.4) * KX, cy)] = cx + pw / 2
 
     # stadium value blobs: a dangling output's value lands outside the
     # gate, past its stub wire (matching the Mermaid sinks). Only gates
@@ -453,11 +562,6 @@ def circuit_chart(sim, has_run: bool = False, scale: float = 46.0,
         shape='triangle', filled=True, color=WIRE_COLOR).encode(
         x=xe, y=ye, angle=alt.Angle('angle:Q', scale=None),
         size=alt.value(alt.expr(f'45 * pow({WF} * {ZF}, 2)'))))
-    layers.append(alt.Chart(pd.DataFrame(particle_pts)).mark_point(
-        shape='circle', filled=True, color=PARTICLE_FILL, opacity=1,
-        stroke=VALUE_STROKE, strokeWidth=1).encode(
-        x=xe, y=ye, size=alt.value(alt.expr(f'900 * pow({WF} * {ZF}, 2)'))))
-
     text_rows = []
     for tx in texts:
         for k, line in enumerate(tx['lines']):

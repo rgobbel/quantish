@@ -157,7 +157,7 @@ Circuit = DiagramSpec
 # figures. These constants are the single source of truth: the \fgate TeX
 # macro below is generated from them.
 GATE_WIDTH        = 3.0     # outer frame width
-GATE_HEIGHT       = 3.4     # outer frame height
+GATE_HEIGHT       = 3.2     # outer frame height
 COL_GAP           = 1.8     # wire channel between columns
 STAGE_WIDTH       = GATE_WIDTH + COL_GAP   # full-gate column stride
 GATE_VSPACE       = 1.0     # vertical gap between gates in the same stage
@@ -178,9 +178,9 @@ WIRE_STUB_LEN = 0.75        # how far a labeled stub wire reaches beyond the gat
 # lower are 0.8 apart so inline delay boxes (DELAY_HEIGHT tall, centered
 # on the rows) on adjacent rows keep clear of each other.
 PORT_DY = {
-    'control': -1.30,
-    'upper':   -2.10,
-    'lower':   -2.90,
+    'control': -1.10,
+    'upper':   -1.90,
+    'lower':   -2.70,
 }
 
 # X-offsets (relative to a gate's north-west) of the *outer* edge of the
