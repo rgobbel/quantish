@@ -11,8 +11,8 @@ variables:
    # the printed figure's angle names: Q1 on the prepare gates, Q2 on
    # the splits (the printed g2 showed Q1+pi/2; this model uses the
    # corrected circuit — see models/README.md)
-   Q1: 'rad(30)'
-   Q2: 'rad(20)'
+   Q1: 30°
+   Q2: 20°
 
 particles:
    p1: {sign: 1, weight: 1}

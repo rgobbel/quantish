@@ -10,10 +10,10 @@ particles:
    p1: {sign: 1, weight: 1}
 
 gates:
-   g0: {angle: 'rad(15)'}
-   g1: {angle: 'rad(0)'}
-   g2: {angle: 'rad(15)'}
-   g3: {angle: 'rad(0)'}
+   g0: {angle: 15°}
+   g1: {angle: 0°}
+   g2: {angle: 15°}
+   g3: {angle: 0°}
 
 links:
    p1: g0.upper

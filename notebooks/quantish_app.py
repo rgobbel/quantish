@@ -1106,12 +1106,17 @@ def _(
     def _():
         def text_cb(g):
             def cb(raw):
-                txt = (raw or '').strip().rstrip('º°').strip()
+                txt = (raw or '').strip()
+                # an explicit degree mark IS the unit, whatever the
+                # units radio says
+                marked = txt.endswith(('°', 'º', '˚'))
+                txt = txt.rstrip('º°˚').strip()
                 if not txt:
                     return
                 try:
                     num = float(txt)
-                    deg = num if units_pick.value == 'degrees' else math.degrees(num)
+                    deg = (num if marked or units_pick.value == 'degrees'
+                           else math.degrees(num))
                     angles_set({**angles_get(), g: {'deg': deg, 'expr': None}})
                     return
                 except ValueError:

@@ -246,18 +246,15 @@ class Simulation:
             self.particles[pname] = new_particle
         gates = config.gates
         # angle_unit says how plain-number angle specs read: 'radians'
-        # (the default) or 'degrees'. A degree-marked string ('30°')
-        # carries its own unit regardless. Expression specs ('rad(30)',
-        # 'pi/8', a variable name) are never converted.
+        # (the default) or 'degrees'. Degree-marked expressions ('30°',
+        # '(q5+q6)°') are qify's own business — exact pi fractions in
+        # Symbolic mode. Other expression specs ('rad(30)', 'pi/8', a
+        # variable name) are never converted.
         degrees = str(config.get('angle_unit',
                                  'radians')).lower() == 'degrees'
 
         def angle_spec(v):
-            if isinstance(v, str):
-                s = v.strip()
-                if s and s[-1] in '°º˚':
-                    return math.radians(float(s[:-1].strip()))
-            elif degrees and isinstance(v, (int, float)) \
+            if degrees and isinstance(v, (int, float)) \
                     and not isinstance(v, bool):
                 return math.radians(v)
             return v

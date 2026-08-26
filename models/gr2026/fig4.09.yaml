@@ -8,8 +8,8 @@ title: Figure 4.9
 caption: Here, the angles $Q_1$ and $Q_2$ may differ
 
 variables:
-   Q1: 'rad(30)'
-   Q2: 'rad(45)'
+   Q1: 30°
+   Q2: 45°
 
 run_stages:
    split1: [g1]

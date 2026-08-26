@@ -3,8 +3,8 @@ title: Figure 4.14
 caption: Here, one path diverts to prevent merging at *g2*.
 
 variables:
-   q15: 'rad(15)'
-   q60: 'rad(60)'
+   q15: 15°
+   q60: 60°
 
 run_stages:
    prepare: [g0]

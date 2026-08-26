@@ -9,7 +9,7 @@ particles:
    p1: {sign: 1, weight: 1}
 
 gates:
-   g0: {angle: 'rad(30)'}
+   g0: {angle: 30°}
    g1: {angle: 0}
 
 links:

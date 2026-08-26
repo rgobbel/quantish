@@ -4,7 +4,7 @@ sample: true
 n_samples: 10000
 
 variables:
-   q15: 'rad(15)'
+   q15: 15°
 
 run_stages:
    run: [g0]

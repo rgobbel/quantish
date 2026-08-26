@@ -3,7 +3,7 @@ title: Figure 4.7
 calculation_mode: float
 
 variables:
-   q30: "rad(30)"
+   q30: 30°
 
 run_stages: 
    split1: [g1]

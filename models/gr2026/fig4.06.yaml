@@ -3,7 +3,7 @@ title: Figure 4.6
 caption: As in figure 4.5, reusing the same measurement angle causes no further state splitting.
 
 variables:
-   q30: "rad(30)"
+   q30: 30°
 
 run_stages:
    split1: [g1]

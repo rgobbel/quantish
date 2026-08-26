@@ -3,7 +3,7 @@ title: Figure 4.10
 caption: Particles *p2* and *p3* observe *p1*’s position.
 
 variables:
-   q30: "rad(30)"
+   q30: 30°
 
 run_stages:
    split: [g1]

@@ -69,8 +69,7 @@ def angle_degrees(spec, env=None, unit: str = 'radians') -> float:
             try:
                 return float(s[:-1].strip())
             except ValueError:
-                raise ValueError(f'{s!r} is not a number of degrees') \
-                    from None
+                pass   # a compound like '(q5+q6)°': qify reads the mark
     elif isinstance(spec, (int, float)) and not isinstance(spec, bool) \
             and str(unit).lower() == 'degrees':
         return float(spec)

@@ -8,10 +8,11 @@
 # reading this same document — ys has no Python bindings); the test
 # suite (tests/test_model_schema.py) checks every model file.
 #
-# Angle, weight, and phase specs are strings (radian expressions like
-# 'rad(30)' or 'pi/8', or the bare name of a variable) or plain
-# numbers, read in angle_unit ('radians' unless the model says
-# 'degrees'; expression specs carry their own units). Option keys
+# Angle, weight, and phase specs are strings (expressions like
+# 'rad(30)', 'pi/8', degree-marked forms '30°' / '(q5+q6)°', or the
+# bare name of a variable) or plain numbers, read in angle_unit
+# ('radians' unless the model says 'degrees'; expression specs carry
+# their own units). Option keys
 # (calculation_mode, sample, …) may also appear in defaults.yaml,
 # which model files override.
 $schema: "https://json-schema.org/draft/2020-12/schema"

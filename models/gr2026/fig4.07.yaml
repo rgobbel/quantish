@@ -3,7 +3,7 @@ title: Figure 4.7
 caption: Connecting *both* switch wires to a gate with the same measurement angle undoes the first gate’s splitting.
 
 variables:
-   q30: "rad(30)"
+   q30: 30°
 
 run_stages:
    split1: [g1]

@@ -3,8 +3,8 @@ title: Figure 4.8
 caption: Using a succession of different measurement angles makes states split.
 
 variables:
-   q20: "rad(20)"
-   q30: "rad(30)"
+   q20: 20°
+   q30: 30°
 
 run_stages:
    split1: [g1]

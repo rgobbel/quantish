@@ -8,8 +8,8 @@ run_stages:
    split: [g5, g6]
 
 variables:
-   q1: "rad(30)"
-   q3: "rad(30)+pi/2"
+   q1: 30°
+   q3: "30°+pi/2"
    q45: "sqrt(2)/2+sqrt(2)*I/2"
    qm45: "sqrt(2)/2-sqrt(2)*I/2"
    qpythag: "acos(4/5)"

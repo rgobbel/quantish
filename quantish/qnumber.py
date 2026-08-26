@@ -137,13 +137,29 @@ def to_native(x):
         result = complex(x)
     return result
 
+_DEG_NUM = rex.compile(r'(\d+(?:\.\d+)?)\s*[°º˚]')
+_DEG_PAREN = rex.compile(r'\)\s*[°º˚]')
+
+
+def degrees_marks_to_radians(s: str) -> str:
+    """Rewrite postfix degree marks into exact radians: '30°' becomes
+    '(30*pi/180)', '(a+b)°' becomes '(a+b)*(pi/180)' — so the degree
+    sign is a first-class part of qnumber expressions (exact pi
+    fractions in Symbolic mode, not float approximations)."""
+    s = _DEG_NUM.sub(r'(\1*pi/180)', s)
+    return _DEG_PAREN.sub(r')*(pi/180)', s)
+
+
 def qify(x, env: dict | None = None) -> 'Complex':
     """Parse x into a Q number. `env` is an optional {name: value} table
     of model variables usable in string expressions ('(q5 + q6) - theta2');
-    values may be Q numbers or sympy expressions. An expression that still
+    values may be Q numbers or sympy expressions. Postfix degree marks
+    are understood ('30°', '(q5+q6)°'). An expression that still
     contains unknown names raises — every quantity must be concrete."""
     if isq(x): return x
     elif iscplx(x): return Complex(x)
+    if isinstance(x, str) and any(m in x for m in '°º˚'):
+        x = degrees_marks_to_radians(x)
     # sympify knows pi/E/I already; PI is the same constant spelled the
     # way the qnumber module exports it
     local_env = {'PI': sym.pi}
@@ -193,7 +209,9 @@ def exact(x) -> 'Real':
         # sympify's rational=True only applies to strings; route authored
         # decimals through repr so 0.5 becomes Rational(1,2), not Float.
         x = repr(x)
-    val = _sympify(x, rational=True)
+    if isinstance(x, str) and any(m in x for m in '°º˚'):
+        x = degrees_marks_to_radians(x)
+    val = _sympify(x, rational=True, locals={'PI': sym.pi})
     if not isinstance(val, sym.Expr):
         # sympify can "successfully" parse junk like 'not-a-number' into a
         # boolean expression; only genuine numeric expressions get through.
@@ -255,6 +273,9 @@ class Complex(n.Number):
             mode = CalcMode.default()
         if mode == 'Symbolic':
             if not issym(value):
+                if isinstance(value, str) and \
+                        any(m in value for m in '°º˚'):
+                    value = degrees_marks_to_radians(value)
                 self._value = sym.sympify(value)
             else:
                 self._value = value

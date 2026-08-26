@@ -3,7 +3,7 @@ title: Figure 4.4
 caption: A classical state with weight *$c_1$* splits into four successors.
 
 variables:
-   q30: "rad(30)"
+   q30: 30°
 
 run_stages:
    stage1: [g1]

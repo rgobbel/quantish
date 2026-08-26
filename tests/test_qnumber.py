@@ -400,3 +400,33 @@ class TestPIAlias:
         qn.CalcMode.default('Float')
         assert float(qn.qify('x + PI', {'x': qn.Real(1)})) == \
             pytest.approx(1 + 3.141592653589793)
+
+
+class TestDegreeMarks:
+    """Postfix degree marks are part of the expression language:
+    '30°' and '(q5+q6)°' parse everywhere qify is used — exactly, as
+    pi fractions, in Symbolic mode."""
+
+    def test_bare_and_compound(self, mode):
+        assert float(qn.qify('30°')) == pytest.approx(math.radians(30))
+        assert float(qn.qify('30° + 15°')) == \
+            pytest.approx(math.radians(45))
+        assert float(qn.qify('(q5 + q6)°',
+                             {'q5': qn.Real(30), 'q6': qn.Real(15)})) \
+            == pytest.approx(math.radians(45))
+
+    def test_symbolic_is_exact(self):
+        prev = qn.CalcMode.default()
+        try:
+            qn.CalcMode.default('Symbolic')
+            assert qn.qify('30°').v == sym.pi / 6
+            assert qn.qify('22.5°').v == sym.pi / 8
+        finally:
+            qn.CalcMode.default(prev)
+
+    def test_variables_may_hold_degree_marks(self):
+        # the load_variables path: a variable defined as '30°' resolves
+        # and is usable in later expressions
+        env = {'q30': qn.qify('30°')}
+        assert float(qn.qify('q30 * 2', env)) == \
+            pytest.approx(math.radians(60))

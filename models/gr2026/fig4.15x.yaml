@@ -14,10 +14,10 @@ particles:
    p2: {sign: 1, weight: 1}
 
 gates:
-   g0: {angle: 'rad(30)'}
-   g1: {angle: 'rad(20)'}
-   g2: {angle: 'rad(20)'}
-   g3: {angle: 'rad(30)'}
+   g0: {angle: 30°}
+   g1: {angle: 20°}
+   g2: {angle: 20°}
+   g3: {angle: 30°}
    g4: {angle: 0}
 
 links:

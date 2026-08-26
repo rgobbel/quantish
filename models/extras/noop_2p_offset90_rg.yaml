@@ -16,10 +16,10 @@ particles:
    part2: {sign: 1, weight: 1}
 
 gates:
-   gate1: {angle: 'pi/6'}
-   gate2: {angle: 'rad(120)'}
-   gateA: {angle: 'pi/6'}
-   gateB: {angle: 'pi/6'}
+   gate1: {angle: 30°}
+   gate2: {angle: 120°}
+   gateA: {angle: 30°}
+   gateB: {angle: 30°}
 
 links:
    part1: gate1.upper
