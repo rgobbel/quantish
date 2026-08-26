@@ -49,19 +49,19 @@ def main():
     parser.add_argument('--dup-log-to-console', action=BooleanOptionalAction,
                         default=True, help='Log to console as well as file')
     parser.add_argument('--diagram', default='mermaid,graph',
-                        help='Comma-separated diagram kinds: mermaid, tikz, altair, '
+                        help='Comma-separated diagram kinds: mermaid, tikz, circuit, '
                              'graph (the weight-evolution graph), or all / none')
     parser.add_argument('--diagram-format', default='svg',
                         help='Comma-separated output formats: png, svg, pdf. '
                              'mmd is also valid for mermaid (its .mmd source is '
                              'always written). Renderers: Mermaid needs mmdc, '
                              'TikZ needs pdflatex (+ pdf2svg / ImageMagick for '
-                             'svg / png); the altair and graph kinds render '
-                             'natively (Vega-Altair).')
+                             'svg / png); the circuit and graph kinds render '
+                             'native SVG (png/pdf rasterized via vl-convert).')
     parser.add_argument('--diagram-dir', type=str, default='diagrams',
                         help='Directory for diagram output')
     parser.add_argument('--diagram-when', choices=['before', 'after', 'both'], default='before',
-                        help='When to draw the circuit diagrams (mermaid and altair '
+                        help='When to draw the circuit diagrams (mermaid and circuit '
                              'show run values in the after version; tikz shows '
                              'structure only and is drawn once). The graph always '
                              'follows the run.')
@@ -158,7 +158,7 @@ def main():
     sim = Simulation(config)
 
     # ---- diagram options: which kinds, which formats, where ----
-    all_kinds = {'mermaid', 'tikz', 'altair', 'graph'}
+    all_kinds = {'mermaid', 'tikz', 'circuit', 'graph'}
     kinds = {k.strip() for k in args.diagram.split(',') if k.strip()}
     if 'all' in kinds:
         kinds = set(all_kinds)
@@ -175,19 +175,21 @@ def main():
     if kinds:
         diagram_dir.mkdir(parents=True, exist_ok=True)
 
-    def save_vegalite(chart, stem):
-        # altair charts and the weight-evolution graph share one saver
-        import vl_convert
-        spec = chart.to_json()
+    def save_svg(svg_text, stem):
+        # the circuit and weight-evolution renderers export native SVG;
+        # png and pdf are rasterized from that same SVG
         for fmt in file_formats:
             out = diagram_dir / f'{stem}.{fmt}'
             log.info(f'Writing {out}')
             if fmt == 'svg':
-                out.write_text(vl_convert.vegalite_to_svg(spec))
-            elif fmt == 'png':
-                out.write_bytes(vl_convert.vegalite_to_png(spec, scale=2))
+                out.write_text(svg_text)
             else:
-                out.write_bytes(vl_convert.vegalite_to_pdf(spec))
+                import vl_convert
+                if fmt == 'png':
+                    out.write_bytes(vl_convert.svg_to_png(svg_text,
+                                                          scale=2))
+                else:
+                    out.write_bytes(vl_convert.svg_to_pdf(svg_text))
 
     def circuit_diagrams(when: str):
         # value displays only when the sim actually ran (--no-simulate
@@ -212,10 +214,11 @@ def main():
                 log.info(f'Rendering TikZ circuit diagram to {out}')
                 if not render_from_simulation(sim, out):
                     log.warning('TikZ diagram render failed (see stderr)')
-        if 'altair' in kinds:
-            from quantish.altair_diagram import circuit_chart
-            save_vegalite(circuit_chart(sim, has_run=after),
-                          f'{args.config}_altair_{when}')
+        if 'circuit' in kinds:
+            from quantish.diagram_layout import diagram_geometry
+            from quantish.svg_export import diagram_svg
+            save_svg(diagram_svg(diagram_geometry(sim, has_run=after)),
+                     f'{args.config}_circuit_{when}')
 
     if args.diagram_when in ('before', 'both'):
         circuit_diagrams('before')
@@ -338,14 +341,16 @@ def main():
             print(f'log level was {save_ll}, setting to {logging.WARN}')
             log.setLevel(logging.WARN)
             if 'graph' in kinds:
-                graph_chart = NetworkGraph(all_points, sim).chart()
-                save_vegalite(graph_chart, f'{args.config}_graph')
+                from quantish.svg_export import network_graph_svg
+                graph_svg = network_graph_svg(
+                    NetworkGraph(all_points, sim).build_model())
+                save_svg(graph_svg, f'{args.config}_graph')
                 if args.show_graph:
                     import webbrowser
-                    import vl_convert
                     html_path = diagram_dir / f'{args.config}_graph.html'
-                    html_path.write_text(vl_convert.vegalite_to_html(
-                        graph_chart.to_json()))
+                    html_path.write_text(
+                        '<!doctype html><meta charset="utf-8">'
+                        + graph_svg)
                     webbrowser.open(html_path.resolve().as_uri())
 
     if args.diagram_when in ('after', 'both'):

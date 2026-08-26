@@ -1,20 +1,19 @@
-"""Circuit diagrams as Vega-Altair charts, for the web/app.
+"""Circuit diagram layout: the geometry every renderer draws from.
 
-Same geometry as the TikZ renderer — spec_from_simulation, compute_layout
-and route_wires supply the columns, rows and wire polylines — drawn as
-Altair layers instead of TeX. Styling follows the Mermaid diagrams:
+Same skeleton as the TikZ renderer — spec_from_simulation,
+compute_layout and route_wires supply the columns, rows and wire
+polylines — flattened here into plain JSON-serializable geometry for
+the native SVG presenters (the app widget and the file exporter).
+Styling follows the Mermaid diagrams:
 white background, pale yellow stage boxes, pale blue gate boxes,
 lavender port boxes whose values (after a run) sit INSIDE the box, and
 stadium-shaped value blobs where a dangling output's value lands
-outside any gate. Pan/zoom and hover tooltips come free.
+outside any gate.
 """
 import math
 import re
 from bisect import bisect_right
 import textwrap
-
-import altair as alt
-import pandas as pd
 
 from quantish.display import pos_value_str, strip_markdown
 from quantish.tikz_diagram import (CONTROL_HALF_W, GATE_WIDTH, PORT_DY,
@@ -35,12 +34,6 @@ VALUE_FILL, VALUE_STROKE = '#f4f4f6', '#8b93a0'    # very pale gray
 PARTICLE_FILL = VALUE_FILL
 WIRE_COLOR = '#22314a'
 
-# the default rendered width of a wide circuit, in pixels. Charts never
-# exceed it (a fixed width is the one sizing marimo's vega wrapper
-# renders faithfully — its container-width mode bakes in a mismeasured
-# mount-time width), and narrower circuits keep their natural size.
-MAX_WIDTH = 900
-
 LINE_H = 0.26           # height of one text line, in layout units
 PORT_PAD = 0.14         # padding inside port boxes
 CHAR_W = 0.115          # approx character width at the value font size
@@ -58,9 +51,9 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
     boxes (fill/stroke/corner px, hover amp/Pr), texts (multi-line
     blocks anchored on their first line, line_h apart), wires and dots
     (polylines), arrows (position + clockwise angle, 0 = up), stadiums,
-    and the padded bounds. One geometry, three presenters: the Altair
-    chart below, the TikZ renderer's twin, and the builder's native
-    SVG widget.
+    and the padded bounds. One geometry, two presenters: the app's
+    native SVG widget (builder_widget.DiagramWidget) and the file
+    exporter (svg_export.diagram_svg).
 
     show_values (default: has_run) separates layout from display: with
     has_run=True, show_values=False the geometry is laid out exactly
@@ -162,7 +155,7 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
                           fill=fill, stroke=stroke, corner=corner,
                           amp=tip[0] if tip else '',
                           pr=pr.removeprefix('Pr: ')))
-        # Vega anchors a multi-line block by its first line: shift up so
+        # a multi-line block anchors on its first line: shift up so
         # the whole block centers in the box. The name line is bold;
         # value lines (if any) follow in a separate normal-weight block.
         top_y = cy + (len(shown) - 1) * LINE_H / 2
@@ -514,126 +507,3 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
                 wire_color=WIRE_COLOR, value_fill=VALUE_FILL,
                 value_stroke=VALUE_STROKE, scale=scale,
                 x0=x0 - pad, y0=y0 - pad, x1=x1 + pad, y1=y1 + pad)
-
-
-def circuit_chart(sim, has_run: bool = False, scale: float = 46.0,
-                  width: int | None = None,
-                  angle_overrides: dict | None = None):
-    """The circuit as a layered Altair chart over diagram_geometry.
-    With has_run, every port box contains its value block (rows and
-    columns spread to make room), dangling valued outputs get stadium
-    blobs past their stub wires, and the same values appear as hover
-    tooltips. The chart renders at its natural width, capped at
-    MAX_WIDTH (pass width to override). angle_overrides replaces a
-    gate's angle-label text ({'φ': 'φ(x)'})."""
-    g = diagram_geometry(sim, has_run=has_run, scale=scale,
-                         angle_overrides=angle_overrides)
-    boxes, texts, wires = g['boxes'], g['texts'], g['wires']
-    arrows, dots, stadiums = g['arrows'], g['dots'], g['stadiums']
-    x0, y0, x1, y1 = g['x0'], g['y0'], g['x1'], g['y1']
-    xscale = alt.Scale(domain=[x0, x1])
-    yscale = alt.Scale(domain=[y0, y1])
-    xe = alt.X('x:Q', scale=xscale, axis=None)
-    ye = alt.Y('y:Q', scale=yscale, axis=None)
-    # natural_px is the width at which geometry and font sizes match
-    # exactly; the rendered width never exceeds MAX_WIDTH (or the
-    # caller's explicit width), and a smaller circuit keeps its natural
-    # size — never stretched, which would distort the drawn angles
-    x_extent = x1 - x0
-    natural_px = x_extent * scale
-    if width is None:
-        width = int(min(natural_px, MAX_WIDTH))
-    # keep the drawn aspect ratio true: when a circuit is wider than
-    # its rendered width, shrink the height by the same factor, so
-    # boxes and their contents are not stretched tall
-    fit = min(1.0, width / natural_px)
-    height = int((y1 - y0) * scale * fit)
-    # pixel-sized glyphs (text, arrowheads, particle dots) don't follow
-    # the scales, so two live factors are applied to their sizes:
-    # WF — how far the container squeezes the natural width (never
-    # enlarged past 1), via vega's view-width signal; ZF — the current
-    # wheel-zoom relative to the initial x domain
-    zoom = alt.selection_interval(bind='scales', name='zoomsel')
-    WF = f'min(1, width / {natural_px:.1f})'
-    ZF = (f'(isValid(zoomsel_x) ? {x_extent:.5f}'
-          ' / abs(zoomsel_x[1] - zoomsel_x[0]) : 1)')
-
-    def rect_layer(df, radius, tooltips=False):
-        enc = dict(x=alt.X('x:Q', scale=xscale, axis=None), x2='x2:Q',
-                   y=alt.Y('y:Q', scale=yscale, axis=None), y2='y2:Q',
-                   fill=alt.Fill('fill:N', scale=None),
-                   stroke=alt.Stroke('stroke:N', scale=None))
-        if tooltips:
-            enc['tooltip'] = [alt.Tooltip('amp:N', title='amplitude'),
-                              alt.Tooltip('pr:N', title='Pr')]
-        return alt.Chart(df).mark_rect(
-            strokeWidth=1, cornerRadius=radius).encode(**enc)
-
-    # rounded corners per box class (cornerRadius is a mark constant,
-    # so each radius gets its own layer; insertion order is preserved
-    # within a radius class, stages first). Only boxes that actually
-    # hold a value get a tooltip; the rest stay hover-silent.
-    box_df = pd.DataFrame(boxes)
-    layers = []
-    for r in sorted(box_df.corner.unique(), reverse=True):
-        cls = box_df[box_df.corner == r]
-        for valued in (False, True):
-            sel = cls[(cls.amp != '') == valued]
-            if len(sel):
-                layers.append(rect_layer(sel, int(r * 1.5),
-                                         tooltips=valued and has_run))
-
-    if stadiums:
-        st_df = pd.DataFrame(stadiums)
-        layers.append(alt.Chart(st_df).mark_rect(
-            strokeWidth=1, fill=VALUE_FILL, stroke=VALUE_STROKE,
-            cornerRadius=int(st_df.corner.max())).encode(
-            x=alt.X('x:Q', scale=xscale, axis=None), x2='x2:Q',
-            y=alt.Y('y:Q', scale=yscale, axis=None), y2='y2:Q'))
-
-    # No order channel: the rows are emitted in drawing order, and a
-    # line mark follows data order within each detail group. (An
-    # explicit order field breaks under marimo's CSV data transformer,
-    # which delivers it as strings — "10" sorts before "2".)
-    layers.append(alt.Chart(pd.DataFrame(
-        [p for seg in dots for p in seg])).mark_line(
-        color='#000000', strokeWidth=1.0, strokeDash=[3, 3]).encode(
-        x=xe, y=ye, detail='route:N'))
-    layers.append(alt.Chart(pd.DataFrame(
-        [p for seg in wires for p in seg])).mark_line(
-        color=WIRE_COLOR, strokeWidth=1.3).encode(
-        x=xe, y=ye, detail='route:N'))
-    layers.append(alt.Chart(pd.DataFrame(arrows)).mark_point(
-        shape='triangle', filled=True, color=WIRE_COLOR).encode(
-        x=xe, y=ye, angle=alt.Angle('angle:Q', scale=None),
-        size=alt.value(alt.expr(f'45 * pow({WF} * {ZF}, 2)'))))
-    text_rows = []
-    for tx in texts:
-        for k, line in enumerate(tx['lines']):
-            text_rows.append(dict(x=tx['x'], y=tx['y'] - k * LINE_H,
-                                  text=line, size=tx['size'],
-                                  color=tx['color'], weight=tx['weight']))
-    text_df = pd.DataFrame(text_rows)
-    for weight in ('normal', 'bold'):
-        by_weight = text_df[text_df.weight == weight]
-        for fsize in sorted(by_weight['size'].unique()):
-            sel = by_weight[by_weight['size'] == fsize]
-            layers.append(alt.Chart(sel).mark_text(
-                fontWeight=weight, baseline='middle').encode(
-                x=xe, y=ye, text='text:N',
-                size=alt.value(alt.expr(f'{fsize} * {WF} * {ZF}')),
-                color=alt.Color('color:N', scale=None)))
-
-    chart = alt.layer(*layers).properties(width=width, height=height)
-    if getattr(sim, 'caption', ''):
-        # wrap the title: vega titles are single-line, and a long
-        # caption would silently widen the canvas past the chart width
-        # (the mystery horizontal scrollbar)
-        title_lines = textwrap.wrap(
-            f'{sim.title} — {strip_markdown(sim.caption)}',
-            width=max(20, int(width / 7)))
-        chart = chart.properties(title=alt.TitleParams(
-            text=title_lines, fontSize=13, anchor='start',
-            fontWeight='bold'))
-    return (chart.configure_view(stroke=None)
-            .configure(background='white').add_params(zoom))

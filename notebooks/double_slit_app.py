@@ -47,34 +47,14 @@ async def initialization():
             f'{_base}/public/wheels/addict-2.4.0-py3-none-any.whl',
             f'{_base}/public/wheels/quantish-0.1.0-py3-none-any.whl',
         ], deps=False)
-        await micropip.install(['sympy', 'scipy', 'networkx', 'pandas',
-                                'altair', 'pyyaml'])
+        await micropip.install(['sympy', 'scipy', 'networkx',
+                                'pyyaml', 'anywidget'])
         # Under WASM, mo.app_meta().mode reports 'edit' for BOTH export
         # modes; the page's own mount config records which one this is.
         from pyodide.http import pyfetch
         _page = await (await pyfetch(f'{_base}/index.html')).string()
         _wasm_editor = '"mode": "edit"' in _page
 
-    import altair as alt
-    import pandas as pd
-
-    # Inline chart data in the Vega-Lite spec. 'default' is not enough:
-    # mo.ui.altair_chart overrides any non-marimo transformer with
-    # marimo_arrow, whose virtual files are disposed on every cell re-run
-    # while the browser still requests them ("Virtual file not found"
-    # tracebacks flooding the server log). marimo respects transformers
-    # named marimo_*, and marimo_inline_csv embeds the data as a base64
-    # data: URL, so no virtual files exist at all.
-    try:
-        alt.data_transformers.enable('marimo_inline_csv')
-    except Exception:
-        try:  # marimo registers its transformers lazily
-            from marimo._plugins.ui._impl.charts.altair_transformer import (
-                register_transformers)
-            register_transformers()
-            alt.data_transformers.enable('marimo_inline_csv')
-        except Exception:  # not running under marimo at all
-            alt.data_transformers.enable('default')
     _repo = Path(__file__).resolve().parents[1]
     if str(_repo) not in sys.path:
         sys.path.insert(0, str(_repo))
@@ -88,6 +68,9 @@ async def initialization():
     logging.basicConfig(level=logging.WARNING)
     logging.getLogger('quantish').setLevel(logging.WARNING)
 
+    from quantish.diagram_layout import diagram_geometry
+    from quantish.builder_widget import (DiagramWidget, LinePlotWidget,
+                                         ScreenPanelWidget)
     from quantish.double_slit import (DEFAULT_THETA_S, sample_hits,
                                       screen_curve, screen_positions,
                                       slit_sim)
@@ -97,11 +80,13 @@ async def initialization():
                  else mo.app_meta().mode == 'edit')
     return (
         DEFAULT_THETA_S,
+        DiagramWidget,
         EDITOR_UI,
-        alt,
+        LinePlotWidget,
+        ScreenPanelWidget,
+        diagram_geometry,
         math,
         mo,
-        pd,
         random,
         sample_hits,
         screen_curve,
@@ -345,28 +330,16 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(alt, curves, diagrams, hits_get, mo, pd, xs):
+def _(ScreenPanelWidget, curves, diagrams, hits_get, mo, xs):
     def _panel(title, curve, hits, width=380):
-        _screen = alt.Chart(pd.DataFrame({
-            'x': [h[0] for h in hits],
-            'y': [h[1] for h in hits],
-        })).mark_circle(size=6, color='#f5f0c0', opacity=0.65).encode(
-            x=alt.X('x:Q', scale=alt.Scale(domain=[-1, 1]), axis=None),
-            y=alt.Y('y:Q', scale=alt.Scale(domain=[0, 1]), axis=None),
-        ).properties(
-            width=width, height=190,
-            title=f'{title} ({len(hits)} hits)',
-            view=alt.ViewBackground(fill='#101018', stroke='#444'))
-        _line = alt.Chart(pd.DataFrame({'x': xs, 'I': curve})).mark_line(
-            color='#4477cc').encode(
-            x=alt.X('x:Q', scale=alt.Scale(domain=[-1, 1]),
-                    axis=alt.Axis(title='screen position')),
-            y=alt.Y('I:Q', scale=alt.Scale(domain=[0, 1.05]),
-                    axis=alt.Axis(title='intensity')),
-        ).properties(width=width, height=100)
-        # bounds='flush' aligns the two plot AREAS exactly (axis labels and
-        # titles no longer shift one chart relative to the other).
-        return alt.vconcat(_screen, _line, spacing=4, bounds='flush')
+        # one SVG for the dark screen and its intensity curve, so the
+        # two plot areas stay flush by construction
+        return mo.ui.anywidget(ScreenPanelWidget(data={
+            'title': f'{title} ({len(hits)} hits)',
+            'hits': [[h[0], h[1]] for h in hits],
+            'curve': {'x': list(xs), 'y': list(curve)},
+            'width': width,
+        }))
 
     _hits = hits_get()
 
@@ -387,27 +360,23 @@ def _(alt, curves, diagrams, hits_get, mo, pd, xs):
 
 
 @app.cell(hide_code=True)
-def _(alt, curves, mo, pd, xs):
+def _(LinePlotWidget, curves, mo, xs):
     """What classical physics would predict for two
     open slits (the sum of the single-slit lines, which is also exactly
     the recorder curve) against what actually happens: super-additive at
     bright fringes, zero at dark ones."""
-    _frame = pd.concat([
-        pd.DataFrame({'x': xs, 'I': curves['both'],
-                      'curve': ['both slits (actual)'] * len(xs)}),
-        pd.DataFrame({'x': xs,
-                      'I': [a + b for a, b in zip(curves['slit1'],
-                                                  curves['slit2'])],
-                      'curve': ['slit1 + slit2 (classical sum)'] * len(xs)}),
-    ])
-    _chart = alt.Chart(_frame).mark_line().encode(
-        x=alt.X('x:Q', axis=alt.Axis(title='screen position')),
-        y=alt.Y('I:Q', axis=alt.Axis(title='intensity')),
-        color=alt.Color('curve:N', legend=alt.Legend(orient='top')),
-        strokeDash=alt.condition(
-            alt.datum.curve == 'slit1 + slit2 (classical sum)',
-            alt.value([6, 4]), alt.value([0])),
-    ).properties(width=940, height=180)
+    _chart = mo.ui.anywidget(LinePlotWidget(data={
+        'series': [
+            {'name': 'both slits (actual)', 'x': list(xs),
+             'y': list(curves['both']), 'color': '#4c78a8'},
+            {'name': "slit1 + slit2 (classical sum)", 'x': list(xs),
+             'y': [a + b for a, b in zip(curves['slit1'],
+                                         curves['slit2'])],
+             'color': '#f58518', 'dash': '6 4'},
+        ],
+        'xdomain': [-1, 1], 'xlabel': 'screen position',
+        'ylabel': 'intensity', 'width': 940, 'height': 180,
+    }))
     mo.vstack([
         mo.md('### Note: Interference is not additivity\n'
               'Opening the second slit removes particles from the dark '
@@ -479,18 +448,28 @@ def _(fringes, mo, n_points, screen_curve, screen_positions):
 
 
 @app.cell(hide_code=True)
-def _(DEFAULT_THETA_S, math, mo, slit_sim):
+def _(
+    DEFAULT_THETA_S,
+    DiagramWidget,
+    diagram_geometry,
+    math,
+    mo,
+    slit_sim,
+):
     """One circuit diagram per condition, rendered from the Simulation
     objects that yield the curves (Sn = slit n, Bn = a block in its place)."""
     def _diagram(mode, width):
         try:
-            from quantish.altair_diagram import circuit_chart
-            return circuit_chart(
-                slit_sim(mode), has_run=False, width=width,
+            _g = diagram_geometry(
+                slit_sim(mode), has_run=False,
                 angle_overrides={
                     'g1': f'{math.degrees(DEFAULT_THETA_S):.0f}°',
                     'g2': f'{math.degrees(DEFAULT_THETA_S):.0f}°',
                     'g4': '0°', 'g5': '0°', 'φ': 'φ(x)'})
+            # the grid rows size their own frames
+            _g['frame_w'] = width
+            _g['frame_h'] = 330
+            return mo.ui.anywidget(DiagramWidget(geometry=_g))
         except Exception as exc:  # noqa: BLE001--show, don't crash the app
             return mo.md(f'_diagram failed: {exc}_')
 

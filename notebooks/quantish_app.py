@@ -125,8 +125,7 @@ def _(
     # text scale, left-aligned, with wheel-zoom around the cursor, drag to
     # pan, double-click to reset, values on hover; the frame's bottom
     # edge stretches to show more without rescaling. The title and
-    # caption sit above it as real markdown — better than the Vega
-    # title, which had to strip the caption's emphasis.
+    # caption sit above it as real markdown, emphasis intact.
     def _native():
         try:
             # A shadow run pins the layout: the pre-run diagram (and
@@ -219,17 +218,25 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(NetworkGraph, mo, sim):
+def _(NetworkGraph, NetworkGraphWidget, mo, sim):
     # The weight-evolution graph, after the Run button and behind an
-    # accordion so a run doesn't reshuffle the layout above it. Shown
-    # directly — mo.ui.altair_chart injects a selection param, which
-    # Vega-Lite rejects on layered charts that carry configure_*
-    # options.
+    # accordion so a run doesn't reshuffle the layout above it. Drawn
+    # natively from NetworkGraph.build_model(), with the lineage
+    # interaction: click a configuration-space point to highlight
+    # every arrow on its ancestry and descendancy.
     mo.stop(sim is None)
 
     def _():
         try:
-            return NetworkGraph(sim.all_points, sim).chart().interactive()
+            _model = NetworkGraph(sim.all_points, sim).build_model()
+            return mo.vstack([
+                mo.ui.anywidget(NetworkGraphWidget(model=_model)),
+                mo.md('_Hover over a cell for its values; click a '
+                      'configuration-space point to highlight its '
+                      'full ancestry and descendancy (shift-click for '
+                      'immediate neighbors only), click again to '
+                      'clear._'),
+            ])
         except Exception as exc:  # noqa: BLE001 — surface, don't crash the app
             return mo.md(f'_network graph failed: {exc}_')
 
@@ -795,8 +802,8 @@ async def initialization():
             f'{_base}/public/wheels/addict-2.4.0-py3-none-any.whl',
             f'{_base}/public/wheels/quantish-0.1.0-py3-none-any.whl',
         ], deps=False)
-        await micropip.install(['sympy', 'scipy', 'networkx', 'pandas',
-                                'altair', 'pyyaml', 'anywidget'])
+        await micropip.install(['sympy', 'scipy', 'networkx',
+                                'pyyaml', 'anywidget'])
         _resp = await pyfetch(f'{_base}/public/models.json')
         for _rel, _text in _json.loads(await _resp.string()).items():
             _p = Path('/wasm-data/models') / _rel
@@ -807,28 +814,8 @@ async def initialization():
         _page = await (await pyfetch(f'{_base}/index.html')).string()
         _wasm_editor = '"mode": "edit"' in _page
 
-    import altair as alt
-    import pandas as pd
     import yaml
     from addict import Addict
-
-    # Inline chart data in the Vega-Lite spec. 'default' is not enough:
-    # mo.ui.altair_chart overrides any non-marimo transformer with
-    # marimo_arrow, whose virtual files are disposed on every cell re-run
-    # while the browser still requests them ("Virtual file not found"
-    # tracebacks flooding the server log). marimo respects transformers
-    # named marimo_*, and marimo_inline_csv embeds the data as a base64
-    # data: URL, so no virtual files exist at all.
-    try:
-        alt.data_transformers.enable('marimo_inline_csv')
-    except Exception:
-        try:  # marimo registers its transformers lazily
-            from marimo._plugins.ui._impl.charts.altair_transformer import (
-                register_transformers)
-            register_transformers()
-            alt.data_transformers.enable('marimo_inline_csv')
-        except Exception:  # not running under marimo at all
-            alt.data_transformers.enable('default')
 
     # make the repo importable no matter where marimo was launched from
     def _():
@@ -846,8 +833,10 @@ async def initialization():
     logging.getLogger('quantish').setLevel(logging.WARNING)
 
     from quantish.config_space import GatePort
-    from quantish.altair_diagram import circuit_chart, diagram_geometry
-    from quantish.builder_widget import DiagramWidget, WeightSplitWidget
+    from quantish.diagram_layout import diagram_geometry
+    from quantish.builder_widget import (DiagramWidget,
+                                         NetworkGraphWidget,
+                                         WeightSplitWidget)
     from quantish.display import coord_sort_key, cs_point_sort_key, gate_io
     from quantish.epr import run_epr_experiment, supports_epr
     from quantish.gate import FredkinGate
@@ -867,6 +856,7 @@ async def initialization():
         Addict,
         CalcMode,
         DiagramWidget,
+        NetworkGraphWidget,
         EDITOR_UI,
         FredkinGate,
         GatePort,

@@ -31,22 +31,10 @@ async def initialization():
             f'{_base}/public/wheels/addict-2.4.0-py3-none-any.whl',
             f'{_base}/public/wheels/quantish-0.1.0-py3-none-any.whl',
         ], deps=False)
-        await micropip.install(['sympy', 'scipy', 'networkx', 'pandas',
-                                'altair', 'pyyaml', 'anywidget'])
+        await micropip.install(['sympy', 'scipy', 'networkx',
+                                'pyyaml', 'anywidget'])
 
-    import altair as alt
     from addict import Dict as Addict
-
-    try:
-        alt.data_transformers.enable('marimo_inline_csv')
-    except Exception:
-        try:  # marimo registers its transformers lazily
-            from marimo._plugins.ui._impl.charts.altair_transformer import (
-                register_transformers)
-            register_transformers()
-            alt.data_transformers.enable('marimo_inline_csv')
-        except Exception:  # not running under marimo at all
-            alt.data_transformers.enable('default')
 
     _repo = Path(__file__).resolve().parents[1]
     if str(_repo) not in sys.path:
@@ -60,7 +48,7 @@ async def initialization():
     import copy
     import yaml
 
-    from quantish.altair_diagram import diagram_geometry
+    from quantish.diagram_layout import diagram_geometry
     from quantish.builder import (angle_degrees, coherence_warnings,
                                   config_to_graph, config_to_yaml,
                                   graph_to_config, validate_graph,

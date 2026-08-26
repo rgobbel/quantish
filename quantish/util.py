@@ -115,7 +115,7 @@ def subscript_digits(s: str) -> str:
     book's labels: q5 → q₅, theta2 → theta₂; an explicit underscore
     subscripts a single character where Unicode has a form for it:
     g_p → gₚ, g_φ → gᵩ. For plain-text surfaces (Mermaid labels, the
-    Altair diagrams); the TikZ renderer does the same in TeX math."""
+    SVG diagrams); the TikZ renderer does the same in TeX math."""
     s = re.sub(r'(?<=[A-Za-z])(\d+)',
                lambda mt: mt.group(1).translate(_SUBSCRIPT_DIGITS), s)
     return re.sub(r'_([0-9A-Za-zβγρφχ])(?![0-9A-Za-z])',
@@ -168,7 +168,7 @@ def math_to_unicode(s: str) -> str:
     subset the diagrams need: subscripts ($Q_1$ → Q₁, $w_{2a}$ → w₂ₐ),
     superscripts ($x^2$ → x²), greek and symbol commands
     ($\\theta_1 = \\pi/6$ → θ₁ = π/6, $\\angle$ → ∠). For surfaces
-    with no LaTeX rendering (the SVG widgets, Vega text, Mermaid
+    with no LaTeX rendering (the SVG widgets, Mermaid
     labels, chart titles); mo.md surfaces render the math themselves
     and don't need this. Plain text outside $...$ passes through
     untouched."""

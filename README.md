@@ -194,7 +194,7 @@ Some useful options (see `--help` for the full list):
 
 - `--calculation-mode symbolic|float` — exact SymPy math vs. floating
   point, overriding the model's own setting
-- `--diagram mermaid,tikz,altair,graph` — which diagrams to draw
+- `--diagram mermaid,tikz,circuit,graph` — which diagrams to draw
   (also `all` / `none`; default `mermaid,graph`)
 - `--diagram-format png,svg,pdf` — output formats (default `svg`;
   Mermaid always writes its `.mmd` source as well)

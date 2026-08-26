@@ -30,7 +30,7 @@ MAX_SYMBOLIC_LEN = 40
 
 
 # model captions are Markdown; these peel the markers off for surfaces
-# that can only show plain text (Vega chart titles, log lines)
+# that can only show plain text (SVG chart titles, log lines)
 _MD_MARKERS = [(re.compile(r'\*\*(.+?)\*\*'), r'\1'),
                (re.compile(r'\*(.+?)\*'), r'\1'),
                (re.compile(r'_(.+?)_'), r'\1'),

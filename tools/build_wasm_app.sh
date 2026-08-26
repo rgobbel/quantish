@@ -202,7 +202,7 @@ Notes:
 - Nothing runs server-side: the Python engine executes in the visitor's
   browser via Pyodide. Any static file server works (nginx, Caddy,
   GitHub Pages, python -m http.server).
-- First load downloads ~40MB (Pyodide + sympy/scipy/pandas) from CDNs,
+- First load downloads ~30MB (Pyodide + sympy/scipy) from CDNs,
   taking a couple of minutes; after browser caching, ~10-15 seconds.
 - Rebuilt from the repo with tools/build_wasm_app.sh; the model library
   is frozen into quantish_app/public/models.json at build time.

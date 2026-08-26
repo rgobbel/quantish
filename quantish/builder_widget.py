@@ -1544,7 +1544,11 @@ function render({ model, el }) {
     // Double-click resets zoom and pan (never the box height).
     const st = window.__qdState = window.__qdState || {};
     const sig = `${g.x0},${g.x1},${g.y1},${S},${g.boxes.length}`;
-    if (st.boxH) root.style.height = `${st.boxH}px`;
+    // an explicit frame size in the geometry overrides the default CSS
+    // box AND the stashed user height (grid layouts size their own)
+    if (g.frame_w) root.style.width = `${g.frame_w}px`;
+    if (g.frame_h) root.style.height = `${g.frame_h}px`;
+    else if (st.boxH) root.style.height = `${st.boxH}px`;
     const ZOOM = 1.2;                 // natural-scale boost
     const ppu0 = S * ZOOM;
     let ppu = st.ppu || ppu0, vx = 0, vy = 0;
@@ -1637,8 +1641,8 @@ export default { render };
 
 class DiagramWidget(anywidget.AnyWidget):
     """The results diagram drawn natively from diagram_geometry's
-    output — the same layout, router, and geometry as the Altair and
-    TikZ renderers, presented in the builder's own SVG idiom. Wheel
+    output — the same layout, router, and geometry as the TikZ
+    renderer and the SVG file exporter. Wheel
     zooms, drag pans, double-click resets; no vl-convert, WASM-safe."""
     _esm = _DIAGRAM_ESM
     _css = _DIAGRAM_CSS
@@ -1653,7 +1657,7 @@ _WSPLIT_CSS = """
 """
 
 _WSPLIT_ESM = r"""
-// Vega-Lite's default categorical scheme (tableau10)
+// the tableau10 categorical palette
 const CAT10 = ['#4c78a8', '#f58518', '#e45756', '#72b7b2',
                '#54a24b', '#eeca3b', '#b279a2', '#ff9da6'];
 
@@ -1684,14 +1688,14 @@ function render({ model, el }) {
   root.className = 'qw-root';
   el.appendChild(root);
 
-  // The zoomable data domain, like the Vega chart's .interactive().
+  // The zoomable data domain (wheel zoom + drag pan).
   // Both the domain and the frame size live in a window-level stash:
   // the widget is rebuilt on every parameter or selection change, and
   // the user's zoom and resize must ride through — only an explicit
   // double-click resets the zoom to the default.
   const st = window.__qwState = window.__qwState || {};
   let dom = st.dom ? { ...st.dom } : null;
-  const HOME = [-1.2, 1.2];   // Vega nices the [-1.1, 1.1] domain out
+  const HOME = [-1.2, 1.2];   // the [-1.1, 1.1] data range, niced
   const M = { l: 52, r: 8, t: 34, b: 46 };
   const LEG = 100;
   // the plot is sized by its frame: grab the frame's corner to
@@ -1726,11 +1730,11 @@ function render({ model, el }) {
     svg.appendChild(h('clipPath', { id: 'qwclip' },
       h('rect', { x: M.l, y: M.t, width: size, height: size })));
 
-    // gridlines and axes, in the Vega house style
+    // gridlines and axes (light grid, outside ticks)
     const nTicks = Math.max(4, Math.round(size / 45));
     const xt = niceTicks(dom.x0, dom.x1, nTicks);
     const yt = niceTicks(dom.y0, dom.y1, nTicks);
-    // Vega labels ticks at the step's precision ('1.0', not '1')
+    // tick labels carry the step's precision ('1.0', not '1')
     const dec = (ts) => Math.max(0, ...ts.map((v) =>
       (String(v).split('.')[1] || '').length));
     const xd = dec(xt), yd = dec(yt);
@@ -1798,7 +1802,7 @@ function render({ model, el }) {
       }, name));
     }
 
-    // legend, Vega-style
+    // legend
     const lx = M.l + size + 24;
     svg.appendChild(h('text', { x: lx, y: M.t + 4, 'font-size': 11,
       'font-weight': 'bold', fill: '#000',
@@ -1845,7 +1849,7 @@ function render({ model, el }) {
     });
 
     // wheel zooms the domain around the cursor; drag pans;
-    // double-click resets — matching the Vega .interactive() feel
+    // double-click resets
     svg.addEventListener('wheel', (ev) => {
       ev.preventDefault();
       const r = svg.getBoundingClientRect();
@@ -1930,15 +1934,419 @@ export default { render };
 
 
 class WeightSplitWidget(anywidget.AnyWidget):
-    """The weight-split explorer's vector view, drawn natively: the
-    same look as the Vega chart (axes, grid, category colors, legend,
-    Finder-style selection, wheel-zoom/pan/double-click-reset) with the
-    selection synced through the `selected` trait instead of Vega
-    params."""
+    """The weight-split explorer's vector view: axes, grid,
+    category colors, legend, Finder-style selection, and
+    wheel-zoom/pan/double-click-reset, with the selection synced
+    through the `selected` trait."""
     _esm = _WSPLIT_ESM
     _css = _WSPLIT_CSS
     data = traitlets.Dict({}).tag(sync=True)
     selected = traitlets.List([]).tag(sync=True)
+
+
+_NETGRAPH_CSS = """
+.qn-root { background: #fff; border: 1px solid #ddd;
+           border-radius: 8px; resize: both; overflow: hidden; }
+.qn-root svg { display: block; width: 100%; height: 100%;
+               cursor: default; user-select: none;
+               -webkit-user-select: none; }
+"""
+
+_NETGRAPH_ESM = r"""
+function h(tag, attrs = {}, ...children) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  for (const c of children)
+    el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+  return el;
+}
+
+function render({ model, el }) {
+  el.innerHTML = '';
+  const root = document.createElement('div');
+  root.className = 'qn-root';
+  el.appendChild(root);
+  let selected = null;   // clicked node id; its edges highlight
+
+  function draw() {
+    const m = model.get('model') || {};
+    root.innerHTML = '';
+    if (!m.cells) return;
+    const nCols = m.n_columns, layerMax = m.layer_max;
+    const bandH = m.band_h;
+    // the same geometry the file exporter draws
+    // (svg_export.network_graph_svg)
+    const xLo = -0.75, xHi = nCols - 1 + 0.6;
+    const ySpan = (layerMax + 1) / 2.0;
+    const yLo = -ySpan - 0.75, yHi = ySpan + 0.4;
+    const W = Math.min(170 * nCols, 900);
+    const H = Math.max(Math.min(Math.round(58 * (layerMax + 2)), 900), 220);
+    const pxX = W / (xHi - xLo), pxY = H / (yHi - yLo);
+    const cellW = bandH * pxY / pxX;
+    // title above the plot
+    const titleLines = [];
+    {
+      const words = String(m.title || '').split(/\s+/);
+      const maxCh = Math.max(20, Math.round(W / 9));
+      let cur = '';
+      for (const w of words) {
+        if (cur && (cur + ' ' + w).length > maxCh) {
+          titleLines.push(cur);
+          cur = w;
+        } else cur = cur ? cur + ' ' + w : w;
+      }
+      if (cur) titleLines.push(cur);
+    }
+    const T = 10 + 18 * titleLines.length;
+    const px = (x) => (x - xLo) * pxX;
+    const py = (y) => T + (yHi - y) * pxY;
+    const svg = h('svg', { viewBox: `0 0 ${W} ${T + H}` });
+    root.style.width = `${W + 2}px`;
+    root.style.height = `${T + H + 2}px`;
+    root.appendChild(svg);
+    titleLines.forEach((ln, i) => svg.appendChild(h('text', {
+      x: W / 2, y: 16 + 18 * i, 'text-anchor': 'middle',
+      'font-size': 13, 'font-weight': 'bold', fill: '#000',
+      'font-family': 'sans-serif' }, ln)));
+
+    // arrows: shafts trimmed to the cell edges, real polygon heads
+    const HEAD_LEN = 6.0, HEAD_HALF = 2.4;
+    const arrowEls = [];
+    for (const a of m.arrows || []) {
+      const x1 = px(a.x + cellW / 2 + 0.02), y1 = py(a.y);
+      const x2 = px(a.x2 - cellW / 2 - 0.02), y2 = py(a.y2);
+      const dx = x2 - x1, dy = y2 - y1;
+      const n = Math.hypot(dx, dy) || 1;
+      const ux = dx / n, uy = dy / n;
+      const bx = x2 - HEAD_LEN * ux, by = y2 - HEAD_LEN * uy;
+      const g = h('g', { 'data-src': a.src, 'data-dst': a.dst });
+      g.appendChild(h('line', { x1, y1, x2: bx, y2: by,
+        stroke: '#000', 'stroke-width': 1 }));
+      g.appendChild(h('path', { fill: '#000',
+        d: `M ${x2} ${y2} L ${bx - HEAD_HALF * -uy} ${by - HEAD_HALF * ux}` +
+           ` L ${bx + HEAD_HALF * -uy} ${by + HEAD_HALF * ux} Z` }));
+      svg.appendChild(g);
+      arrowEls.push(g);
+    }
+
+    // cells: border underlay + inset fill
+    const nodeBounds = {};
+    const cellEls = [];
+    for (const c of m.cells || []) {
+      const x0 = px(c.x - cellW / 2), x1 = px(c.x + cellW / 2);
+      const y0 = py(c.y1), y1 = py(c.y0);   // y flips
+      const g = h('g', { 'data-node': c.node, style: 'cursor: pointer' });
+      g.appendChild(h('rect', { x: x0, y: y0, width: x1 - x0,
+        height: y1 - y0, fill: c.stroke }));
+      g.appendChild(h('rect', {
+        x: x0 + c.sw, y: y0 + c.sw,
+        width: Math.max(0, x1 - x0 - 2 * c.sw),
+        height: Math.max(0, y1 - y0 - 2 * c.sw), fill: c.fill }));
+      const tip = h('title');
+      tip.textContent = `configuration-space point: ${c.cs_point}\n` +
+        `particle: ${c.particle}\nvalue: ${c.value}\nPr(point): ${c.pr}`;
+      g.appendChild(tip);
+      svg.appendChild(g);
+      cellEls.push(g);
+      const b = nodeBounds[c.node] ||
+        (nodeBounds[c.node] = { x0, y0, x1, y1 });
+      b.x0 = Math.min(b.x0, x0); b.y0 = Math.min(b.y0, y0);
+      b.x1 = Math.max(b.x1, x1); b.y1 = Math.max(b.y1, y1);
+    }
+
+    // fine diagonal stripes for untouched cells
+    const N_STRIPES = 5;
+    for (const [xc, y0d, y1d, sw] of m.stripes || []) {
+      const x0 = px(xc - cellW / 2) + sw, x1 = px(xc + cellW / 2) - sw;
+      const yTop = py(y1d) + sw, yBot = py(y0d) - sw;
+      for (let k = 1; k < 2 * N_STRIPES; k++) {
+        const c = -1 + k / N_STRIPES;
+        const u0 = Math.max(0, -c), u1 = Math.min(1, 1 - c);
+        if (u0 >= u1) continue;
+        svg.appendChild(h('line', {
+          x1: x0 + u0 * (x1 - x0), y1: yBot - (u0 + c) * (yBot - yTop),
+          x2: x0 + u1 * (x1 - x0), y2: yBot - (u1 + c) * (yBot - yTop),
+          stroke: '#000', 'stroke-width': 0.4,
+          'pointer-events': 'none' }));
+      }
+    }
+
+    for (const l of m.labels || [])
+      svg.appendChild(h('text', {
+        x: px(l.x - cellW / 2 - 0.04), y: py(l.y),
+        'text-anchor': 'end', 'dominant-baseline': 'central',
+        'font-size': 11, fill: '#404040',
+        'font-family': 'sans-serif' }, l.text));
+    (m.col_labels || []).forEach((label, i) =>
+      svg.appendChild(h('text', { x: px(i), y: py(yLo + 0.35),
+        'text-anchor': 'middle', 'font-size': 13, fill: '#000',
+        'font-family': 'sans-serif' }, label)));
+
+    // Click a configuration-space point: its whole ancestry and
+    // descendancy — every arrow on a path into or out of it — stays
+    // bold while the rest fade. Shift-click limits the highlight to
+    // the immediate predecessors and successors. Click again (or
+    // empty space) to clear.
+    const preds = {}, succs = {};
+    for (const a of m.arrows || []) {
+      (succs[a.src] = succs[a.src] || []).push(a.dst);
+      (preds[a.dst] = preds[a.dst] || []).push(a.src);
+    }
+    const reach = (start, step) => {
+      const seen = new Set([start]);
+      const queue = [start];
+      while (queue.length) {
+        for (const nb of step[queue.shift()] || [])
+          if (!seen.has(nb)) { seen.add(nb); queue.push(nb); }
+      }
+      return seen;
+    };
+    let outline = null;
+    let singleLevel = false;
+    const applySel = () => {
+      if (outline) { outline.remove(); outline = null; }
+      let back = null, fwd = null;
+      if (selected !== null) {
+        back = singleLevel ? new Set([selected])
+                           : reach(selected, preds);
+        fwd = singleLevel ? new Set([selected])
+                          : reach(selected, succs);
+      }
+      for (const g of arrowEls) {
+        const on = selected !== null &&
+          (back.has(g.getAttribute('data-dst')) ||
+           fwd.has(g.getAttribute('data-src')));
+        g.setAttribute('opacity', selected === null ? 1 : (on ? 1 : 0.12));
+        g.querySelector('line').setAttribute('stroke-width', on ? 2.2 : 1);
+      }
+      if (selected !== null && nodeBounds[selected]) {
+        const b = nodeBounds[selected];
+        outline = h('rect', { x: b.x0 - 1.5, y: b.y0 - 1.5,
+          width: b.x1 - b.x0 + 3, height: b.y1 - b.y0 + 3,
+          fill: 'none', stroke: '#5c64d1', 'stroke-width': 1.5,
+          'pointer-events': 'none' });
+        svg.appendChild(outline);
+      }
+    };
+    svg.addEventListener('mousedown', (ev) => {
+      const cell = ev.target.closest && ev.target.closest('[data-node]');
+      const node = cell ? cell.getAttribute('data-node') : null;
+      const mode = !!ev.shiftKey;
+      // re-click with the other mode switches depth; same mode clears
+      selected = (node === null ||
+                  (node === selected && mode === singleLevel))
+        ? null : node;
+      singleLevel = mode;
+      applySel();
+    });
+  }
+
+  model.on('change:model', draw);
+  draw();
+}
+
+export default { render };
+"""
+
+
+class NetworkGraphWidget(anywidget.AnyWidget):
+    """The weight-evolution graph drawn natively from
+    NetworkGraph.build_model() — the same geometry and palette as
+    the file exporter, plus interaction: click a
+    configuration-space point to highlight its predecessor and
+    successor arrows."""
+    _esm = _NETGRAPH_ESM
+    _css = _NETGRAPH_CSS
+    model = traitlets.Dict({}).tag(sync=True)
+
+
+_PLOT_CSS = """
+.qp-root { background: #fff; }
+.qp-root svg { display: block; user-select: none;
+               -webkit-user-select: none; }
+"""
+
+_PLOT_HELPERS = r"""
+function h(tag, attrs = {}, ...children) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  for (const c of children)
+    el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+  return el;
+}
+
+function niceTicks(d0, d1, count) {
+  const span = d1 - d0;
+  const raw = span / Math.max(2, count || 4);
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 5, 10].map((m) => m * mag)
+    .find((s) => raw <= s * 1.2) || 10 * mag;
+  const ticks = [];
+  for (let v = Math.ceil(d0 / step - 1e-9) * step; v <= d1 + 1e-9;
+       v += step)
+    ticks.push(Math.abs(v) < 1e-9 ? 0 : +v.toFixed(10));
+  return ticks;
+}
+
+function axes(svg, M, pw, ph, oy, xd, yd, xlabel, ylabel) {
+  const sx = (v) => M.l + (v - xd[0]) / (xd[1] - xd[0]) * pw;
+  const sy = (v) => oy + ph - (v - yd[0]) / (yd[1] - yd[0]) * ph;
+  const fmt = (ts) => Math.max(0, ...ts.map((v) =>
+    (String(v).split('.')[1] || '').length));
+  const xt = niceTicks(xd[0], xd[1], Math.round(pw / 60));
+  const yt = niceTicks(yd[0], yd[1], Math.round(ph / 40));
+  const dx = fmt(xt), dy = fmt(yt);
+  const label = (v, d) =>
+    (v < 0 ? '\u2212' : '') + Math.abs(v).toFixed(d);
+  for (const v of xt) {
+    svg.appendChild(h('line', { x1: sx(v), y1: oy, x2: sx(v),
+      y2: oy + ph, stroke: '#ddd', 'stroke-width': 1 }));
+    svg.appendChild(h('line', { x1: sx(v), y1: oy + ph, x2: sx(v),
+      y2: oy + ph + 5, stroke: '#888' }));
+    svg.appendChild(h('text', { x: sx(v), y: oy + ph + 16,
+      'text-anchor': 'middle', 'font-size': 10, fill: '#000',
+      'font-family': 'sans-serif' }, label(v, dx)));
+  }
+  for (const v of yt) {
+    svg.appendChild(h('line', { x1: M.l, y1: sy(v), x2: M.l + pw,
+      y2: sy(v), stroke: '#ddd', 'stroke-width': 1 }));
+    svg.appendChild(h('line', { x1: M.l - 5, y1: sy(v), x2: M.l,
+      y2: sy(v), stroke: '#888' }));
+    svg.appendChild(h('text', { x: M.l - 8, y: sy(v) + 3,
+      'text-anchor': 'end', 'font-size': 10, fill: '#000',
+      'font-family': 'sans-serif' }, label(v, dy)));
+  }
+  svg.appendChild(h('rect', { x: M.l, y: oy, width: pw, height: ph,
+    fill: 'none', stroke: '#888', 'stroke-width': 1 }));
+  if (xlabel)
+    svg.appendChild(h('text', { x: M.l + pw / 2, y: oy + ph + 32,
+      'text-anchor': 'middle', 'font-size': 11, 'font-weight': 'bold',
+      fill: '#000', 'font-family': 'sans-serif' }, xlabel));
+  if (ylabel)
+    svg.appendChild(h('text', { x: 12, y: oy + ph / 2,
+      'text-anchor': 'middle', 'font-size': 11, 'font-weight': 'bold',
+      fill: '#000', 'font-family': 'sans-serif',
+      transform: `rotate(-90 12 ${oy + ph / 2})` }, ylabel));
+  return { sx, sy };
+}
+
+function polyline(xs, ys, sx, sy, color, dash) {
+  const attrs = { fill: 'none', stroke: color, 'stroke-width': 1.8,
+    points: xs.map((x, i) => `${sx(x)},${sy(ys[i])}`).join(' ') };
+  if (dash) attrs['stroke-dasharray'] = dash;
+  return h('polyline', attrs);
+}
+"""
+
+_SCREEN_ESM = _PLOT_HELPERS + r"""
+function render({ model, el }) {
+  el.innerHTML = '';
+  const root = document.createElement('div');
+  root.className = 'qp-root';
+  el.appendChild(root);
+
+  function draw() {
+    const d = model.get('data') || {};
+    root.innerHTML = '';
+    if (!d.curve) return;
+    const M = { l: 46, r: 10, t: 26, b: 40 };
+    const pw = (d.width || 380);
+    const SCREEN_H = 190, LINE_H = 100, GAP = 4;
+    const W = M.l + pw + M.r;
+    const H = M.t + SCREEN_H + GAP + LINE_H + M.b;
+    const svg = h('svg', { viewBox: `0 0 ${W} ${H}`,
+                           width: W, height: H });
+    root.appendChild(svg);
+    svg.appendChild(h('text', { x: M.l + pw / 2, y: 16,
+      'text-anchor': 'middle', 'font-size': 12, 'font-weight': 'bold',
+      fill: '#000', 'font-family': 'sans-serif' }, d.title || ''));
+    // the screen: a dark plate that lights up where particles land
+    svg.appendChild(h('rect', { x: M.l, y: M.t, width: pw,
+      height: SCREEN_H, fill: '#101018', stroke: '#444' }));
+    const hx = (x) => M.l + (x + 1) / 2 * pw;
+    const hy = (y) => M.t + SCREEN_H - y * SCREEN_H;
+    for (const [x, y] of d.hits || [])
+      svg.appendChild(h('circle', { cx: hx(x), cy: hy(y), r: 1.4,
+        fill: '#f5f0c0', opacity: 0.65 }));
+    // the exact intensity curve, flush under the screen
+    const oy = M.t + SCREEN_H + GAP;
+    const { sx, sy } = axes(svg, M, pw, LINE_H, oy, [-1, 1], [0, 1.05],
+                            'screen position', 'intensity');
+    svg.appendChild(polyline(d.curve.x, d.curve.y, sx, sy, '#4477cc'));
+  }
+
+  model.on('change:data', draw);
+  draw();
+}
+
+export default { render };
+"""
+
+_LINEPLOT_ESM = _PLOT_HELPERS + r"""
+function render({ model, el }) {
+  el.innerHTML = '';
+  const root = document.createElement('div');
+  root.className = 'qp-root';
+  el.appendChild(root);
+
+  function draw() {
+    const d = model.get('data') || {};
+    root.innerHTML = '';
+    if (!d.series) return;
+    const legendH = d.series.some((s) => s.name) ? 20 : 0;
+    const M = { l: 46, r: 10, t: 8 + legendH, b: 40 };
+    const pw = d.width || 900, ph = d.height || 180;
+    const W = M.l + pw + M.r, H = M.t + ph + M.b;
+    const svg = h('svg', { viewBox: `0 0 ${W} ${H}`,
+                           width: W, height: H });
+    root.appendChild(svg);
+    if (legendH) {
+      let lx = M.l;
+      for (const s of d.series) {
+        const attrs = { x1: lx, y1: 12, x2: lx + 22, y2: 12,
+          stroke: s.color, 'stroke-width': 2 };
+        if (s.dash) attrs['stroke-dasharray'] = s.dash;
+        svg.appendChild(h('line', attrs));
+        const t = h('text', { x: lx + 27, y: 15, 'font-size': 11,
+          fill: '#000', 'font-family': 'sans-serif' }, s.name || '');
+        svg.appendChild(t);
+        lx += 27 + 7 * (s.name || '').length + 24;
+      }
+    }
+    const allx = d.series.flatMap((s) => s.x);
+    const ally = d.series.flatMap((s) => s.y);
+    const xd = d.xdomain || [Math.min(...allx), Math.max(...allx)];
+    const yd = d.ydomain || [Math.min(0, ...ally),
+                             Math.max(...ally) * 1.02];
+    const { sx, sy } = axes(svg, M, pw, ph, M.t, xd, yd,
+                            d.xlabel, d.ylabel);
+    for (const s of d.series)
+      svg.appendChild(polyline(s.x, s.y, sx, sy, s.color, s.dash));
+  }
+
+  model.on('change:data', draw);
+  draw();
+}
+
+export default { render };
+"""
+
+
+class ScreenPanelWidget(anywidget.AnyWidget):
+    """The double-slit results panel: a dark screen accumulating
+    photon hits, with the exact intensity curve flush beneath it —
+    both panels flush-aligned in one native SVG."""
+    _esm = _SCREEN_ESM
+    _css = _PLOT_CSS
+    data = traitlets.Dict({}).tag(sync=True)
+
+
+class LinePlotWidget(anywidget.AnyWidget):
+    """A small multi-series line plot (axes, grid, legend, dashes) in
+    the same house style as the other native widgets."""
+    _esm = _LINEPLOT_ESM
+    _css = _PLOT_CSS
+    data = traitlets.Dict({}).tag(sync=True)
 
 
 class BuilderWidget(anywidget.AnyWidget):
