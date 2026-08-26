@@ -388,7 +388,7 @@ def _(alt, curves, diagrams, hits_get, mo, pd, xs):
 
 @app.cell(hide_code=True)
 def _(alt, curves, mo, pd, xs):
-    """The punchline chart: what classical physics would predict for two
+    """What classical physics would predict for two
     open slits (the sum of the single-slit lines, which is also exactly
     the recorder curve) against what actually happens: super-additive at
     bright fringes, zero at dark ones."""
