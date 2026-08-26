@@ -74,30 +74,30 @@ async def initialization():
     # the model library, for loading an existing model into the builder
     # (present when running from the repo; empty in the WASM build)
     _models_top = _repo / 'models'
+    models_top = _models_top if _models_top.is_dir() else None
     model_paths = {str(p.relative_to(_models_top)): p
                    for p in sorted(_models_top.rglob('*.yaml'))
                    if p.name != 'defaults.yaml'
                    and not p.name.startswith('.')} \
-        if _models_top.is_dir() else {}
-
+        if models_top else {}
     return (
         Addict,
         BuilderWidget,
         CalcMode,
+        DiagramWidget,
+        Simulation,
         angle_degrees,
         angle_label,
-        Simulation,
-        DiagramWidget,
         coherence_warnings,
         config_to_graph,
         config_to_yaml,
         coord_sort_key,
-        copy,
         cs_point_sort_key,
-        graph_to_config,
         diagram_geometry,
+        graph_to_config,
         mo,
         model_paths,
+        models_top,
         qn,
         validate_graph,
         variables_env,
@@ -107,61 +107,68 @@ async def initialization():
 
 @app.cell(hide_code=True)
 def _(mo):
-    mo.md(r"""
-    # Quantish network builder
+    mo.vstack([mo.md(r"""
+    # Quantish Network Builder
 
-    Build a gate network on the canvas below, then run it with the real
-    quantish engine and save it as a model YAML file.
+    With this tool you can build a complete quantish model, either from scratch or by modifying an existing model.
+    """), mo.accordion({'### Documentation': mo.vstack([mo.md(r"""
+    The icon palette beside the canvas lets you add components to the network. Hovering over each icon will reveal a descriptive tooltip.
+    Components can be added to a network by dragging from a palette icon, or simply clicking on
+    one of them. Basic circuit elements are above the divider, grouping elements are below.
+    """), mo.accordion({'- Types of components': mo.md(r"""
+    - Gates are quantish Fredkin gates, as described in *Good and Real*.
+    - Phase plates (φ) are simple gates that rotate every traversing weight by $e^{i\varphi}$ without affecting amplitude.
+    - Delay gates are simple pass-throughs, mainly useful for achieving a pleasing layout, but not needed for execution.
+    """), '- Creating and editing a network': mo.md(r"""
+    - Drag from an **output port** on the right side of any component and to a free
+      **input port** on the left side of another element to wire them together.
+    - Double-click in the middle of a Fredkin gate to set its measurement angle, or for a phase
+      plate: its rotation angle.
 
-    - The icon palette beside the canvas adds components — circuit
-      elements on top, the two group kinds (run stage, diagram group)
-      below the divider; hover over an icon for its name. Drag components
-      anywhere. A φ plate is a pure
-      phase plate: an angle-0 gate used through its control wire,
-      rotating every traversing weight by $e^{i\varphi}$. A delay gate
-      is a portless pass-through — wire it by its body ports like a
-      particle.
-    - Drag from an **output port** (right side) and drop on a free
-      **input port** (left side) to wire them together.
-    - Double-click a gate body to set its measurement angle (a φ
-      plate: its phase) — in the model files' own syntax, radians with
-      expressions: `0`, `pi/6`, `rad(30)`, `acos(4/5)`, `0.5`.
-      Anything unparseable is flagged on the gate and detailed in the
-      status line. Double-click a particle to flip its sign.
-      Double-click a **name** to rename (a particle's prompt takes the
-      sign too; a stage or group box label renames the whole group,
-      and a group that exactly matches a stage shares its box). Click a component or wire and press **delete
-      selected** (or the Delete key) to remove it. **↩/↪** (or ⌘Z/⇧⌘Z)
-      undo and redo. Scroll (or pinch) zooms around the cursor and
-      dragging empty space pans — on the canvas and the results
-      diagram alike (double-click resets the diagram).
-    - Shift-click (or ⌘-click) toggles an object in the selection —
-      one kind at a time; clicking a different kind starts over.
-      Shift-drag a box to sweep up gates. Then the palette's stage
-      icon names their execution stage (drawn as a teal box) and the
-      group icon their display group (a dashed box; an empty name
-      clears either). Ungrouped gates get automatic stages
-      derived from the wiring, and a stage may contain internal
-      wiring — the engine fires it in dependency order.
+      - Angles can be entered using the full expression syntax supported in the the models' YAML files:
+        - Arithmetic expressions such `pi/6`, `rad(30)`, `acos(4/5)`, or `pi/2 + pi/8` produce values in radians.
+        - Numeric values with no other expressions included, or suffixed with a degree symbol (°) are interpreted as degrees.
+        - Anything unparseable is flagged on the gate and detailed in the status line.
+    - Double-click a particle to flip its sign.
+    - Double-click a **name** to rename any object
+      - A particle's prompt takes the sign as well
+      - Changing a stage or group box label renames the whole group
+        - A group name that exactly matches a stage name collapses the two borders into one
+    - Click a component or wire and press **delete
+      selected** or the Delete key to remove it
+    - **↩ and ↪** (or ⌘Z and ⇧⌘Z) invoke Undo and Redo
+    - Scroll (or pinch) zooms, centered on the cursor
+    - Dragging empty space pans, on both the editing canvas and the results
+      diagram. Also on both, double-click resets the diagram to its default magnification and position.
+    - Shift-click (or ⌘-click) toggles an object in the selection,
+      one object type at a time
+    - Shift-drag a box for a marquee selection. The palette's stage
+      icon shows their execution stage name (drawn as a teal box) and the
+      group icon their display group name (a dashed box; an empty name
+      clears either)
+    """), '- Grouping': mo.md(r"""
+    - Every gate must be in an execution stage
+    - Ungrouped gates get automatic stages derived from the wiring, and a stage may contain internal wiring. Gates fire in dependency order.
     - Run stages *are* the diagram groups until you create a group
-      that isn't exactly a stage — that promotes every named stage to
-      a diagram group of its own, which you can then edit.
-    - The **Stages & diagram groups** panel below the canvas shows the
-      full assignment as editable YAML: rename, regroup, and reorder
-      there, then **apply stages & groups**.
-    - The **title**, **caption**, **calculation mode**, and
-      **Variables** are all editable above the canvas and travel into
-      the YAML; angle and weight specs may reference the variables by
-      name ('Q1'), and loaded models keep those references verbatim.
-    - To modify an existing model, pick or upload one and press
-      **⬆ load into builder** — it replaces the canvas; **✕ clear** (in
-      the canvas toolbar) starts over empty, with a confirmation —
-      and undo can bring the canvas back. The **title** (in the YAML) and the **file
-      name** (of the saved file) are separate fields. Wire labels load, save, and
-      edit too: double-click a wire — or a port — to name that wire
-      segment (an unconnected port labels a null input or output
-      stub, drawn as a short labeled wire).
-    """)
+      that isn't exactly the same as an existing stage. That promotes every named stage to
+      a diagram group of its own, which can then be edited.
+    """), '- Optional fields': mo.md(r"""
+    - The model's **title**, **caption**, **calculation mode**, and
+      **variables** are all editable above the canvas and travel into
+      the YAML. Angle and weight specs may reference variables by
+      name ('Q1'), and loaded models will keep those references verbatim.
+    """), '- Actions': mo.md(r"""
+    - To modify an existing model, pick one from the list of predefined models or upload one and press
+      **⬆ load into builder**. The selected model replaces the contents of canvas
+    - **✕ clear** starts over with an empty canvas, with confirmation. **Note**: Undo will bring the superseded canvas back.
+
+    The **title** and the **file
+      name** of the saved file are separate fields.
+
+    Wire labels load, save, and edit too: double-click a wire or a port to name that wire
+    segment. Double-clicking on an unconnected port labels a null input or output
+    stub, drawn as a short labeled wire.
+    """)}, multiple=True)], align='stretch')})], align='stretch')
     return
 
 
@@ -171,47 +178,136 @@ def _(mo):
     get_loaded, set_loaded = mo.state(None)
     # a parsed load waiting for the really-replace-the-canvas step
     get_pending, set_pending = mo.state(None)
-    return get_loaded, get_pending, set_loaded, set_pending
+    # which File action's controls are unfolded: 'open' | 'upload' | None
+    get_file_mode, set_file_mode = mo.state(None)
+    return (
+        get_file_mode,
+        get_loaded,
+        get_pending,
+        set_file_mode,
+        set_loaded,
+        set_pending,
+    )
 
 
 @app.cell(hide_code=True)
 def _(mo, model_paths):
-    model_pick = mo.ui.dropdown(options=sorted(model_paths),
-                                label='start from model')
+    # static pieces of the File controls: the collection picker (the
+    # model picker itself is rebuilt per collection below) and the
+    # upload control
+    collections = sorted({k.split('/')[0] for k in model_paths})
+    collection_pick = mo.ui.dropdown(
+        options=collections,
+        value='gr2026' if 'gr2026' in collections
+        else (collections[0] if collections else None),
+        label='collection')
     model_upload = mo.ui.file(filetypes=['.yaml', '.yml'],
-                              label='or upload a model')
-    load_btn = mo.ui.run_button(label='⬆ load into builder')
-    mo.hstack([model_pick, model_upload, load_btn],
-              justify='start', gap=1)
-    return load_btn, model_pick, model_upload
+                              label='choose a file…')
+    return collection_pick, model_upload
 
 
 @app.cell(hide_code=True)
-def _(config_to_graph, load_btn, mo, model_paths, model_pick,
-      model_upload, set_pending, yaml):
-    # loading replaces the canvas, so a parsed load only lands as
-    # "pending" here — the next cell applies it directly when the
-    # canvas is empty, and asks first when it isn't. (This cell must
-    # not read the canvas itself: it would re-run when the load
-    # replaces the widget, and mis-read the freshly loaded canvas as
-    # one that needs another confirmation.)
+def _(builder_config, config_to_yaml, file_name, mo, model_paths):
+    # the File row, in the spirit of a Mac File menu: New, Open a
+    # predefined model, Upload one, Save into the local models
+    # directory, Download through the browser
+    new_btn = mo.ui.run_button(label='✚ new')
+    open_btn = mo.ui.run_button(label='📂 open…')
+    upload_btn = mo.ui.run_button(label='⬆ upload…')
+    save_btn = mo.ui.run_button(label='💾 save',
+                                disabled=(builder_config is None
+                                          or not model_paths))
+    _download = (
+        mo.download(data=config_to_yaml(builder_config).encode(),
+                    filename=f'{file_name.value}.yaml',
+                    label='download')
+        if builder_config is not None
+        else mo.ui.run_button(label='⬇ download', disabled=True))
+    mo.hstack([mo.md('**File:**'), new_btn, open_btn, upload_btn,
+               save_btn, _download], justify='start', gap=0.75)
+    return new_btn, open_btn, save_btn, upload_btn
+
+
+@app.cell(hide_code=True)
+def _(get_file_mode, open_btn, set_file_mode, upload_btn):
+    # open…/upload… unfold their controls; pressing again folds them
+    def _():
+        if open_btn.value:
+            set_file_mode(None if get_file_mode() == 'open' else 'open')
+        elif upload_btn.value:
+            set_file_mode(None if get_file_mode() == 'upload'
+                          else 'upload')
+
+    _()
+    return
+
+
+@app.cell(hide_code=True)
+def _(collection_pick, get_file_mode, mo, model_paths, model_upload):
+    # the unfolded controls for the chosen File action
+    _collection = collection_pick.value
+    model_pick = mo.ui.dropdown(
+        options={k.split('/', 1)[1].removesuffix('.yaml'): k
+                 for k in sorted(model_paths)
+                 if k.split('/')[0] == _collection},
+        label='model')
+    open_go_btn = mo.ui.run_button(label='open')
+    upload_go_btn = mo.ui.run_button(label='open file')
+    _mode = get_file_mode()
+    _row = None
+    if _mode == 'open':
+        _row = mo.hstack([collection_pick, model_pick, open_go_btn],
+                         justify='start', gap=0.75)
+    elif _mode == 'upload':
+        _row = mo.hstack([model_upload, upload_go_btn],
+                         justify='start', gap=0.75)
+    _row
+    return model_pick, open_go_btn, upload_go_btn
+
+
+@app.cell(hide_code=True)
+def _(
+    config_to_graph,
+    mo,
+    model_paths,
+    model_pick,
+    model_upload,
+    new_btn,
+    open_go_btn,
+    set_file_mode,
+    set_pending,
+    upload_go_btn,
+    yaml,
+):
+    # every File action lands as "pending" here — the next cell applies
+    # it directly when the canvas is empty, and asks first when it
+    # isn't. (This cell must not read the canvas itself: it would
+    # re-run when the load replaces the widget, and mis-read the
+    # freshly loaded canvas as one that needs another confirmation.)
     def _load():
-        if not load_btn.value:
+        if new_btn.value:
+            set_pending({'graph': {'gates': {}, 'particles': {},
+                                   'links': []},
+                         'notes': [], 'title': 'my_network',
+                         'file': 'my_network', 'caption': '',
+                         'variables': {}, 'symbolic': False,
+                         'source': 'a new empty model'})
             return None
-        if model_upload.contents():
+        if upload_go_btn.value and model_upload.contents():
             text = model_upload.contents().decode()
             source = model_upload.name()
-        elif model_pick.value:
+        elif open_go_btn.value and model_pick.value:
             text = model_paths[model_pick.value].read_text()
             source = model_pick.value
         else:
-            return mo.md('pick a model or upload one first')
+            return None
         try:
             config = yaml.safe_load(text)
             graph, notes = config_to_graph(config)
         except Exception as exc:  # noqa: BLE001 — show, don't crash the app
             return mo.md(f'**could not load {source}** — {exc}')
         from pathlib import PurePath
+        set_file_mode(None)
         set_pending({'graph': graph, 'notes': notes,
                      'title': config.get('title') or 'my_network',
                      'file': PurePath(source).stem,
@@ -255,8 +351,7 @@ def _(builder, get_pending, mo, set_loaded, set_pending):
 
 
 @app.cell(hide_code=True)
-def _(confirm_load_btn, get_pending, keep_canvas_btn, set_loaded,
-      set_pending):
+def _(confirm_load_btn, get_pending, keep_canvas_btn, set_loaded, set_pending):
     def _():
         _p = get_pending()
         if _p is None:
@@ -266,6 +361,26 @@ def _(confirm_load_btn, get_pending, keep_canvas_btn, set_loaded,
             set_loaded(_p)
         elif keep_canvas_btn.value:
             set_pending(None)
+
+    _()
+    return
+
+
+@app.cell(hide_code=True)
+def _(builder_config, config_to_yaml, file_name, mo, models_top, save_btn):
+    # save writes into the local models directory (the web deployment
+    # has no server filesystem — download covers it there)
+    def _():
+        if not (save_btn.value and builder_config and models_top):
+            return None
+        dest = models_top / 'extras' / f'{file_name.value}.yaml'
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(config_to_yaml(builder_config))
+        except Exception as exc:  # noqa: BLE001 — show, don't crash the app
+            return mo.md(f'**could not save** — {exc}')
+        return mo.md('<span style="font-size: 0.9em">saved '
+                     f'**{dest}**</span>')
 
     _()
     return
@@ -282,8 +397,8 @@ def _(get_loaded, mo):
     file_name = mo.ui.text(
         value=_loaded.get('file') or 'my_network', label='file name')
     mode_pick = mo.ui.dropdown(
-        options=['float', 'symbolic'],
-        value='symbolic' if _loaded.get('symbolic') else 'float',
+        options=['Float', 'Symbolic'],
+        value='Symbolic' if _loaded.get('symbolic') else 'Float',
         label='calculation mode')
     caption_input = mo.ui.text_area(
         value=_loaded.get('caption') or '', rows=2, full_width=True,
@@ -299,19 +414,17 @@ def _(get_loaded, mo):
         full_width=True)
     _report = None
     if _loaded and _loaded.get('source'):
-        _msg = f"loaded **{_loaded['source']}**"
+        _msg = ('<span style="font-size: 0.9em">loaded '
+                f"**{_loaded['source']}**</span>")
         if _loaded['notes']:
             _msg += '\n' + '\n'.join(f'- {n}' for n in _loaded['notes'])
         _report = mo.md(_msg)
     mo.vstack(
-        [mo.hstack([model_title, file_name, mode_pick],
-                   justify='start', gap=1),
-         caption_input,
-         mo.accordion({'Variables (name: expression, YAML)':
-                       variables_editor})]
-        + ([_report] if _report is not None else []), align='stretch')
-    return (caption_input, file_name, mode_pick, model_title,
-            variables_editor)
+        ([_report] if _report is not None else [])
+        + [mo.hstack([model_title, file_name, mode_pick],
+                     justify='start', gap=0.75)],
+        align='stretch')
+    return caption_input, file_name, mode_pick, model_title, variables_editor
 
 
 @app.cell(hide_code=True)
@@ -348,10 +461,21 @@ def _(BuilderWidget, get_loaded, mo):
 
 
 @app.cell(hide_code=True)
-def _(angle_degrees, angle_label, builder, builder_widget,
-      caption_input, coherence_warnings, graph_to_config, mo,
-      mode_pick, model_title, model_vars, validate_graph,
-      variables_env):
+def _(
+    angle_degrees,
+    angle_label,
+    builder,
+    builder_widget,
+    caption_input,
+    coherence_warnings,
+    graph_to_config,
+    mo,
+    mode_pick,
+    model_title,
+    model_vars,
+    validate_graph,
+    variables_env,
+):
     # The live translation of the canvas: either the list of problems
     # keeping it from running, or the derived model config — caption,
     # variables, and calculation mode included.
@@ -364,7 +488,7 @@ def _(angle_degrees, angle_label, builder, builder_widget,
                 _graph, model_title.value,
                 caption=caption_input.value.strip() or None,
                 variables=model_vars or None,
-                symbolic=mode_pick.value == 'symbolic')
+                symbolic=mode_pick.value == 'Symbolic')
         except ValueError as exc:  # a wiring loop
             problems = [str(exc)]
     _env, _ = variables_env(model_vars)
@@ -410,102 +534,13 @@ def _(angle_degrees, angle_label, builder, builder_widget,
 
 
 @app.cell(hide_code=True)
-def _(builder, builder_config, mo):
-    # The stages & groups editor: the full derived picture as editable
-    # YAML. Order in the text is the order in the model (within what
-    # the wiring allows); gates left out get automatic stages.
-    def _spec_text():
-        _graph = builder.value.get('graph') or {}
-        lines = []
-        if builder_config is not None:
-            lines.append('run_stages:')
-            for s, gs in builder_config['run_stages'].items():
-                lines.append(f"  {s}: [{', '.join(gs)}]")
-        else:
-            stages = {}
-            for n, gd in _graph.get('gates', {}).items():
-                if gd.get('stage'):
-                    stages.setdefault(gd['stage'], []).append(n)
-            if stages:
-                lines.append('run_stages:')
-                lines += [f"  {s}: [{', '.join(gs)}]"
-                          for s, gs in stages.items()]
-        dgroups = {}
-        for n, gd in _graph.get('gates', {}).items():
-            if gd.get('dgroup'):
-                dgroups.setdefault(gd['dgroup'], []).append(n)
-        if dgroups:
-            rank = {d: i for i, d in
-                    enumerate(_graph.get('dgroup_order') or [])}
-            lines.append('diagram_groups:')
-            lines += [f"  {d}: [{', '.join(gs)}]"
-                      for d, gs in sorted(dgroups.items(),
-                                          key=lambda kv:
-                                          (rank.get(kv[0], len(rank)),
-                                           kv[0]))]
-        return '\n'.join(lines) or 'run_stages:\n'
-
-    stage_editor = mo.ui.text_area(value=_spec_text(), rows=8,
-                                   full_width=True)
-    apply_stages_btn = mo.ui.run_button(label='apply stages & groups')
-    mo.accordion({'Stages & diagram groups': mo.vstack(
-        [stage_editor, apply_stages_btn], align='start')})
-    return apply_stages_btn, stage_editor
-
-
-@app.cell(hide_code=True)
-def _(apply_stages_btn, builder, caption_input, copy, file_name, mo,
-      mode_pick, model_title, model_vars, set_loaded, stage_editor,
-      yaml):
-    # applying re-creates the canvas widget from the edited assignments
-    # (positions are kept); errors show here instead
-    def _apply():
-        if not apply_stages_btn.value:
-            return None
-        try:
-            spec = yaml.safe_load(stage_editor.value) or {}
-            if not isinstance(spec, dict):
-                raise ValueError('expected run_stages / diagram_groups '
-                                 'mappings')
-        except Exception as exc:  # noqa: BLE001 — show, don't crash the app
-            return mo.md(f'**could not parse** — {exc}')
-        graph = copy.deepcopy(builder.value.get('graph') or {})
-        gates = graph.get('gates', {})
-        errors = []
-        for section, field, order_key in (
-                ('run_stages', 'stage', 'stage_order'),
-                ('diagram_groups', 'dgroup', 'dgroup_order')):
-            entries = spec.get(section) or {}
-            if not isinstance(entries, dict):
-                errors.append(f'{section} must map names to gate lists')
-                continue
-            for gd in gates.values():
-                gd.pop(field, None)
-            seen = {}
-            for sname, members in entries.items():
-                for g in (members or []):
-                    if g not in gates:
-                        errors.append(f'{section}: unknown gate {g} '
-                                      f'in {sname}')
-                    elif g in seen:
-                        errors.append(f'{section}: {g} is in both '
-                                      f'{seen[g]} and {sname}')
-                    else:
-                        seen[g] = sname
-                        gates[g][field] = str(sname)
-            graph[order_key] = [str(k) for k in entries]
-        if errors:
-            return mo.md('\n'.join(f'- {e}' for e in errors))
-        set_loaded({'graph': graph, 'notes': [],
-                    'title': model_title.value,
-                    'file': file_name.value,
-                    'caption': caption_input.value,
-                    'variables': model_vars,
-                    'symbolic': mode_pick.value == 'symbolic',
-                    'source': 'the stages & groups editor'})
-        return None
-
-    _apply()
+def _(caption_input, mo, variables_editor):
+    # both entirely optional, so they live below the canvas
+    mo.accordion({'#### Caption and variables (optional)': mo.vstack([
+        caption_input,
+        mo.md('<span style="font-size: 0.9em">**variables** '
+              '(name: expression, YAML)</span>'),
+        variables_editor], align='stretch')})
     return
 
 
@@ -518,8 +553,7 @@ def _(builder_config, mo):
 
 
 @app.cell(hide_code=True)
-def _(Addict, CalcMode, Simulation, builder_config, mo, qn,
-      run_network_btn):
+def _(Addict, CalcMode, Simulation, builder_config, mo, qn, run_network_btn):
     # sim_built is None until a successful run of the CURRENT network;
     # any canvas change recreates the button unpressed, clearing stale
     # results (the same staleness scheme as the main app)
@@ -598,15 +632,10 @@ def _(coord_sort_key, cs_point_sort_key, mo, sim_built):
 
 
 @app.cell(hide_code=True)
-def _(builder_config, config_to_yaml, file_name, mo):
+def _(builder_config, config_to_yaml, mo):
     mo.stop(builder_config is None)
     _yaml = config_to_yaml(builder_config)
-    mo.vstack([
-        mo.accordion({'Model YAML': mo.md(f'```yaml\n{_yaml}```')}),
-        mo.download(data=_yaml.encode(),
-                    filename=f'{file_name.value}.yaml',
-                    label='save model YAML'),
-    ], align='start')
+    mo.accordion({'Model YAML': mo.md(f'```yaml\n{_yaml}```')})
     return
 
 
