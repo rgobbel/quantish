@@ -19,12 +19,13 @@ WHEEL=$(ls -t dist/quantish-*.whl | head -1)
 (cd notebooks && uv run marimo export html-wasm network_builder_app.py -o "$OUT/builder_app" --mode run -f)
 (cd notebooks && uv run marimo export html-wasm quantish_app.py -o "$OUT/quantish_app_edit" --mode edit -f)
 (cd notebooks && uv run marimo export html-wasm double_slit_app.py -o "$OUT/double_slit_app_edit" --mode edit -f)
+(cd notebooks && uv run marimo export html-wasm network_builder_app.py -o "$OUT/builder_app_edit" --mode edit -f)
 # Two config patches on the exported pages. The exporter pins
 # auto_instantiate off for editable exports; we want the notebooks to
 # run on load. And it bakes in theme "system", which hands dark-mode
 # visitors marimo's dark theme under stylesheets tuned for the light
 # one — pin every app to light.
-python3 - "$OUT"/quantish_app*/index.html "$OUT"/double_slit_app*/index.html "$OUT"/builder_app/index.html <<'PYPATCH'
+python3 - "$OUT"/quantish_app*/index.html "$OUT"/double_slit_app*/index.html "$OUT"/builder_app*/index.html <<'PYPATCH'
 import os
 import sys
 for path in sys.argv[1:]:
@@ -40,7 +41,7 @@ PYPATCH
 # 3) bundle the wheels (both apps resolve them relative to their own
 #    page via mo.notebook_location)
 for W in "$OUT"/quantish_app/public/wheels "$OUT"/double_slit_app/public/wheels \
-         "$OUT"/builder_app/public/wheels \
+         "$OUT"/builder_app/public/wheels "$OUT"/builder_app_edit/public/wheels \
          "$OUT"/quantish_app_edit/public/wheels "$OUT"/double_slit_app_edit/public/wheels; do
   mkdir -p "$W"
   cp "$WHEEL" "$W/"
@@ -67,7 +68,8 @@ for p in sorted(top.rglob('*.yaml')):
         continue
     models[str(p.relative_to(top))] = p.read_text()
 payload = json.dumps(models)
-for app_dir in ('quantish_app', 'quantish_app_edit', 'builder_app'):
+for app_dir in ('quantish_app', 'quantish_app_edit', 'builder_app',
+                'builder_app_edit'):
     (out / app_dir / 'public' / 'models.json').write_text(payload)
 print(f'bundled {len(models)} model files')
 PYEOF
@@ -117,13 +119,15 @@ cat > "$OUT/index.html" <<'HTML'
     particles, wire them up, run the result, and download it as a
     model file the quantish app can load.
   </a>
-  <p>The quantish and double-slit apps also come as editable
-     notebooks: the same simulation in the full marimo editor, where
-     you can read the code, change it, and re-run cells. Edits run entirely in your browser and affect
+  <p>Every app also comes as an editable notebook: the same code in
+     the full marimo editor, where you can read it, change it, and
+     re-run cells &mdash; nothing here is proprietary, so look under
+     the hood. Edits run entirely in your browser and affect
      only your copy &mdash; reload to start fresh, or use the editor's
      download button to keep your changes.</p>
   <p><a href="quantish_app_edit/">Quantish app (editable)</a> &middot;
-     <a href="double_slit_app_edit/">Double-slit app (editable)</a></p>
+     <a href="double_slit_app_edit/">Double-slit app (editable)</a> &middot;
+     <a href="builder_app_edit/">Network builder (editable)</a></p>
 </body>
 </html>
 HTML
@@ -210,8 +214,8 @@ Quantish apps, compiled to WebAssembly (static site).
 then open  http://<host>:<port>/  in a browser: the root is a landing
 page linking to the quantish app (quantish_app/), the double-slit app
 (double_slit_app/), the network builder (builder_app/), and
-editable-notebook variants of the first two (quantish_app_edit/,
-double_slit_app_edit/). Edits run entirely in the
+editable-notebook variants of all three (quantish_app_edit/,
+double_slit_app_edit/, builder_app_edit/). Edits run entirely in the
 visitor's browser and affect only their own copy.
 
 Notes:
