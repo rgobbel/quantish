@@ -149,6 +149,58 @@ const subName = (s) => String(s)
   .replace(/(?<=[A-Za-zφ])(\d+)/g,
            (m) => [...m].map((c) => SUB[c] ?? c).join(''));
 
+// Fill a text element with REAL sub/superscripts (shifted tspans):
+// $...$ math via _{}/^{} plus auto digit-subscripting after letters
+// in the plain parts — unicode glyphs are too small and lack most
+// letters. hSub is the h('text', ...) counterpart returning the
+// filled element.
+const fillRuns = (el, s) => {
+  const script = (frag, sup) => el.appendChild(h('tspan', {
+    'font-size': '64%', 'baseline-shift': sup ? '38%' : '-25%',
+  }, frag));
+  const plain = (txt) => {
+    let last = 0;
+    const re = /(?<=[^\W\d_])(\d+)/gu;
+    let m;
+    while ((m = re.exec(txt)) !== null) {
+      if (m.index > last)
+        el.appendChild(document.createTextNode(txt.slice(last, m.index)));
+      script(m[1], false);
+      last = m.index + m[1].length;
+    }
+    if (last < txt.length)
+      el.appendChild(document.createTextNode(txt.slice(last)));
+  };
+  String(s).split(/\$([^$]*)\$/).forEach((seg, i) => {
+    if (i % 2 === 0) {
+      if (seg) plain(seg);
+      return;
+    }
+    seg = seg.replace(/\\([a-zA-Z]+)/g, (c, w) => MATHCMD[w] ?? c);
+    let j = 0;
+    while (j < seg.length) {
+      const ch = seg[j];
+      if (ch === '_' || ch === '^') {
+        let frag;
+        if (seg[j + 1] === '{') {
+          const end = seg.indexOf('}', j + 2);
+          frag = seg.slice(j + 2, end < 0 ? seg.length : end);
+          j = (end < 0 ? seg.length : end) + 1;
+        } else {
+          frag = seg.slice(j + 1, j + 2);
+          j += 2;
+        }
+        script(frag, ch === '^');
+      } else {
+        el.appendChild(document.createTextNode(ch));
+        j += 1;
+      }
+    }
+  });
+  return el;
+};
+const hSub = (attrs, s) => fillRuns(h('text', attrs), s);
+
 // phase plates and delay gates are compact one-wire gates; everything
 // geometric branches through these. A delay gate has no ports at all —
 // links address it by bare name.
@@ -488,11 +540,11 @@ function render({ model, el }) {
           ...style,
         }));
         // the label renames on double-click
-        layer.appendChild(h('text', {
+        layer.appendChild(hSub({
           x: x1 + 8, y: y1 + 13, 'font-size': 11.5, fill: '#000',
           'font-style': 'italic', 'data-grouplabel': gname,
           'data-groupkind': kind, style: 'cursor: pointer',
-        }, subName(gname)));
+        }, gname));
       }
     };
     const dgroups = {}, stageBoxes = {};
@@ -628,32 +680,32 @@ function render({ model, el }) {
         ...(inMulti && !sel ? { 'stroke-dasharray': '5 3' } : {}),
       }));
       if (delay) {
-        grp.appendChild(h('text', {
+        grp.appendChild(hSub({
           x: gd.x + w0 / 2, y: gd.y + h0 / 2 + 5,
           'text-anchor': 'middle',
           'font-size': 14, 'font-weight': 600, fill: '#000',
           'data-name': name,
-        }, subName(name)));
+        }, name));
       } else if (plate) {
-        grp.appendChild(h('text', {
+        grp.appendChild(hSub({
           x: gd.x + w0 / 2, y: gd.y + h0 / 2 - 3, 'text-anchor': 'middle',
           'font-size': 15, 'font-weight': 600, fill: '#000',
           'data-name': name,
-        }, subName(name)));
-        grp.appendChild(h('text', {
+        }, name));
+        grp.appendChild(hSub({
           x: gd.x + w0 / 2, y: gd.y + h0 - 8, 'text-anchor': 'middle',
           'font-size': 11.5, fill: '#000',
-        }, subName(angleLabel(name, gd.phase))));
+        }, angleLabel(name, gd.phase)));
       } else {
-        grp.appendChild(h('text', {
+        grp.appendChild(hSub({
           x: gd.x + w0 / 2, y: gd.y + 18, 'text-anchor': 'middle',
           'font-size': 15, 'font-weight': 600, fill: '#000',
           'data-name': name,
-        }, subName(name)));
-        grp.appendChild(h('text', {
+        }, name));
+        grp.appendChild(hSub({
           x: gd.x + w0 / 2, y: gd.y + 37, 'text-anchor': 'middle',
           'font-size': 11.5, fill: '#000',
-        }, subName(angleLabel(name, gd.angle))));
+        }, angleLabel(name, gd.angle)));
         // the network diagram's dotted straight-and-crossed switch
         // lines between the two switch-wire rows
         const xA = gd.x + 46, xB = gd.x + w0 - 46;
@@ -735,11 +787,11 @@ function render({ model, el }) {
         'stroke-width': (sel || inMulti) ? 2.5 : 1.5,
         ...(inMulti && !sel ? { 'stroke-dasharray': '5 3' } : {}),
       }));
-      grp.appendChild(h('text', {
+      grp.appendChild(hSub({
         x: p.x + pw / 2, y: p.y + PR + 4, 'text-anchor': 'middle',
         'font-size': 14, 'font-weight': 600, fill: '#000',
         'data-name': name,
-      }, (p.sign < 0 ? '−' : '+') + subName(name)));
+      }, (p.sign < 0 ? '−' : '+') + name));
       grp.appendChild(h('circle', {
         cx: p.x + pw, cy: p.y + PR, r: 6,
         fill: srcTaken.has(name) ? C.portStroke : C.portFill,
