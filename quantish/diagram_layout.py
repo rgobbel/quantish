@@ -305,6 +305,11 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
                     + _angles)
         lines = ([_sub(dname)] + vals) if vals else [_sub(dname)]
         w, h = measure(lines, 2 * CONTROL_HALF_W)
+        if _is_plate:
+            # the compass needle sits to the right of the name inside
+            # the box — widen the box so the needle never pokes out
+            _needle_ext = 0.115 * (len(dname) + 1) / 2 + 0.38 + 0.22
+            w = max(w, 2 * (_needle_ext + 0.12))
         # A delay sharing its column with gates tucks in just below the
         # lowest gate frame: scaling its layout row by KY would open a
         # gate-sized chasm (the row pitch stretches, the small box does
