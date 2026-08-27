@@ -121,9 +121,8 @@ cat > "$OUT/index.html" <<'HTML'
   </a>
   <p>Every app also comes as an editable notebook: the same code in
      the full marimo editor, where you can read it, change it, and
-     re-run cells &mdash; nothing here is proprietary, so look under
-     the hood. Edits run entirely in your browser and affect
-     only your copy &mdash; reload to start fresh, or use the editor's
+     re-run cells. Edits run entirely in your browser and affect
+     only your copy. Reload to start fresh or use the editor's
      download button to keep your changes.</p>
   <p><a href="quantish_app_edit/">Quantish app (editable)</a> &middot;
      <a href="double_slit_app_edit/">Double-slit app (editable)</a> &middot;
