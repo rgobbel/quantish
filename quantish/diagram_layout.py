@@ -343,12 +343,18 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
         edge_clip[clip_key(fx(dx_ - CONTROL_HALF_W), dy_ * KY)] = fx(dx_) - w / 2
         edge_clip[clip_key(fx(dx_ + CONTROL_HALF_W), dy_ * KY)] = fx(dx_) + w / 2
         # wires still aim at the layout row's y; steer their endpoints
-        # to the tucked-in box
+        # to the tucked-in box, dropping/rising OUTSIDE the column's
+        # gate frames so the vertical runs clear the stage box
         if _cy != dy_ * KY:
-            delay_y_new[clip_key(fx(dx_ - CONTROL_HALF_W),
-                                 dy_ * KY)] = (_cy, dy_ * KY)
-            delay_y_new[clip_key(fx(dx_ + CONTROL_HALF_W),
-                                 dy_ * KY)] = (_cy, dy_ * KY)
+            _all_frames = _mates + [(fx(dx_) - w / 2, 0,
+                                     fx(dx_) + w / 2, 0)]
+            # clear of the frames plus the stage box's GROUP_PAD
+            _safe_l = min(f[0] for f in _all_frames) - 0.48
+            _safe_r = max(f[2] for f in _all_frames) + 0.48
+            delay_y_new[clip_key(fx(dx_ - CONTROL_HALF_W), dy_ * KY)] = \
+                (_cy, dy_ * KY, _safe_l, _safe_r)
+            delay_y_new[clip_key(fx(dx_ + CONTROL_HALF_W), dy_ * KY)] = \
+                (_cy, dy_ * KY, _safe_l, _safe_r)
         frames[dname] = (fx(dx_) - w / 2, _cy - h / 2,
                          fx(dx_) + w / 2, _cy + h / 2)
 
@@ -439,13 +445,24 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
             pts[0] = (edge_clip[first], pts[0][1])
         if last in edge_clip:
             pts[-1] = (edge_clip[last], pts[-1][1])
-        for key in (first, last):
-            if key in delay_y_new:
-                # lift the whole horizontal approach run, not just the
-                # endpoint, so the wire meets the tucked-in box level
-                new_y, old_y = delay_y_new[key]
-                pts = [(px_, new_y if abs(py_ - old_y) < 1e-6 else py_)
-                       for px_, py_ in pts]
+        if last in delay_y_new:
+            # incoming wire: run at the source's level, drop down left
+            # of the column's frames (outside the stage box), then in
+            new_y, old_y, safe_l, _ = delay_y_new[last]
+            p0, pe = pts[0], pts[-1]
+            pts = ([p0] +
+                   ([] if abs(p0[1] - new_y) < 1e-6 else
+                    [(safe_l, p0[1]), (safe_l, new_y)]) +
+                   [(pe[0], new_y)])
+        if first in delay_y_new:
+            # outgoing wire: leave at box level, rise right of the
+            # frames, then continue at the destination's level
+            new_y, old_y, _, safe_r = delay_y_new[first]
+            p0, pe = pts[0], pts[-1]
+            pts = ([(p0[0], new_y)] +
+                   ([] if abs(pe[1] - new_y) < 1e-6 else
+                    [(safe_r, new_y), (safe_r, pe[1])]) +
+                   [pe])
         # round interior corners: a small quadratic bezier through each
         # corner, sampled into the polyline
         if len(pts) > 2:

@@ -8,7 +8,7 @@ import yaml
 from addict import Dict as Addict
 
 from quantish.diagram_layout import (DELAY_FILL, GATE_FILL,
-                                     diagram_geometry)
+                                     STAGE_FILL, diagram_geometry)
 from quantish.model_schema import validate_model
 from quantish.qnumber import CalcMode
 from quantish.simulation import Simulation
@@ -62,3 +62,25 @@ def test_smoke_layout():
                     poked = seg[0]['route']
                     assert all(b['x'] <= x <= b['x2'] for x in xs), \
                         f'needle {poked} pokes out of its plate box'
+    # the wires reaching the tucked-in delay drop and rise OUTSIDE the
+    # stage box, never running vertically through it
+    d1 = next(b for b in g['boxes'] if b['fill'] == DELAY_FILL
+              and any(m['fill'] == GATE_FILL
+                      and m['x'] < (b['x'] + b['x2']) / 2 < m['x2']
+                      for m in g['boxes']))
+    dcx = (d1['x'] + d1['x2']) / 2
+    stage = next(b for b in g['boxes'] if b['fill'] == STAGE_FILL
+                 and b['x'] < dcx < b['x2']
+                 and b['y'] < (d1['y'] + d1['y2']) / 2 < b['y2'])
+    for seg in g['wires']:
+        for a, b in zip(seg, seg[1:]):
+            vertical = (abs(a['x'] - b['x']) < 1e-6
+                        and abs(a['y'] - b['y']) > 0.1)
+            if not vertical:
+                continue
+            ylo, yhi = sorted((a['y'], b['y']))
+            if yhi > stage['y'] and ylo < stage['y2']:
+                assert not (stage['x'] + 0.05 < a['x']
+                            < stage['x2'] - 0.05), \
+                    f"vertical wire run at x={a['x']:.2f} crosses " \
+                    f"the stage box interior"
