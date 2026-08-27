@@ -544,10 +544,46 @@ function render({ model, el }) {
     // wire labels: on the wire near its source; plus labeled stubs at
     // unconnected ports ('>g.port' null inputs, bare-key null outputs)
     const wl = g.wire_labels || {};
-    const wlText = (x, y, label) => layer.appendChild(h('text', {
-      x, y, 'text-anchor': 'middle', 'font-size': 11,
-      'font-style': 'italic', fill: '#000', 'pointer-events': 'none',
-    }, mathOnly(label)));
+    const wlText = (x, y, label) => {
+      const el = h('text', {
+        x, y, 'text-anchor': 'middle', 'font-size': 11,
+        'font-style': 'italic', fill: '#000', 'pointer-events': 'none',
+      });
+      // $...$ math as real sub/superscript tspans (unicode lacks
+      // subscript forms for most letters, e.g. the book's w1b)
+      const parts = String(label).split(/\$([^$]*)\$/);
+      parts.forEach((seg, i) => {
+        if (i % 2 === 0) {
+          if (seg) el.appendChild(document.createTextNode(seg));
+          return;
+        }
+        seg = seg.replace(/\\([a-zA-Z]+)/g,
+                          (c, w) => MATHCMD[w] ?? c);
+        let j = 0;
+        while (j < seg.length) {
+          const ch = seg[j];
+          if (ch === '_' || ch === '^') {
+            let frag;
+            if (seg[j + 1] === '{') {
+              const end = seg.indexOf('}', j + 2);
+              frag = seg.slice(j + 2, end < 0 ? seg.length : end);
+              j = (end < 0 ? seg.length : end) + 1;
+            } else {
+              frag = seg.slice(j + 1, j + 2);
+              j += 2;
+            }
+            el.appendChild(h('tspan', {
+              'font-size': '72%',
+              'baseline-shift': ch === '_' ? '-18%' : '34%',
+            }, frag));
+          } else {
+            el.appendChild(document.createTextNode(ch));
+            j += 1;
+          }
+        }
+      });
+      layer.appendChild(el);
+    };
     g.links.forEach((l, i) => {
       if (!wl[l[0]] || !routed[i]) return;
       const [x0, y0] = routed[i][0];
@@ -1520,13 +1556,30 @@ function render({ model, el }) {
     }
     for (const tx of g.texts || [])
       tx.lines.forEach((line, k) => {
-        svg.appendChild(h('text', {
+        const el = h('text', {
           x: tx.x, y: fy(tx.y - k * g.line_h),
           'text-anchor': 'middle', 'dominant-baseline': 'central',
           'font-size': tx.size / S, 'font-weight': tx.weight,
           fill: tx.color,
           'font-family': 'sans-serif', 'pointer-events': 'none',
-        }, line));
+        });
+        const runs = (tx.runs || [])[k];
+        if (runs && runs.some((r) => r[1])) {
+          // real sub/superscripts (unicode lacks most letters)
+          for (const [frag, lvl] of runs) {
+            if (!lvl) {
+              el.appendChild(document.createTextNode(frag));
+            } else {
+              el.appendChild(h('tspan', {
+                'font-size': '72%',
+                'baseline-shift': lvl < 0 ? '-18%' : '34%',
+              }, frag));
+            }
+          }
+        } else {
+          el.appendChild(document.createTextNode(line));
+        }
+        svg.appendChild(el);
       });
 
     // One-size-fits-all frame: every diagram opens in the same box at

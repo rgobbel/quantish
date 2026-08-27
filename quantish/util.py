@@ -155,6 +155,49 @@ def _subscript_str(s: str) -> str:
                    for c in s)
 
 
+def math_runs(s: str) -> list:
+    """The $...$ label as typographic runs [(fragment, level)] with
+    level 0 normal, -1 subscript, +1 superscript — for renderers that
+    can shift baselines (SVG tspans). Unicode subscript glyphs only
+    exist for digits and a few letters ('b' has none), so wire labels
+    like $w_{1b}$ need real subscripts, not glyph substitution."""
+    runs = []
+
+    def add(txt, lvl=0):
+        if txt:
+            if runs and runs[-1][1] == lvl:
+                runs[-1][0] += txt
+            else:
+                runs.append([txt, lvl])
+
+    pos = 0
+    for m in re.finditer(r'\$([^$]*)\$', str(s)):
+        add(str(s)[pos:m.start()])
+        seg = re.sub(r'\\([a-zA-Z]+)',
+                     lambda mt: _MATH_COMMANDS.get(mt.group(1),
+                                                   mt.group(0)),
+                     m.group(1))
+        i = 0
+        while i < len(seg):
+            ch = seg[i]
+            if ch in '_^':
+                lvl = -1 if ch == '_' else 1
+                if i + 1 < len(seg) and seg[i + 1] == '{':
+                    j = seg.find('}', i + 2)
+                    j = len(seg) if j < 0 else j
+                    add(seg[i + 2:j], lvl)
+                    i = j + 1
+                else:
+                    add(seg[i + 1:i + 2], lvl)
+                    i += 2
+            else:
+                add(ch, 0)
+                i += 1
+        pos = m.end()
+    add(str(s)[pos:])
+    return [(txt, lvl) for txt, lvl in runs]
+
+
 def fmt_label(s) -> str:
     """The one label formatter for every non-TikZ text surface:
     $...$ math becomes unicode (math_to_unicode) and bare digits after

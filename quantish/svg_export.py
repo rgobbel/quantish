@@ -66,12 +66,25 @@ def diagram_svg(g: dict) -> str:
                       f"rotate({a['angle']:g})"))
     for tx in g.get('texts', []):
         for k, line in enumerate(tx['lines']):
-            out.append(_el(
-                'text', text=line, x=f"{tx['x']:.4g}",
-                y=f"{fy(tx['y'] - k * g['line_h']):.4g}",
-                text_anchor='middle', dominant_baseline='central',
-                font_size=f"{tx['size'] / S:.4g}",
-                font_weight=tx['weight'], fill=tx['color']))
+            attrs = dict(x=f"{tx['x']:.4g}",
+                         y=f"{fy(tx['y'] - k * g['line_h']):.4g}",
+                         text_anchor='middle',
+                         dominant_baseline='central',
+                         font_size=f"{tx['size'] / S:.4g}",
+                         font_weight=tx['weight'], fill=tx['color'])
+            runs = (tx.get('runs') or [None] * len(tx['lines']))[k]
+            if runs and any(lvl for _, lvl in runs):
+                spans = ''.join(
+                    escape(frag) if lvl == 0 else
+                    f'<tspan font-size="72%" baseline-shift='
+                    f'"{"-18%" if lvl < 0 else "34%"}">'
+                    f'{escape(frag)}</tspan>'
+                    for frag, lvl in runs)
+                parts = ''.join(f' {a.replace("_", "-")}="{v}"'
+                                for a, v in attrs.items())
+                out.append(f'<text{parts}>{spans}</text>')
+            else:
+                out.append(_el('text', text=line, **attrs))
     out.append('</svg>')
     return '\n'.join(out)
 

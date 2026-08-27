@@ -21,7 +21,8 @@ from quantish.tikz_diagram import (CONTROL_HALF_W, GATE_WIDTH, PORT_DY,
                                    WIRE_STUB_LEN,
                                    compute_layout, route_wires,
                                    spec_from_simulation)
-from quantish.util import angle_label, fmt_label, math_to_unicode, SEP
+from quantish.util import (angle_label, fmt_label, math_runs,
+                           math_to_unicode, SEP)
 
 # The palette. Edit these hex values and save; the app picks the change
 # up on the next ▶ Run (module autoreload). Input (particle) and output
@@ -516,7 +517,8 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
                 ly *= KY
             texts.append(dict(x=lx, y=ly + 0.22,
                               lines=[math_to_unicode(r.label)], size=10,
-                              color='#222222', weight='normal'))
+                              color='#222222', weight='normal',
+                              runs=[math_runs(r.label)]))
 
     # stage boxes and labels, wrapping the frames as actually drawn
     # small enough that adjacent stage boxes (e.g. a delay-only stage
