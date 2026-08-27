@@ -236,10 +236,12 @@ def _(DEFAULT_THETA_S, math, mo):
       a pure phase cannot change a lone path's magnitude, so the resulting intensity
       $\mathcal{{I}} = \tfrac{{1}}{{4}}$ is flat.
     - **Recorder**: $p_2$'s position differs between the two slits'
-      worlds, so the remerge rule forbids their interference. The cross
-      term is structurally impossible and $\mathcal{{I}} =
-      \tfrac{{1}}{{4}} + \tfrac{{1}}{{4}} = \tfrac{{1}}{{2}}$ is flat at
-      exactly the classical sum, with both slits open.
+      worlds, so the remerge rule forbids their interference — the
+      configuration-space points can never merge, so there is no
+      interference term at all. The two paths' intensities simply add:
+      $\mathcal{{I}} = \tfrac{{1}}{{4}} + \tfrac{{1}}{{4}} =
+      \tfrac{{1}}{{2}}$, flat at exactly the classical sum, with both
+      slits open.
     """)
 
     mo.accordion({'## Details\n\n<span style="font-size:0.85em">'
@@ -291,9 +293,9 @@ def _(mo):
         $2\pi d x / (\lambda L)$ for slit separation $d$, wavelength
         $\lambda$, and screen distance $L$, so wider spacing, a shorter
         wavelength, or a closer screen will all put more fringes on the screen.
-        The single-slit and recorder curves contain no cross term for the
-        phase to modulate, which is why the slider affects only the
-        both-slits-open panel.
+        The single-slit and recorder curves have no interference term
+        for the phase to act on, which is why the slider affects only
+        the both-slits-open panel.
         """)).text
         ftext = mo.Html(
             '<div class="qfootnote"><details>'
@@ -325,6 +327,17 @@ def _(mo):
 
     These are best viewed with a wide window on a large screen. The black rectangles are screens, 
     which will light up where particles fired at the apparatus land.
+
+    Each dot is one particle. Its **horizontal** position is drawn at
+    random from that condition's exact intensity distribution — the
+    curve under the screen — so the fringes emerge dot by dot, the way
+    a long exposure builds them up. Its **vertical** position is
+    uniformly random and purely decorative: the quantish model is
+    one-dimensional, so all of the physics lives in $x$, and the $y$
+    spread only makes the raster look like a physical screen.
+    Interference never happens *between* dots — each particle's own
+    superposed worlds interfere (in $x$) before it lands, one particle
+    at a time.
     """)
     return
 
