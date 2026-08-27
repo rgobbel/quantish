@@ -228,10 +228,20 @@ def _(DEFAULT_THETA_S, math, mo):
     $\mathcal{{I}}$, to keep it clearly apart from the imaginary unit
     $i$.)
 
-    - **Both slits**: the two slits' worlds interfere at $g_2$, and
-      $\mathcal{{I}} = \tfrac{{1}}{{2}}\bigl(1 + \cos(f\pi x)\bigr)$:
-      fringes from 0 to 1, peaking at 4 times the single-slit intensity,
-      with true zeros where the worlds cancel.
+    - **Both slits**: the two slits' worlds interfere at $g_2$. Where
+      the fringes come from: when an amplitude is a sum of two paths,
+      the intensity is *not* the sum of the two paths' intensities —
+      $\lvert a_L + a_R\rvert^2 = \lvert a_L\rvert^2 +
+      \lvert a_R\rvert^2 + 2\,\mathrm{{Re}}(a_L \overline{{a_R}})$,
+      and the third piece (the **interference term**) swings with the
+      phase difference between the paths. Here each path carries
+      amplitude $\tfrac{{1}}{{2}}$ and the plate sets their phase
+      difference to $f\pi x$, so
+      $\mathcal{{I}} = \tfrac{{1}}{{4}} + \tfrac{{1}}{{4}} +
+      \tfrac{{1}}{{2}}\cos(f\pi x) =
+      \tfrac{{1}}{{2}}\bigl(1 + \cos(f\pi x)\bigr)$:
+      fringes from 0 to 1, peaking at 4 times the single-slit
+      intensity, with true zeros where the worlds cancel.
     - **One slit blocked**: the other wire ends at its block $B_n$, and
       a pure phase cannot change a lone path's magnitude, so the resulting intensity
       $\mathcal{{I}} = \tfrac{{1}}{{4}}$ is flat.
