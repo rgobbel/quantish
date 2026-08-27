@@ -1,0 +1,26 @@
+title: Smoke test
+
+run_stages:
+  stage1: [g1]
+  stage2: [φ1]
+  whatever: [g2, d1]
+  stage3: [g3]
+
+particles:
+  p1: {weight: 1, sign: 1}
+
+gates:
+  g1: {angle: 30°}
+  g2: {angle: 0}
+  g3: {angle: -60°}
+  φ1: {angle: 0, phase: 30°}
+
+delay_gates: [d1]
+
+links:
+  g1.upper: φ1.control
+  p1: g1.upper
+  φ1.control: d1
+  g1.lower: g2.lower
+  d1: g3.upper
+  g2.lower: g3.lower
