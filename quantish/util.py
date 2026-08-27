@@ -116,7 +116,7 @@ def subscript_digits(s: str) -> str:
     subscripts a single character where Unicode has a form for it:
     g_p → gₚ, g_φ → gᵩ. For plain-text surfaces (Mermaid labels, the
     SVG diagrams); the TikZ renderer does the same in TeX math."""
-    s = re.sub(r'(?<=[A-Za-z])(\d+)',
+    s = re.sub(r'(?<=[^\W\d_])(\d+)',
                lambda mt: mt.group(1).translate(_SUBSCRIPT_DIGITS), s)
     return re.sub(r'_([0-9A-Za-zβγρφχ])(?![0-9A-Za-z])',
                   lambda mt: (mt.group(1).translate(_SUBSCRIPT_DIGITS)

@@ -126,6 +126,9 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
     # scaled wire-endpoint -> x of the DRAWN box edge there, so wires and
     # arrowheads stop at the boundary even when a box grew for its text
     edge_clip = {}
+    # scaled wire-endpoint -> corrected y, for delay boxes drawn away
+    # from their layout row (the tuck-in below)
+    delay_y_new = {}
 
     def clip_key(x, y):
         return (round(x, 3), round(y, 3))
@@ -302,7 +305,17 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
                     + _angles)
         lines = ([_sub(dname)] + vals) if vals else [_sub(dname)]
         w, h = measure(lines, 2 * CONTROL_HALF_W)
-        emit_box(fx(dx_), dy_ * KY, w, h, lines, DELAY_FILL, DELAY_STROKE,
+        # A delay sharing its column with gates tucks in just below the
+        # lowest gate frame: scaling its layout row by KY would open a
+        # gate-sized chasm (the row pitch stretches, the small box does
+        # not). Delay-only columns keep their inline wire-level y.
+        _cy = dy_ * KY
+        _col = L.col_of.get(dname)
+        _mates = [frames[g] for g in L.gate_xy
+                  if L.col_of.get(g) == _col and g in frames]
+        if _mates:
+            _cy = min(f[1] for f in _mates) - 0.45 - h / 2
+        emit_box(fx(dx_), _cy, w, h, lines, DELAY_FILL, DELAY_STROKE,
                  corner=3, tip=value_lines(pos), shown=[_sub(dname)])
         if _is_plate:
             # the same compass needle full gates carry, angled by the
@@ -310,7 +323,7 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
             # the first display line, centered in the box)
             _deg = float(_ph.degrees)
             _ncx = fx(dx_) + 0.115 * (len(dname) + 1) / 2 + 0.38
-            _ncy = dy_ * KY + (len(lines) - 1) * LINE_H / 2
+            _ncy = _cy + (len(lines) - 1) * LINE_H / 2
             _dxc, _dyc = (math.cos(math.radians(_deg)),
                           math.sin(math.radians(_deg)))
             wires.append([dict(route=f'{dname}~c', order=0,
@@ -324,8 +337,15 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
                                angle=(90 - _deg) % 360))
         edge_clip[clip_key(fx(dx_ - CONTROL_HALF_W), dy_ * KY)] = fx(dx_) - w / 2
         edge_clip[clip_key(fx(dx_ + CONTROL_HALF_W), dy_ * KY)] = fx(dx_) + w / 2
-        frames[dname] = (fx(dx_) - w / 2, dy_ * KY - h / 2,
-                         fx(dx_) + w / 2, dy_ * KY + h / 2)
+        # wires still aim at the layout row's y; steer their endpoints
+        # to the tucked-in box
+        if _cy != dy_ * KY:
+            delay_y_new[clip_key(fx(dx_ - CONTROL_HALF_W),
+                                 dy_ * KY)] = (_cy, dy_ * KY)
+            delay_y_new[clip_key(fx(dx_ + CONTROL_HALF_W),
+                                 dy_ * KY)] = (_cy, dy_ * KY)
+        frames[dname] = (fx(dx_) - w / 2, _cy - h / 2,
+                         fx(dx_) + w / 2, _cy + h / 2)
 
     # particles: stadium blobs sized to their names (a fixed circle
     # clips longer names like AIM_Figure12's control1/control2)
@@ -414,6 +434,13 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
             pts[0] = (edge_clip[first], pts[0][1])
         if last in edge_clip:
             pts[-1] = (edge_clip[last], pts[-1][1])
+        for key in (first, last):
+            if key in delay_y_new:
+                # lift the whole horizontal approach run, not just the
+                # endpoint, so the wire meets the tucked-in box level
+                new_y, old_y = delay_y_new[key]
+                pts = [(px_, new_y if abs(py_ - old_y) < 1e-6 else py_)
+                       for px_, py_ in pts]
         # round interior corners: a small quadratic bezier through each
         # corner, sampled into the polyline
         if len(pts) > 2:
