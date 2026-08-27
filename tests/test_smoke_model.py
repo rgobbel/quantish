@@ -52,3 +52,13 @@ def test_smoke_layout():
     assert gaps, 'no delay shares a column with a gate frame'
     assert all(0 < gap < 1.0 for gap in gaps), \
         f'delay-to-gate gaps {[f"{g:.2f}" for g in gaps]}'
+    # the plate's compass needle stays inside its box
+    plates = [b for b in g['boxes'] if b['fill'] == DELAY_FILL]
+    for seg in g['wires']:
+        if len(seg) == 2 and seg[0].get('route', '').endswith('~c'):
+            xs = [p['x'] for p in seg]
+            for b in plates:
+                if b['x'] < sum(xs) / 2 < b['x2']:
+                    poked = seg[0]['route']
+                    assert all(b['x'] <= x <= b['x2'] for x in xs), \
+                        f'needle {poked} pokes out of its plate box'
