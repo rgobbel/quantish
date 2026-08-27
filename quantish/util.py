@@ -198,6 +198,36 @@ def math_runs(s: str) -> list:
     return [(txt, lvl) for txt, lvl in runs]
 
 
+_SUB_BACK = {c: b for b, c in zip('0123456789', '₀₁₂₃₄₅₆₇₈₉')}
+_SUB_BACK.update({'ₐ': 'a', 'ₑ': 'e', 'ₕ': 'h', 'ᵢ': 'i', 'ⱼ': 'j',
+                  'ₖ': 'k', 'ₗ': 'l', 'ₘ': 'm', 'ₙ': 'n', 'ₒ': 'o',
+                  'ₚ': 'p', 'ᵣ': 'r', 'ₛ': 's', 'ₜ': 't', 'ᵤ': 'u',
+                  'ᵥ': 'v', 'ₓ': 'x', '₊': '+', '₋': '−',
+                  'ᵦ': 'β', 'ᵧ': 'γ', 'ᵨ': 'ρ', 'ᵩ': 'φ', 'ᵪ': 'χ'})
+_SUP_BACK = {c: b for b, c in zip('0123456789', '⁰¹²³⁴⁵⁶⁷⁸⁹')}
+_SUP_BACK.update({'ⁱ': 'i', 'ⁿ': 'n', '⁺': '+', '⁻': '−'})
+
+
+def unicode_runs(s: str) -> list:
+    """A string with unicode sub/superscript glyphs as typographic
+    runs [(fragment, level)] — the glyphs mapped back to their base
+    characters at level -1/+1 so renderers can draw REAL shifted
+    scripts, matching math_runs output everywhere."""
+    runs = []
+    for ch in str(s):
+        if ch in _SUB_BACK:
+            frag, lvl = _SUB_BACK[ch], -1
+        elif ch in _SUP_BACK:
+            frag, lvl = _SUP_BACK[ch], 1
+        else:
+            frag, lvl = ch, 0
+        if runs and runs[-1][1] == lvl:
+            runs[-1][0] += frag
+        else:
+            runs.append([frag, lvl])
+    return [(frag, lvl) for frag, lvl in runs]
+
+
 def fmt_label(s) -> str:
     """The one label formatter for every non-TikZ text surface:
     $...$ math becomes unicode (math_to_unicode) and bare digits after

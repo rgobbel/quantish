@@ -22,7 +22,7 @@ from quantish.tikz_diagram import (CONTROL_HALF_W, GATE_WIDTH, PORT_DY,
                                    compute_layout, route_wires,
                                    spec_from_simulation)
 from quantish.util import (angle_label, fmt_label, math_runs,
-                           math_to_unicode, SEP)
+                           math_to_unicode, unicode_runs, SEP)
 
 # The palette. Edit these hex values and save; the app picks the change
 # up on the next ▶ Run (module autoreload). Input (particle) and output
@@ -539,6 +539,16 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
         texts.append(dict(x=(gx1 + gx2) / 2, y=gy2 + 0.28,
                           lines=[_sub(label)],
                           size=11, color='#888888', weight='normal'))
+
+    # every text with unicode sub/superscript glyphs gains runs, so
+    # the renderers draw ALL scripts as shifted tspans — one style for
+    # wire labels, value blocks, gate names, and stage labels alike
+    for tx in texts:
+        if 'runs' in tx:
+            continue
+        rr = [unicode_runs(ln) for ln in tx['lines']]
+        if any(lvl for line in rr for _, lvl in line):
+            tx['runs'] = rr
 
     # ---- assemble ----
     x0, y0, x1, y1 = L.bounds
