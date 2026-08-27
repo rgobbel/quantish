@@ -33,6 +33,17 @@ async def initialization():
         ], deps=False)
         await micropip.install(['sympy', 'scipy', 'networkx',
                                 'pyyaml', 'anywidget'])
+        # the model library, frozen into the page at build time
+        import json as _json
+
+        from pyodide.http import pyfetch
+        _resp = await pyfetch(f'{_base}/public/models.json')
+        for _rel, _text in _json.loads(await _resp.string()).items():
+            _p = Path('/wasm-data/models') / _rel
+            _p.parent.mkdir(parents=True, exist_ok=True)
+            _p.write_text(_text)
+
+    WASM_MODE = sys.platform == 'emscripten'
 
     from addict import Dict as Addict
 
@@ -58,17 +69,20 @@ async def initialization():
     from quantish.util import angle_label
     from quantish.simulation import Simulation
 
-    # the model library, for loading an existing model into the builder
-    # (present when running from the repo; empty in the WASM build)
-    _models_top = _repo / 'models'
+    # the model library, for loading an existing model into the
+    # builder: the repo's models/ directory, or the frozen copy
+    # fetched above under WASM
+    _models_top = (Path('/wasm-data/models') if WASM_MODE
+                   else _repo / 'models')
     models_top = _models_top if _models_top.is_dir() else None
     model_paths = {str(p.relative_to(_models_top)): p
                    for p in sorted(_models_top.rglob('*.yaml'))
-                   if p.name != 'defaults.yaml'
+                   if p.name not in ('defaults.yaml', 'schema.yaml')
                    and not p.name.startswith('.')} \
         if models_top else {}
     return (
         Addict,
+        WASM_MODE,
         BuilderWidget,
         CalcMode,
         DiagramWidget,
@@ -194,10 +208,12 @@ def _(mo, model_paths):
 
 
 @app.cell(hide_code=True)
-def _(builder_config, config_to_yaml, file_name, mo, model_paths):
+def _(WASM_MODE, builder_config, config_to_yaml, file_name, mo, model_paths):
     # the File row, in the spirit of a Mac File menu: New, Open a
     # predefined model, Upload one, Save into the local models
-    # directory, Download through the browser
+    # directory (running from the repo only — in the browser the
+    # filesystem dies with the tab, so Download is the way out),
+    # Download through the browser
     new_btn = mo.ui.run_button(label='✚ new')
     open_btn = mo.ui.run_button(label='📂 open…')
     upload_btn = mo.ui.run_button(label='⬆ upload…')
@@ -210,8 +226,9 @@ def _(builder_config, config_to_yaml, file_name, mo, model_paths):
                     label='download')
         if builder_config is not None
         else mo.ui.run_button(label='⬇ download', disabled=True))
-    mo.hstack([mo.md('**File:**'), new_btn, open_btn, upload_btn,
-               save_btn, _download], justify='start', gap=0.75)
+    mo.hstack([mo.md('**File:**'), new_btn, open_btn, upload_btn]
+              + ([] if WASM_MODE else [save_btn])
+              + [_download], justify='start', gap=0.75)
     return new_btn, open_btn, save_btn, upload_btn
 
 

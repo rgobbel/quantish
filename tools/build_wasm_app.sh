@@ -16,6 +16,7 @@ WHEEL=$(ls -t dist/quantish-*.whl | head -1)
 #    is a landing page linking to all of them.
 (cd notebooks && uv run marimo export html-wasm quantish_app.py -o "$OUT/quantish_app" --mode run -f)
 (cd notebooks && uv run marimo export html-wasm double_slit_app.py -o "$OUT/double_slit_app" --mode run -f)
+(cd notebooks && uv run marimo export html-wasm network_builder_app.py -o "$OUT/builder_app" --mode run -f)
 (cd notebooks && uv run marimo export html-wasm quantish_app.py -o "$OUT/quantish_app_edit" --mode edit -f)
 (cd notebooks && uv run marimo export html-wasm double_slit_app.py -o "$OUT/double_slit_app_edit" --mode edit -f)
 # Two config patches on the exported pages. The exporter pins
@@ -23,7 +24,7 @@ WHEEL=$(ls -t dist/quantish-*.whl | head -1)
 # run on load. And it bakes in theme "system", which hands dark-mode
 # visitors marimo's dark theme under stylesheets tuned for the light
 # one — pin every app to light.
-python3 - "$OUT"/quantish_app*/index.html "$OUT"/double_slit_app*/index.html <<'PYPATCH'
+python3 - "$OUT"/quantish_app*/index.html "$OUT"/double_slit_app*/index.html "$OUT"/builder_app/index.html <<'PYPATCH'
 import os
 import sys
 for path in sys.argv[1:]:
@@ -39,6 +40,7 @@ PYPATCH
 # 3) bundle the wheels (both apps resolve them relative to their own
 #    page via mo.notebook_location)
 for W in "$OUT"/quantish_app/public/wheels "$OUT"/double_slit_app/public/wheels \
+         "$OUT"/builder_app/public/wheels \
          "$OUT"/quantish_app_edit/public/wheels "$OUT"/double_slit_app_edit/public/wheels; do
   mkdir -p "$W"
   cp "$WHEEL" "$W/"
@@ -58,9 +60,14 @@ out = Path(sys.argv[1])
 models = {}
 top = Path('models')
 for p in sorted(top.rglob('*.yaml')):
+    # personal scratch models, editor droppings, and the schema are
+    # not part of the shipped library
+    if p.name.startswith(('.', '#')) or p.name in ('schema.yaml',
+                                                   'my_network.yaml'):
+        continue
     models[str(p.relative_to(top))] = p.read_text()
 payload = json.dumps(models)
-for app_dir in ('quantish_app', 'quantish_app_edit'):
+for app_dir in ('quantish_app', 'quantish_app_edit', 'builder_app'):
     (out / app_dir / 'public' / 'models.json').write_text(payload)
 print(f'bundled {len(models)} model files')
 PYEOF
@@ -104,9 +111,15 @@ cat > "$OUT/index.html" <<'HTML'
     fire particles, watch fringes build up dot by dot, and see the
     circuits behind each condition.
   </a>
-  <p>Each app also comes as an editable notebook: the same simulation
-     in the full marimo editor, where you can read the code, change it,
-     and re-run cells. Edits run entirely in your browser and affect
+  <a class="app" href="builder_app/">
+    <b>Network builder</b><br>
+    Build your own quantish circuit on a canvas: place gates and
+    particles, wire them up, run the result, and download it as a
+    model file the quantish app can load.
+  </a>
+  <p>The quantish and double-slit apps also come as editable
+     notebooks: the same simulation in the full marimo editor, where
+     you can read the code, change it, and re-run cells. Edits run entirely in your browser and affect
      only your copy &mdash; reload to start fresh, or use the editor's
      download button to keep your changes.</p>
   <p><a href="quantish_app_edit/">Quantish app (editable)</a> &middot;
@@ -133,6 +146,7 @@ Serves the app directory over HTTP. One server covers both apps:
     http://<host>:<port>/                   a landing page linking to all
     http://<host>:<port>/quantish_app/      the quantish app
     http://<host>:<port>/double_slit_app/   the double-slit app
+    http://<host>:<port>/builder_app/       the network builder
     (plus quantish_app_edit/ and double_slit_app_edit/: the same
     notebooks in the in-browser editor)
 
@@ -183,6 +197,7 @@ echo "Serving $DIR"
 echo "  landing page:    http://localhost:$PORT/"
 echo "  quantish app:    http://localhost:$PORT/quantish_app/"
 echo "  double-slit app: http://localhost:$PORT/double_slit_app/"
+echo "  network builder: http://localhost:$PORT/builder_app/"
 exec python3 -m http.server --directory "$DIR" "$PORT"
 SH
 chmod +x "$OUT/serve.sh"
@@ -194,8 +209,9 @@ Quantish apps, compiled to WebAssembly (static site).
 
 then open  http://<host>:<port>/  in a browser: the root is a landing
 page linking to the quantish app (quantish_app/), the double-slit app
-(double_slit_app/), and editable-notebook variants of both
-(quantish_app_edit/, double_slit_app_edit/). Edits run entirely in the
+(double_slit_app/), the network builder (builder_app/), and
+editable-notebook variants of the first two (quantish_app_edit/,
+double_slit_app_edit/). Edits run entirely in the
 visitor's browser and affect only their own copy.
 
 Notes:
