@@ -2,10 +2,6 @@ title: Figure 4.8
 
 caption: Using a succession of different measurement angles makes states split.
 
-variables:
-   q20: 20°
-   q30: 30°
-
 run_stages:
    split1: [g1]
    split2: [g2]
@@ -15,8 +11,8 @@ particles:
    p1: {sign: 1, weight: 1}
 
 gates:
-   g1: {angle: q20}
-   g2: {angle: q30}
+   g1: {angle: 20°}
+   g2: {angle: 30°}
 
 links:
    control: g1.control

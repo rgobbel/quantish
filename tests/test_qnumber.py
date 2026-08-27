@@ -430,3 +430,19 @@ class TestDegreeMarks:
         env = {'q30': qn.qify('30°')}
         assert float(qn.qify('q30 * 2', env)) == \
             pytest.approx(math.radians(60))
+
+
+class TestConj:
+    """conj(...) (and sympy's own conjugate) work in qify expressions —
+    exact in Symbolic mode."""
+
+    def test_conj_both_modes(self, mode):
+        env = {'q45': qn.qify('sqrt(2)/2 + sqrt(2)*I/2')}
+        got = complex(qn.qify('conj(q45)', env).v)
+        want = complex(qn.qify('sqrt(2)/2 - sqrt(2)*I/2').v)
+        assert abs(got - want) < 1e-12
+        assert complex(qn.qify('conjugate(I)').v) == -1j
+
+    def test_conj_is_reserved(self):
+        assert qn.reserved_name('conj')
+        assert qn.reserved_name('conjugate')

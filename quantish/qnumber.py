@@ -160,9 +160,10 @@ def qify(x, env: dict | None = None) -> 'Complex':
     elif iscplx(x): return Complex(x)
     if isinstance(x, str) and any(m in x for m in '°º˚'):
         x = degrees_marks_to_radians(x)
-    # sympify knows pi/E/I already; PI is the same constant spelled the
-    # way the qnumber module exports it
-    local_env = {'PI': sym.pi}
+    # sympify knows pi/E/I already; PI is the same constant spelled
+    # the way the qnumber module exports it, and conj is the short
+    # spelling of conjugate (sympify only binds the long name)
+    local_env = {'PI': sym.pi, 'conj': sym.conjugate}
     if env:
         local_env.update({name: (val.v if isq(val) else val)
                           for name, val in env.items()})
@@ -187,7 +188,7 @@ def qify(x, env: dict | None = None) -> 'Complex':
 # meaning wins consistently.)
 RESERVED_NAMES = frozenset({
     'pi', 'PI', 'E', 'I', 'oo', 'zoo', 'nan',
-    'rad', 'deg', 'sqrt', 'exp', 'log',
+    'rad', 'deg', 'sqrt', 'exp', 'log', 'conj', 'conjugate',
     'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'atan2',
 })
 

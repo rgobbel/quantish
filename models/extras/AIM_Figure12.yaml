@@ -1,37 +1,37 @@
 title: Quantish EPR Experiment, as described in AIM-1026a
 
+caption: Figure 12 of AIM-1026a — p1 and p2 start with attribute vectors parallel to (1,1); p3 emerges at w1 exactly when their attributes agree, leaving them coupled.
+
+notes: |-
+  A faithful transcription of the memo's figure 12b. The memo's split
+  gates carry measurement vector (1,0) with both particles' attribute
+  vectors at 45°; in the chapter's formalism that relative angle is the
+  gate angle, so the split and merge gates measure at 45°. The couple
+  stage's angle-0 gates route p3 by control occupancy alone: it crosses
+  at g3 iff p1 took its + wire and at g4 iff p2 did, so p3 ends on w1
+  exactly when the attributes agree.
+
 calculation_mode: float
 
 run_stages:
-   prepare: [g1, g2]
+   split: [g1, g2]
    couple: [g3, g4]
-   split: [g5, g6]
-
-variables:
-   q1: 30°
-   q3: "30°+pi/2"
-   q45: "sqrt(2)/2+sqrt(2)*I/2"
-   qm45: "sqrt(2)/2-sqrt(2)*I/2"
-   qpythag: "acos(4/5)"
+   merge: [g5, g6]
 
 particles:
-   control1: {sign: 1, weight: 0}
-   control2: {sign: 1, weight: 0}
-   p1: {sign: 1, weight: q45}
-   p2: {sign: 1, weight: qm45}
+   p1: {sign: 1, weight: 1}
+   p2: {sign: 1, weight: 1}
    p3: {sign: 1, weight: 1}
 
 gates:
-   g1: {angle: q1}
-   g2: {angle: q3}
+   g1: {angle: 45°}
+   g2: {angle: 45°}
    g3: {angle: 0}
    g4: {angle: 0}
-   g5: {angle: qpythag}
-   g6: {angle: qpythag}
+   g5: {angle: 45°}
+   g6: {angle: 45°}
 
 links:
-   control1: g1.control
-   control2: g2.control
    p1: g1.upper
    p2: g2.upper
    p3: g3.upper
@@ -43,3 +43,7 @@ links:
    g3.upper: g4.upper
    g3.lower: g4.lower
    g4.control: g6.upper
+
+wire_labels:
+   g4.upper: $w_1$
+   g4.lower: $w_2$

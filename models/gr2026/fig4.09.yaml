@@ -7,10 +7,6 @@ title: Figure 4.9
 
 caption: Here, the angles $Q_1$ and $Q_2$ may differ
 
-variables:
-   Q1: 30°
-   Q2: 45°
-
 run_stages:
    split1: [g1]
    split2: [g2]
@@ -19,8 +15,8 @@ particles:
    p1: {sign: 1, weight: 1}
 
 gates:
-   g1: {angle: Q1}
-   g2: {angle: Q2}
+   g1: {angle: 30°}
+   g2: {angle: 45°}
 
 links:
    p1: g1.upper

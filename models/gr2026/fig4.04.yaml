@@ -2,9 +2,6 @@ title: Figure 4.4
 
 caption: A classical state with weight *$c_1$* splits into four successors.
 
-variables:
-   q30: 30°
-
 run_stages:
    stage1: [g1]
 
@@ -12,7 +9,7 @@ particles:
    p1: {sign: 1, weight: 1}
 
 gates:
-   g1: {angle: q30}
+   g1: {angle: 30°}
 
 links:
    p1: g1.upper
