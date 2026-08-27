@@ -64,7 +64,8 @@ for p in sorted(top.rglob('*.yaml')):
     # personal scratch models, editor droppings, and the schema are
     # not part of the shipped library
     if p.name.startswith(('.', '#')) or p.name in ('schema.yaml',
-                                                   'my_network.yaml'):
+                                                   'my_network.yaml') \
+            or 'uploads' in p.parts:
         continue
     models[str(p.relative_to(top))] = p.read_text()
 payload = json.dumps(models)

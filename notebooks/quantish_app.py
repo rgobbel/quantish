@@ -74,6 +74,7 @@ def _(
     last_models_set,
     mo,
     model_rescan,
+    model_upload,
 ):
     model_rescan  # dependency: pressing the button re-globs the directory
 
@@ -98,7 +99,8 @@ def _(
 
     model_pick = _()
     mo.hstack([collection_pick, model_pick]
-              + ([] if WASM_MODE else [model_rescan]),
+              + ([] if WASM_MODE else [model_rescan])
+              + [model_upload],
               justify='start', gap=1)
     return (model_pick,)
 
@@ -882,6 +884,8 @@ async def initialization():
 @app.cell(hide_code=True)
 def _(mo):
     model_rescan = mo.ui.run_button(label='↻ rescan models')
+    model_upload = mo.ui.file(filetypes=['.yaml'], kind='button',
+                              label='⬆ upload model')
     # per-collection selection memory, seeded with each collection's
     # designated default; a new collection falls back to first-by-name
     last_collection_get, last_collection_set = mo.state('gr2026')
@@ -893,7 +897,39 @@ def _(mo):
         last_models_get,
         last_models_set,
         model_rescan,
+        model_upload,
     )
+
+
+@app.cell(hide_code=True)
+def _(
+    MODELS_TOP,
+    last_collection_set,
+    last_models_get,
+    last_models_set,
+    model_upload,
+):
+    # An uploaded YAML lands in the 'uploads' collection (under WASM
+    # that is the page's virtual filesystem; from the repo it is the
+    # gitignored models/uploads/) and becomes the current selection —
+    # the collection and model dropdowns follow via their memory
+    # state.
+    def _():
+        if not model_upload.contents():
+            return
+        from pathlib import PurePath
+        _name = PurePath(model_upload.name()).name
+        if not _name.endswith('.yaml'):
+            _name += '.yaml'
+        _updir = MODELS_TOP / 'uploads'
+        _updir.mkdir(parents=True, exist_ok=True)
+        (_updir / _name).write_bytes(model_upload.contents())
+        last_models_set({**last_models_get(),
+                         'uploads': _name.removesuffix('.yaml')})
+        last_collection_set('uploads')
+
+    _()
+    return
 
 
 @app.cell(hide_code=True)
