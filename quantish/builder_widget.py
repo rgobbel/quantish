@@ -573,8 +573,8 @@ function render({ model, el }) {
               j += 2;
             }
             el.appendChild(h('tspan', {
-              'font-size': '72%',
-              'baseline-shift': ch === '_' ? '-18%' : '34%',
+              'font-size': '64%',
+              'baseline-shift': ch === '_' ? '-25%' : '38%',
             }, frag));
           } else {
             el.appendChild(document.createTextNode(ch));
@@ -1571,8 +1571,8 @@ function render({ model, el }) {
               el.appendChild(document.createTextNode(frag));
             } else {
               el.appendChild(h('tspan', {
-                'font-size': '72%',
-                'baseline-shift': lvl < 0 ? '-18%' : '34%',
+                'font-size': '64%',
+                'baseline-shift': lvl < 0 ? '-25%' : '38%',
               }, frag));
             }
           }

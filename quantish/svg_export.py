@@ -76,8 +76,8 @@ def diagram_svg(g: dict) -> str:
             if runs and any(lvl for _, lvl in runs):
                 spans = ''.join(
                     escape(frag) if lvl == 0 else
-                    f'<tspan font-size="72%" baseline-shift='
-                    f'"{"-18%" if lvl < 0 else "34%"}">'
+                    f'<tspan font-size="64%" baseline-shift='
+                    f'"{"-25%" if lvl < 0 else "38%"}">'
                     f'{escape(frag)}</tspan>'
                     for frag, lvl in runs)
                 parts = ''.join(f' {a.replace("_", "-")}="{v}"'
