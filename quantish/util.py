@@ -173,10 +173,13 @@ def math_runs(s: str) -> list:
     pos = 0
     for m in re.finditer(r'\$([^$]*)\$', str(s)):
         add(str(s)[pos:m.start()])
+        # \mathrm{split} / \text{split}: upright text, which is what
+        # these surfaces draw anyway — keep the content, drop the wrapper
+        seg = re.sub(r'\\(?:mathrm|text)\{([^{}]*)\}', r'\1', m.group(1))
         seg = re.sub(r'\\([a-zA-Z]+)',
                      lambda mt: _MATH_COMMANDS.get(mt.group(1),
                                                    mt.group(0)),
-                     m.group(1))
+                     seg)
         i = 0
         while i < len(seg):
             ch = seg[i]
@@ -247,6 +250,7 @@ def math_to_unicode(s: str) -> str:
     untouched."""
     def _segment(m):
         seg = m.group(1)
+        seg = re.sub(r'\\(?:mathrm|text)\{([^{}]*)\}', r'\1', seg)
         seg = re.sub(r'\\([a-zA-Z]+)',
                      lambda c: _MATH_COMMANDS.get(c.group(1),
                                                   c.group(0)), seg)

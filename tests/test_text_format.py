@@ -52,3 +52,12 @@ class TestSubscriptDigits:
         assert subscript_digits('g_p') == 'gₚ'
         assert subscript_digits('g_φ') == 'gᵩ'
         assert subscript_digits('measure_1') == 'measure₁'
+
+
+def test_mathrm_and_text_unwrap():
+    # \mathrm{...} / \text{...} are upright text on every surface
+    # here, so only their content survives — inside a subscript too
+    from quantish.util import math_runs, math_to_unicode
+    assert math_to_unicode(r'$g_{\mathrm{split}}$') == 'gₛₚₗᵢₜ'
+    assert math_runs(r'$g_{\mathrm{split}}$') == [('g', 0), ('split', -1)]
+    assert math_to_unicode(r'$\text{S}_1$') == 'S₁'

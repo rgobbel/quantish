@@ -134,7 +134,7 @@ const _supStr = (s) => [...s].map((c) => SUP[c] ?? c).join('');
 // YAML, so they get no automatic digit-subscripting
 const mathOnly = (s) => String(s)
   .replace(/\$([^$]+)\$/g, (m, seg) => seg
-    .replace(/\\([a-zA-Z]+)/g, (c, w) => MATHCMD[w] ?? c)
+    .replace(/\\(?:mathrm|text)\{([^{}]*)\}/g, '$1').replace(/\\([a-zA-Z]+)/g, (c, w) => MATHCMD[w] ?? c)
     .replace(/_\{([^{}]*)\}/g, (c, w) => _subStr(w))
     .replace(/_(\S)/g, (c, w) => _subStr(w))
     .replace(/\^\{([^{}]*)\}/g, (c, w) => _supStr(w))
@@ -142,7 +142,7 @@ const mathOnly = (s) => String(s)
     .replace(/[{}]/g, ''));
 const subName = (s) => String(s)
   .replace(/\$([^$]+)\$/g, (m, seg) => seg
-    .replace(/\\([a-zA-Z]+)/g, (c, w) => MATHCMD[w] ?? c)
+    .replace(/\\(?:mathrm|text)\{([^{}]*)\}/g, '$1').replace(/\\([a-zA-Z]+)/g, (c, w) => MATHCMD[w] ?? c)
     .replace(/_\{([^{}]*)\}/g, (c, w) => _subStr(w))
     .replace(/_(\S)/g, (c, w) => _subStr(w))
     .replace(/\^\{([^{}]*)\}/g, (c, w) => _supStr(w))
@@ -178,7 +178,7 @@ const fillRuns = (el, s) => {
       if (seg) plain(seg);
       return;
     }
-    seg = seg.replace(/\\([a-zA-Z]+)/g, (c, w) => MATHCMD[w] ?? c);
+    seg = seg.replace(/\\(?:mathrm|text)\{([^{}]*)\}/g, '$1').replace(/\\([a-zA-Z]+)/g, (c, w) => MATHCMD[w] ?? c);
     let j = 0;
     while (j < seg.length) {
       const ch = seg[j];
@@ -252,7 +252,7 @@ function render({ model, el }) {
     `).join('')}
     ${_dash(12, 18, 28, 18)}${_dash(12, 28, 28, 28)}
     ${_dash(12, 18, 28, 28)}${_dash(12, 28, 28, 18)}`);
-  const addPlateBtn = mkIcon('add a φ phase plate', 'phase', `
+  const addPlateBtn = mkIcon('add a phase plate', 'phase', `
     <rect x="9" y="9" width="22" height="22" rx="5"
           fill="#f3e8ff" stroke="#8b5cf6" stroke-width="1.6"/>
     <text x="20" y="25" text-anchor="middle" font-size="14"
@@ -284,11 +284,11 @@ function render({ model, el }) {
     <rect x="14" y="23" width="12" height="10" rx="2"
           fill="#e6f4f1" stroke="#2f9e8f"/>`;
   const stageBtn = mkIcon(
-    'group the selected gates into a named run stage', 'stage', `
+    'make the selected gates a run stage, all fired simultaneously', 'stage', `
     <rect x="8" y="4" width="24" height="34" rx="6"
           fill="none" stroke="#2f9e8f" stroke-width="1.8"/>${_minisStacked}`);
   const dgroupBtn = mkIcon(
-    'group the selected gates into a named diagram group', 'group', `
+    'bracket the selected gates to display as a visual group', 'group', `
     <rect x="5" y="8" width="30" height="24" rx="6" fill="none"
           stroke="#22314a" stroke-width="1.4"
           stroke-dasharray="4 3"/>${_minis}`);
@@ -619,7 +619,7 @@ function render({ model, el }) {
           if (seg) el.appendChild(document.createTextNode(seg));
           return;
         }
-        seg = seg.replace(/\\([a-zA-Z]+)/g,
+        seg = seg.replace(/\\(?:mathrm|text)\{([^{}]*)\}/g, '$1').replace(/\\([a-zA-Z]+)/g,
                           (c, w) => MATHCMD[w] ?? c);
         let j = 0;
         while (j < seg.length) {
@@ -969,8 +969,8 @@ function render({ model, el }) {
     clearMulti();
     commit(copy);
   };
-  stageBtn.onclick = () => assign('stage', 'stage name');
-  dgroupBtn.onclick = () => assign('dgroup', 'diagram group');
+  stageBtn.onclick = () => assign('stage', 'run-stage name');
+  dgroupBtn.onclick = () => assign('dgroup', 'diagram-group name');
   undoBtn.onclick = undo;
   redoBtn.onclick = redo;
   clearBtn.onclick = () => {
@@ -1147,7 +1147,7 @@ function render({ model, el }) {
   function renameGroup(kind, name) {
     const field = kind === 'stage' ? 'stage' : 'dgroup';
     const orderKey = kind === 'stage' ? 'stage_order' : 'dgroup_order';
-    const what = kind === 'stage' ? 'stage' : 'diagram group';
+    const what = kind === 'stage' ? 'run stage' : 'diagram group';
     const raw = window.prompt(
       `new name for ${what} ${name} (renaming onto an existing ${what} `
       + 'merges them)', name);

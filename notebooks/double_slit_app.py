@@ -198,10 +198,11 @@ def _(DEFAULT_THETA_S, math, mo):
 
     - ##### The **phase plate** $\varphi$
 
-        In optics, a *phase plate* it is a thin slip of transparent
-        material inserted into one light path: the wave crosses it more
-        slowly and comes out with its phase shifted but its brightness
-        untouched (the trick behind Zernike's phase-contrast microscope).
+        In optics, a *phase plate* is a thin slip of transparent
+        material such as glass, inserted into one light path: the wave travels more
+        slowly than it would in free space and comes out with its phase shifted but its brightness
+        untouched or dimmed only very slightly (the idea behind Zernike's
+        [phase-contrast microscope](https://en.wikipedia.org/wiki/Phase-contrast_microscopy)).
         Our $\varphi$ is its quantish counterpart: a simple gate that rotates every traversing weight
         in the complex plane by its only parameter, an angle.
 

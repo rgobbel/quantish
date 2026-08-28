@@ -60,3 +60,24 @@
 .output-area {
     max-height: none !important;
 }
+
+/* Accordion labels with a small detail line ('## Heading' plus a
+   font-size:0.85em span). Marimo lays the trigger out as a flex row
+   and the markdown wrapper is display:contents, so the heading and
+   the detail become sibling flex items pushed to opposite ends. Keep
+   the detail beside the heading, left-aligned, with the chevron at
+   the far right. */
+[data-state]:has(> .markdown.contents > .paragraph) {
+    align-items: baseline !important;
+}
+[data-state] > .markdown.contents > h1,
+[data-state] > .markdown.contents > h2,
+[data-state] > .markdown.contents > h3,
+[data-state] > .markdown.contents > h4 {
+    margin-bottom: 0 !important;
+}
+[data-state] > .markdown.contents > .paragraph {
+    margin-top: 0 !important;
+    margin-left: 0.5em;
+    margin-right: auto;
+}

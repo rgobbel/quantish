@@ -107,19 +107,45 @@ async def initialization():
 
 @app.cell(hide_code=True)
 def _(mo):
-    mo.vstack([mo.md(r"""
+    _intro = mo.md(r"""
     # Quantish Network Builder
 
     With this tool you can build a complete quantish model, either from scratch or by modifying an existing model.
-    """), mo.accordion({'### Documentation': mo.vstack([mo.md(r"""
-    The icon palette beside the canvas lets you add components to the network. Hovering over each icon will reveal a descriptive tooltip.
-    Components can be added to a network by dragging from a palette icon, or simply clicking on
+    """)
+    def _sub(md):
+        # a sub-section's body sits one list level under its '- '
+        # heading (.qb-doc-body in css/quantish_app.css); the class
+        # rides inside the content, which is what marimo's accordion
+        # actually renders
+        return mo.Html('<div class="qb-doc-body">' + mo.md(md).text
+                       + '</div>')
+
+    _doc = mo.vstack([mo.md(r"""
+    Use the icon palette beside the canvas to add components to a network. Hovering over each icon will reveal a descriptive tooltip.
+    Components can be added to a network by dragging from a palette icon, or clicking on
     one of them. Basic circuit elements are above the divider, grouping elements are below.
-    """), mo.accordion({'- Types of components': mo.md(r"""
-    - Gates are quantish Fredkin gates, as described in *Good and Real*.
-    - Phase plates (φ) are simple gates that rotate every traversing weight by a set angle without affecting amplitude.
-    - Delay gates are simple passthroughs, mainly useful for achieving a pleasing layout, but having no effect on execution.
-    """), '- Creating and editing a network': mo.md(r"""
+    In most contexts, text can use [Markdown](https://docs.marimo.io/api/markdown/) formatting, including interpolated
+    [LaTeX](https://www.latex-project.org/).
+    """), mo.accordion({'- Types of components': _sub(r"""
+    - **gates** are quantish Fredkin gates, as described in *Good and Real*.
+    - **particles** are the entities that travel through a quantish network.
+      Each starts with a sign (+ or −) and a complex-valued weight, and enters the network through one gate input.
+    - **phase plates** (φ) are gates that rotate every traversing weight in the complex plane without
+      affecting amplitude, simulating an alteration to [optical path length](https://en.wikipedia.org/wiki/Optical_path_length). One example of a real-world phase plate device is an
+      [electro-optic modulator](https://en.wikipedia.org/wiki/Electro-optic_modulator). 
+    - **delay gates** are simple passthroughs, useful for manipulating diagram layout, but having no effect on execution.
+    """), '- Grouping': _sub(r"""
+    - A **run stage** is a set of gates that fire together, one step
+      of a run. By default execution proceeds serially in an order determined by network topology. Run stages can be
+      used for cases in which the automatically-determined order is ambiguous.
+    - A **diagram group** is purely visual, a labeled bracket in the
+      network diagram. Diagram groups don't affect how a circuit runs.
+    """), '- Actions': _sub(r"""
+    - To modify an existing model, pick one from the list of predefined models or upload a model's YAML declaration and press
+      **⬆ load into builder**. The selected model replaces the contents of canvas
+    - **✕ clear** starts over with an empty canvas, with confirmation. **Note**: _Undo_ will restore the superseded canvas.
+
+    """), '- Creating and editing a network': _sub(r"""
     - Drag from an **output port** on the right side of any gate or particle to a free
       **input port** on the left side of another element to wire them together.
     - Double-click in the middle of a Fredkin gate to set its measurement angle, or for a phase
@@ -141,39 +167,32 @@ def _(mo):
         - A group name that exactly matches a stage name collapses the two borders into one
     - Click a component or wire and press **delete
       selected** or the Delete key to remove it
-    - **↩ and ↪** (or ⌘Z and ⇧⌘Z) invoke Undo and Redo
+    - Labels can be attached to wires. Double-click a wire or a port to name that wire
+      segment. Double-clicking on an unconnected port labels a null input or output
+      stub, drawn as a short labeled wire. Labels can use a subset of LaTeX syntax for sub- and superscripts:
+      - `$w_{1a}` $\rightarrow$ $w_{1a}$
+      - `$things^{that}_{group}` $\rightarrow$ $things^{that}_{group}$
+
+    - **↩** and **↪** (or ⌘Z and ⇧⌘Z) invoke _Undo_ and _Redo_
     - Scroll (or pinch) zooms, centered on the cursor
     - Dragging empty space pans, on both the editing canvas and the results
       diagram. Also on both, double-click resets the diagram to its default magnification and position.
-    - Shift-click (or ⌘-click) toggles an object in the selection,
-      one object type at a time
+    - Shift-click (or ⌘-click) toggles an object's selected state.
+      Only one object type can be selected at a time
     - Shift-drag a box for a marquee selection. The palette's stage
-      icon shows their execution stage name (drawn as a teal box) and the
-      group icon their display group name (a dashed box; an empty name
+      icon shows their run stage name (drawn as a teal box) and the
+      group icon their diagram group name (a dashed box; an empty name
       clears either)
-    """), '- Grouping': mo.md(r"""
-    - Every gate must be in an execution stage
-    - Ungrouped gates get automatically generated stages derived from the wiring, and a stage may contain internal wiring. Gates fire in dependency order.
-    - Run stages *are* the diagram groups until you create a group
-      that isn't exactly the same as an existing stage. That promotes every named stage to
-      a diagram group of its own, which can then be edited.
-    """), '- Optional fields': mo.md(r"""
-    - The model's **title**, **caption**, **calculation mode**, and
-      **variables** are all editable above the canvas and travel into
-      the YAML. Angle and weight specs may reference variables by
-      name ('Q1'), and loaded models will keep those references verbatim.
-    """), '- Actions': mo.md(r"""
-    - To modify an existing model, pick one from the list of predefined models or upload one and press
-      **⬆ load into builder**. The selected model replaces the contents of canvas
-    - **✕ clear** starts over with an empty canvas, with confirmation. **Note**: Undo will bring the superseded canvas back.
-
-    The **title** and the **file
-      name** of the saved file are separate fields.
-
-    Wire labels load, save, and edit too: double-click a wire or a port to name that wire
-    segment. Double-clicking on an unconnected port labels a null input or output
-    stub, drawn as a short labeled wire.
-    """)}, multiple=True)], align='stretch')})], align='stretch')
+    """), '- Optional fields': _sub(r"""
+    - The model's **title**, **calculation mode**, and **angle unit**
+      are editable above the canvas. 
+    - The model's **caption**, **variables**, and free-text **notes** can be edited
+      in fields that will appear when you click on the **Caption, notes, and variables**
+      heading below the canvas. Angle and weight specs may reference variables by name (e.g. 'Q1').
+    """)}, multiple=True)], align='stretch')
+    mo.vstack([_intro, mo.accordion({
+        '### Documentation\n\n<span style="font-size:0.85em">'
+        'under the fold</span>': _doc})], align='stretch')
     return
 
 
@@ -424,19 +443,19 @@ def _(get_loaded, mo):
         options=['-', 'Float', 'Symbolic'],
         value={None: '-', False: 'Float',
                True: 'Symbolic'}[_loaded.get('symbolic')],
-        label='calculation mode')
+        label='calculation mode (default: Float)')
     # tri-state like the mode: '-' omits angle_unit from the YAML
     # (plain-number angles then read as radians)
     unit_pick = mo.ui.dropdown(
         options=['-', 'radians', 'degrees'],
         value=_loaded.get('angle_unit') or '-',
-        label='angle unit')
+        label='angle unit (default: radians)')
     caption_input = mo.ui.text_area(
         value=_loaded.get('caption') or '', rows=2, full_width=True,
-        label='caption')
+        label='**caption** (displayed on network diagrams)')
     notes_input = mo.ui.text_area(
         value=_loaded.get('model_notes') or '', rows=3, full_width=True,
-        label='notes')
+        label='**notes** (free text)')
 
     def _vars_text(vs):
         return '\n'.join(
@@ -455,8 +474,9 @@ def _(get_loaded, mo):
         _report = mo.md(_msg)
     mo.vstack(
         ([_report] if _report is not None else [])
-        + [mo.hstack([model_title, file_name, mode_pick, unit_pick],
-                     justify='start', gap=0.75)],
+        + [mo.vstack([file_name,
+                      mo.hstack([model_title, mode_pick, unit_pick],
+                                justify='start', gap=0.75)])],
         align='stretch')
     return (
         caption_input,
@@ -586,12 +606,12 @@ def _(
 @app.cell(hide_code=True)
 def _(caption_input, mo, notes_input, variables_editor):
     # all entirely optional, so they live below the canvas
-    mo.accordion({'#### Caption, notes, and variables (optional)':
+    mo.accordion({'#### Caption, notes, and variables':
                   mo.vstack([
         caption_input,
         notes_input,
         mo.md('<span style="font-size: 0.9em">**variables** '
-              '(name: expression, YAML)</span>'),
+              'name: expression (YAML syntax)</span>'),
         variables_editor], align='stretch')})
     return
 

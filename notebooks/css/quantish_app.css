@@ -67,3 +67,39 @@ label:has(input:checked) {
     padding-top: 3px !important;
     padding-bottom: 3px !important;
 }
+
+/* Accordion labels with a small detail line ('## Heading' plus a
+   font-size:0.85em span). Marimo lays the trigger out as a flex row
+   and the markdown wrapper is display:contents, so the heading and
+   the detail become sibling flex items pushed to opposite ends. Keep
+   the detail beside the heading, left-aligned, with the chevron at
+   the far right. */
+[data-state]:has(> .markdown.contents > .paragraph) {
+    align-items: baseline !important;
+}
+[data-state] > .markdown.contents > h1,
+[data-state] > .markdown.contents > h2,
+[data-state] > .markdown.contents > h3,
+[data-state] > .markdown.contents > h4 {
+    margin-bottom: 0 !important;
+}
+[data-state] > .markdown.contents > .paragraph {
+    margin-top: 0 !important;
+    margin-left: 0.5em;
+    margin-right: auto;
+}
+
+/* The builder's Documentation section: each sub-heading is a one-item
+   list ('- Grouping'), and its body sits one list level deeper. The
+   class rides inside the accordion content (marimo renders a copy of
+   the content through a portal, so ancestor selectors never reach it). */
+.qb-doc-body {
+    padding-left: 1.625em;
+}
+
+/* A fourth-level accordion label (the builder's 'Caption, notes, and
+   variables') sits close under the canvas instead of a heading's
+   worth of air away. */
+[data-state] > .markdown.contents > h4 {
+    margin-top: 0.4em !important;
+}
