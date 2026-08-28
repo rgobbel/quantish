@@ -1,7 +1,8 @@
 """tests/fixtures/smoke.yaml is the display stress-test fixture: a unicode gate
 name, a phase plate, a delay gate sharing its stage with a full gate,
-mixed degree-marked angles. It must run, validate, and lay out without
-the regressions it was built to catch."""
+mixed degree-marked angles, a display_string, and a stage named
+exactly after its one gate. It must run, validate, and lay out
+without the regressions it was built to catch."""
 from pathlib import Path
 
 import yaml
@@ -32,12 +33,33 @@ def test_smoke_validates_and_runs():
     assert abs(total - 1) < 1e-9
 
 
+def test_smoke_phase_plate():
+    # φ1 comes from the phase_plates section as a PhasePlate, and the
+    # weight that traversed it carries the 30° rotation
+    sim = _sim()
+    plate = sim.phase_plates['φ1']
+    assert plate.report_type() == 'PhasePlate'
+    assert abs(float(plate.phase.degrees) - 30) < 1e-9
+
+
 def test_smoke_layout():
     g = diagram_geometry(_sim(), has_run=True)
     # a unicode gate name keeps its subscript (φ1 → φ₁)
     texts = [ln for tx in g['texts'] for ln in tx['lines']]
     assert any('φ₁' in ln for ln in texts)
     assert not any('φ1' in ln for ln in texts)
+    # g1's display_string replaces its raw name, with script runs
+    assert any('gₛₚₗᵢₜ' in ln for ln in texts)
+    assert any(tx.get('runs') and ('split', -1) in tx['runs'][0]
+               for tx in g['texts'])
+    # the display_strings dict covers delay gates too (the per-entry
+    # field never could: delay_gates is a plain list)
+    assert any('delay₁' in ln for ln in texts)
+    # the stage named exactly after its single gate collapses: no
+    # stage label 'g3' is drawn (the gate header itself remains)
+    stage_labels = [ln for tx in g['texts'] for ln in tx['lines']
+                    if tx['color'] == '#888888']
+    assert 'g₃' not in stage_labels and 'g3' not in stage_labels
     # the delay box tucks in just below its column's gates instead of
     # a KY-stretched row away (the chasm the fixture caught). Both d₁
     # and the φ₁ plate use DELAY_FILL; d₁ is the one whose column also

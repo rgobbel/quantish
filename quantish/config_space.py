@@ -256,11 +256,12 @@ class ConfigSpaceRunner:
             # finished, or still en route to a later stage: carried through unchanged
             return [(coord, None)]
         gate = stage_gates[endpoint.gate]
-        if gate.report_type() == 'DelayGate' or endpoint.port in (None, 'control'):
+        if gate.report_type() in ('DelayGate', 'PhasePlate') \
+                or endpoint.port in (None, 'control'):
             # control wires (and delay gates) pass the particle straight
             # through — untouched, unless the gate carries a phase, which
-            # every traversing particle picks up (the pure-phase-plate
-            # use; see FredkinGate)
+            # every traversing particle picks up (a PhasePlate, or a
+            # full gate's optional phase; see gate.py)
             origin = GatePort(gate.name, endpoint.port)
             dest = self.link_dest(origin)
             new_coord = PCoordinate(pname, coord.sign, Position(origin=origin, endpoint=dest))

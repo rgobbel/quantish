@@ -4,14 +4,14 @@ gates — every screen pixel is one exact engine run.
 As described in *Good and Real* (p. 200), the two slits are the two
 switch-wire inputs of a recombining gate. The apparatus, per pixel:
 
-    p1 -> g1 (split, theta_s) -> upper output -> S1 (left slit)  -> g2.upper
-                              -> lower output -> S2 (right slit) -> φ -> g2.lower
-    g2 (remerge, theta_s) -> upper output -> g5 (sign sorter, angle 0)
-    g5.upper -> S (this pixel's detector)      g5.lower -> D (dark channel)
+    p1 -> g_split (split, theta_s) -> upper output -> S1 (left slit)  -> g_merge.upper
+                              -> lower output -> S2 (right slit) -> φ -> g_merge.lower
+    g_merge (remerge, theta_s) -> upper output -> g_sort (sign sorter, angle 0)
+    g_sort.upper -> S (this pixel's detector)      g_sort.lower -> D (dark channel)
 
-φ is a pure phase plate: an angle-0 gate with a `phase`, entered through
-its control wire, which rotates the traversing weight by e^(i*phi) and
-changes nothing else. It stands for the path-length difference from the
+φ is a PhasePlate (the model's phase_plates section): a pass-through
+entered through its control wire that rotates the traversing weight by
+e^(i*phi) and changes nothing else. It stands for the path-length difference from the
 slits to THIS pixel: phi(x) = fringes*pi*x, zero at the screen center.
 The slit boxes S1/S2, the blocks B1/B2, and the detectors S/D are delay
 gates: a particle is routed in through their single control input and
@@ -19,13 +19,13 @@ passes through unchanged. The slits are idealized as infinitely narrow
 (no diffraction envelope), so the pixel intensity is just the probability
 that p1 ends at S.
 
-Why the sorter g5 is there: at the matched remerge g2, the relative phase
-phi does NOT move p1 between g2's output wires — it moves it between the
+Why the sorter g_sort is there: at the matched remerge g_merge, the relative phase
+phi does NOT move p1 between g_merge's output wires — it moves it between the
 SIGN components of the upper wire. (The exiting amplitudes are
 (1+e^(i*phi))/2 on the plus component and i(1-e^(i*phi))/2 on the minus
 component: position-space probability stays flat while the sign
 distribution oscillates.) But a minus-sign particle entering a switch
-wire exits the OTHER wire, so the angle-0 gate g5 converts sign back to
+wire exits the OTHER wire, so the angle-0 gate g_sort converts sign back to
 position: plus-sign arrivals exit to S, minus-sign to D. A plain
 position detector at S then sees
 
@@ -40,86 +40,117 @@ The three regimes need no case analysis:
   flat 1/4, independent of phi: a pure phase never changes a magnitude,
   so one path alone cannot show fringes.
 - 'observed': a which-way recorder particle (fig 4.15's lesson). The wire
-  to the right slit passes through gate g4's control input on its way to
+  to the right slit passes through gate g_obs's control input on its way to
   S2; a control input never changes the particle traversing it, but its
-  occupancy decides whether g4 swaps its switch wires, so the recorder
+  occupancy decides whether g_obs swaps its switch wires, so the recorder
   particle p2's exit wire records which slit p1 used. The two paths'
   configuration-space points then differ in p2's position, so they can
   no longer interfere: P(S) = 1/4 + 1/4 = the classical sum, flat, with
   nothing blocking either path.
 """
+import copy
+import functools
 import math
 import random
+from pathlib import Path
 
+import yaml
 from addict import Addict
 
 DEFAULT_THETA_S = math.radians(45.0)  # split angle (equal slit amplitudes)
 
 MODES = ('both', 'slit1', 'slit2', 'observed')
 
+_BASE_CACHE = None
+
+
+def _base_config() -> dict:
+    """The apparatus network, from models/extras/double_slit.yaml (the
+    repo copy, or the frozen library under WASM) — one parse, deep-
+    copied per use so per-pixel overrides never leak."""
+    global _BASE_CACHE
+    if _BASE_CACHE is None:
+        for cand in (Path('/wasm-data/models/extras/double_slit.yaml'),
+                     Path(__file__).resolve().parent.parent / 'models'
+                     / 'extras' / 'double_slit.yaml'):
+            if cand.is_file():
+                _BASE_CACHE = yaml.safe_load(cand.read_text())
+                break
+        else:
+            raise FileNotFoundError(
+                'models/extras/double_slit.yaml not found')
+    return copy.deepcopy(_BASE_CACHE)
+
 
 def slit_config(mode: str = 'both', theta_s: float = DEFAULT_THETA_S,
-                phi: float = 0.0) -> Addict:
+                phi: float = 0.0, theta_merge: float | None = None,
+                theta_sort: float = 0.0) -> Addict:
     """The full apparatus for one screen pixel, whose path-length
-    difference from the slits is the phase phi. Each switch output of g1
+    difference from the slits is the phase phi. Each switch output of g_split
     reaches the slit plane: the upper output at the left slit (box S1),
     the lower at the right slit (S2), and a blocked slit n has the block
     Bn in its place (the book's "diversion away", fig 4.14). The right
     slit's path continues through the phase plate φ to the remerge gate
-    g2, whose upper output the sorter g5 splits into the detectors S
+    g_merge, whose upper output the sorter g_sort splits into the detectors S
     (plus sign) and D (minus sign). 'observed' routes the right slit's
-    wire through the control input of the angle-0 gate g4 on its way to
-    S2, with the recorder particle p2 on g4's switch wires."""
+    wire through the control input of the angle-0 gate g_obs on its way to
+    S2, with the recorder particle p2 on g_obs's switch wires."""
     if mode not in MODES:
         raise ValueError(f'unknown mode {mode!r}; expected one of {MODES}')
-    gates = {'g1': {'angle': theta_s},
-             'g2': {'angle': theta_s},
-             'g5': {'angle': 0}}
-    particles = {'p1': {'sign': 1, 'weight': 1}}
-    links = {'p1': 'g1.upper',
-             'g1.upper': 'S1', 'S1': 'g2.upper',
-             'g1.lower': 'S2', 'S2': 'φ.control', 'φ.control': 'g2.lower',
-             'g2.upper': 'g5.upper', 'g5.upper': 'S', 'g5.lower': 'D'}
-    slits = ['S1', 'S2']
-    stages = {'split': ['g1'], 'slits': slits, 'phase': ['φ'],
-              'merge': ['g2'], 'sort': ['g5'], 'detect': ['S', 'D']}
-    if mode != 'slit1':          # the right slit is open: phase plate in play
-        gates['φ'] = {'angle': 0, 'phase': phi}
+    cfg = _base_config()
+    cfg['title'] = f'double slit ({mode})'
+    cfg['loglevel'] = 'error'
+    cfg['variables'].update(
+        theta_split=theta_s,
+        theta_merge=theta_s if theta_merge is None else theta_merge,
+        theta_sort=theta_sort,
+        phi=phi)
+    gates, links = cfg['gates'], cfg['links']
+    stages = cfg['run_stages']
+    slits = stages['slits']
     if mode == 'slit1':
         slits[:] = ['S1', 'B2']
-        links['g1.lower'] = 'B2'
-        del links['S2'], links['φ.control']
+        links['g_split.lower'] = 'B2'
+        del links['S2'], links['φ.control'], cfg['phase_plates']['φ']
         del stages['phase']
     elif mode == 'slit2':
         slits[:] = ['B1', 'S2']
-        links['g1.upper'] = 'B1'
+        links['g_split.upper'] = 'B1'
         del links['S1']
     elif mode == 'observed':
-        gates['g4'] = {'angle': 0}
-        particles['p2'] = {'sign': 1, 'weight': 1}
-        links.update({'g1.lower': 'g4.control', 'g4.control': 'S2',
-                      'p2': 'g4.upper'})
-        stages = {'split': ['g1'], 'observe': ['g4'], **stages}
-    delay_gates = slits + ['S', 'D']
-    return Addict({'title': f'double slit ({mode})', 'symbolic': False,
-                   'loglevel': 'error', 'variables': {},
-                   'run_stages': stages, 'delay_gates': delay_gates,
-                   'particles': particles, 'gates': gates, 'links': links})
+        gates['g_obs'] = {'angle': 0}
+        cfg.setdefault('display_strings', {})['g_obs'] = '$g_{obs}$'
+        cfg['particles']['p2'] = {'sign': 1, 'weight': 1}
+        links.update({'g_split.lower': 'g_obs.control',
+                      'g_obs.control': 'S2', 'p2': 'g_obs.upper'})
+        cfg['run_stages'] = {'split': stages.pop('split'),
+                             'observe': ['g_obs'], **stages}
+    cfg['delay_gates'] = slits + ['S', 'D']
+    return Addict(cfg)
 
 
 def slit_sim(mode: str = 'both', theta_s: float = DEFAULT_THETA_S,
-             phi: float = 0.0):
+             phi: float = 0.0, theta_merge: float | None = None,
+             theta_sort: float = 0.0):
     """A loaded (unrun) Simulation of the mode's apparatus — e.g. for
     rendering its circuit diagram."""
     from quantish.simulation import Simulation
-    return Simulation(slit_config(mode, theta_s, phi))
+    return Simulation(slit_config(mode, theta_s, phi, theta_merge,
+                                  theta_sort))
 
 
+@functools.lru_cache(maxsize=1 << 17)
 def pixel_probability(phi: float, mode: str = 'both',
-                      theta_s: float = DEFAULT_THETA_S) -> float:
+                      theta_s: float = DEFAULT_THETA_S,
+                      theta_merge: float | None = None,
+                      theta_sort: float = 0.0) -> float:
     """One exact engine run: the probability that p1 ends at this pixel's
-    detector S, given the pixel's path-difference phase phi."""
-    sim = slit_sim(mode, theta_s, phi)
+    detector S, given the pixel's path-difference phase phi. Memoized —
+    the engine run is the expensive thing, and slider moves revisit the
+    same (phi, angles) points constantly (returning a slider to 45°
+    re-renders every curve from cache instead of rerunning the engine
+    4 × n_points times)."""
+    sim = slit_sim(mode, theta_s, phi, theta_merge, theta_sort)
     sim.run()
     return sum(abs(complex(point.weight.v)) ** 2
                for point in sim.result_space.index.values()
@@ -133,13 +164,16 @@ def screen_positions(n_points: int) -> list[float]:
 
 
 def screen_curve(n_points: int, fringes: float, mode: str = 'both',
-                 theta_s: float = DEFAULT_THETA_S) -> tuple[list[float], list[float]]:
+                 theta_s: float = DEFAULT_THETA_S,
+                 theta_merge: float | None = None,
+                 theta_sort: float = 0.0) -> tuple[list[float], list[float]]:
     """(positions, intensities) across the screen — one engine run per
     pixel. The right slit's path difference sweeps `fringes` pattern
     periods over the screen; a blocked slit's wire ends at its block
     inside the circuit and contributes nothing."""
     xs = screen_positions(n_points)
-    return xs, [pixel_probability(fringes * math.pi * x, mode, theta_s)
+    return xs, [pixel_probability(fringes * math.pi * x, mode, theta_s,
+                                  theta_merge, theta_sort)
                 for x in xs]
 
 

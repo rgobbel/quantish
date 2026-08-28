@@ -43,6 +43,18 @@ properties:
   delay_gates:
     type: array
     items: {type: string}
+  # a phase plate maps its name straight to its phase spec; plates are
+  # control-only pass-throughs that rotate traversing weights by e^{iφ}
+  phase_plates:
+    type: object
+    additionalProperties: {$ref: '#/$defs/spec'}
+  # object name → the string displays draw in place of that name
+  # (math like '$g_{split}$' renders with real sub/superscripts);
+  # covers gates, delay gates, phase plates, and particles alike —
+  # the name itself stays the identifier everywhere
+  display_strings:
+    type: object
+    additionalProperties: {type: string}
   particles:
     type: object
     minProperties: 1

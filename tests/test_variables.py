@@ -70,6 +70,17 @@ class TestVariables(unittest.TestCase):
         self.assertAlmostEqual(float(sim.gates['g1'].phase),
                                3.14159265 / 4, places=6)
 
+    def test_phase_plate_spec_resolves_through_variables(self):
+        cfg = make_config(
+            run_stages={'only': ['g1'], 'plate': ['pp']})
+        cfg.phase_plates = {'pp': 'qx + qy'}
+        cfg.links['g1.upper'] = 'pp'
+        sim = Simulation(cfg)
+        plate = sim.phase_plates['pp']
+        self.assertEqual(plate.report_type(), 'PhasePlate')
+        self.assertAlmostEqual(float(plate.phase),
+                               3.14159265 / 4, places=6)
+
     def test_caption_is_optional_and_normalized(self):
         sim = Simulation(make_config())
         self.assertEqual(sim.caption, '')

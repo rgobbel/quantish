@@ -13,7 +13,7 @@ Interactions:
                  diagram group); tooltips name them
   toolbar        delete, clear the canvas (confirmed, and undo-able),
                  undo / redo
-  drag body      move a gate or particle (a shift-selection moves
+  drag object    move a gate or particle (a shift-selection moves
                  together); drag on empty canvas pans the view, and
                  the wheel (or trackpad pinch) zooms around the cursor
   drag out-port  rubber-band a wire; drop on a free in-port to connect
@@ -24,7 +24,9 @@ Interactions:
                  Shift-drag on empty canvas sweeps up gates (or, when
                  the box holds no gates, particles)
   double-click   on a name: rename (a particle's prompt takes the sign
-                 too; a stage or diagram-group box label renames the
+                 too, and both prompts accept an optional display
+                 string after the name — 'g_split $g_{split}$'; a
+                 stage or diagram-group box label renames the
                  whole group) - gate body: edit its angle - phase
                  plate body: its phase - particle body: flip its sign -
                  a wire or port: edit the wire label (an unconnected
@@ -273,10 +275,18 @@ function render({ model, el }) {
           fill="#e6f4f1" stroke="#2f9e8f"/>
     <rect x="22" y="14" width="8" height="12" rx="2"
           fill="#e6f4f1" stroke="#2f9e8f"/>`;
+  // a stage's gates fire simultaneously — one column, so its minis
+  // stack vertically; a diagram group is just a visual bracket and
+  // keeps the side-by-side minis
+  const _minisStacked = `
+    <rect x="14" y="9" width="12" height="10" rx="2"
+          fill="#e6f4f1" stroke="#2f9e8f"/>
+    <rect x="14" y="23" width="12" height="10" rx="2"
+          fill="#e6f4f1" stroke="#2f9e8f"/>`;
   const stageBtn = mkIcon(
     'group the selected gates into a named run stage', 'stage', `
-    <rect x="5" y="8" width="30" height="24" rx="6"
-          fill="none" stroke="#2f9e8f" stroke-width="1.8"/>${_minis}`);
+    <rect x="8" y="4" width="24" height="34" rx="6"
+          fill="none" stroke="#2f9e8f" stroke-width="1.8"/>${_minisStacked}`);
   const dgroupBtn = mkIcon(
     'group the selected gates into a named diagram group', 'group', `
     <rect x="5" y="8" width="30" height="24" rx="6" fill="none"
@@ -297,8 +307,8 @@ function render({ model, el }) {
   const redoBtn = mkBtn('↪', 'redo (⇧⌘Z)');
   const hint = document.createElement('div');
   hint.className = 'qb-hint';
-  hint.textContent = 'drag output → input to wire · double-click a ' +
-    'body to edit, a name to rename · shift-click or shift-drag to ' +
+  hint.textContent = 'drag output → input to wire · double-click an ' +
+    'object to edit, a name to rename · shift-click or shift-drag to ' +
     'select · scroll/pinch zooms, drag on empty space pans';
   bar.append(delBtn, clearBtn, undoBtn, redoBtn, hint);
   const svg = h('svg', { class: 'qb-svg', height: 560 });
@@ -685,13 +695,13 @@ function render({ model, el }) {
           'text-anchor': 'middle',
           'font-size': 14, 'font-weight': 600, fill: '#000',
           'data-name': name,
-        }, name));
+        }, gd.display_string || name));
       } else if (plate) {
         grp.appendChild(hSub({
           x: gd.x + w0 / 2, y: gd.y + h0 / 2 - 3, 'text-anchor': 'middle',
           'font-size': 15, 'font-weight': 600, fill: '#000',
           'data-name': name,
-        }, name));
+        }, gd.display_string || name));
         grp.appendChild(hSub({
           x: gd.x + w0 / 2, y: gd.y + h0 - 8, 'text-anchor': 'middle',
           'font-size': 11.5, fill: '#000',
@@ -701,7 +711,7 @@ function render({ model, el }) {
           x: gd.x + w0 / 2, y: gd.y + 18, 'text-anchor': 'middle',
           'font-size': 15, 'font-weight': 600, fill: '#000',
           'data-name': name,
-        }, name));
+        }, gd.display_string || name));
         grp.appendChild(hSub({
           x: gd.x + w0 / 2, y: gd.y + 37, 'text-anchor': 'middle',
           'font-size': 11.5, fill: '#000',
@@ -791,7 +801,7 @@ function render({ model, el }) {
         x: p.x + pw / 2, y: p.y + PR + 4, 'text-anchor': 'middle',
         'font-size': 14, 'font-weight': 600, fill: '#000',
         'data-name': name,
-      }, (p.sign < 0 ? '−' : '+') + name));
+      }, (p.sign < 0 ? '−' : '+') + (p.display_string || name)));
       grp.appendChild(h('circle', {
         cx: p.x + pw, cy: p.y + PR, r: 6,
         fill: srcTaken.has(name) ? C.portStroke : C.portFill,
@@ -1183,32 +1193,52 @@ function render({ model, el }) {
     return true;
   }
 
+  // A rename prompt takes "name" or "name display-string": names can
+  // never contain whitespace, so everything after the first space is
+  // the object's display string ('g_split $g_{split}$'); removing the
+  // tail goes back to displaying the name itself.
+  function splitDisplay(s) {
+    const sp = s.search(/\s/);
+    return sp < 0 ? [s, '']
+      : [s.slice(0, sp), s.slice(sp + 1).trim()];
+  }
+
   function renameGate(copy, name) {
-    const raw = window.prompt(`new name for ${name}`, name);
+    const gd = copy.gates[name];
+    const cur = gd.display_string
+      ? `${name} ${gd.display_string}` : name;
+    const raw = window.prompt(
+      `new name for ${name} — append a display string after a space `
+      + `('g_split $g_{split}$'); remove it to display the name`, cur);
     if (raw === null) return;
-    const nn = raw.trim();
-    if (!nn || nn === name || !checkName(copy, nn, name)) return;
-    const gates = {};
-    for (const [k, v] of Object.entries(copy.gates))
-      gates[k === name ? nn : k] = v;
-    copy.gates = gates;
-    copy.links = copy.links.map(([a, b]) => [
-      a === name ? nn
-        : a.startsWith(name + '.') ? nn + a.slice(name.length) : a,
-      b === name ? nn
-        : b.startsWith(name + '.') ? nn + b.slice(name.length) : b,
-    ]);
-    if (copy.wire_labels) {
-      const renamed = {};
-      for (const [key, lab] of Object.entries(copy.wire_labels)) {
-        const gt = key.startsWith('>');
-        const end = gt ? key.slice(1) : key;
-        const nend = end === name ? nn
-          : end.startsWith(name + '.') ? nn + end.slice(name.length)
-          : end;
-        renamed[(gt ? '>' : '') + nend] = lab;
+    const [nn, disp] = splitDisplay(raw.trim());
+    if (!nn || !checkName(copy, nn, name)) return;
+    if (nn === name && disp === (gd.display_string || '')) return;
+    if (disp) gd.display_string = disp;
+    else delete gd.display_string;
+    if (nn !== name) {
+      const gates = {};
+      for (const [k, v] of Object.entries(copy.gates))
+        gates[k === name ? nn : k] = v;
+      copy.gates = gates;
+      copy.links = copy.links.map(([a, b]) => [
+        a === name ? nn
+          : a.startsWith(name + '.') ? nn + a.slice(name.length) : a,
+        b === name ? nn
+          : b.startsWith(name + '.') ? nn + b.slice(name.length) : b,
+      ]);
+      if (copy.wire_labels) {
+        const renamed = {};
+        for (const [key, lab] of Object.entries(copy.wire_labels)) {
+          const gt = key.startsWith('>');
+          const end = gt ? key.slice(1) : key;
+          const nend = end === name ? nn
+            : end.startsWith(name + '.') ? nn + end.slice(name.length)
+            : end;
+          renamed[(gt ? '>' : '') + nend] = lab;
+        }
+        copy.wire_labels = renamed;
       }
-      copy.wire_labels = renamed;
     }
     selected = null;
     clearMulti();
@@ -1217,9 +1247,12 @@ function render({ model, el }) {
 
   function renameParticle(copy, name) {
     const p = copy.particles[name];
+    const cur = (p.sign < 0 ? '-' : '+') + name
+      + (p.display_string ? ' ' + p.display_string : '');
     const raw = window.prompt(
-      'particle name, sign first (+name or -name)',
-      (p.sign < 0 ? '-' : '+') + name);
+      'particle name, sign first (+name or -name) — append a display '
+      + "string after a space ('+p1 $p_1$'); remove it to display "
+      + 'the name', cur);
     if (raw === null) return;
     let s = raw.trim();
     let sign = p.sign;
@@ -1228,20 +1261,23 @@ function render({ model, el }) {
       sign = -1;
       s = s.slice(1).trim();
     }
-    if (!s || !checkName(copy, s, name)) return;
-    if (s !== name) {
+    const [nn, disp] = splitDisplay(s);
+    if (!nn || !checkName(copy, nn, name)) return;
+    if (disp) p.display_string = disp;
+    else delete p.display_string;
+    if (nn !== name) {
       const parts = {};
       for (const [k, v] of Object.entries(copy.particles))
-        parts[k === name ? s : k] = v;
+        parts[k === name ? nn : k] = v;
       copy.particles = parts;
-      copy.links = copy.links.map(([a, b]) => [a === name ? s : a, b]);
+      copy.links = copy.links.map(([a, b]) => [a === name ? nn : a, b]);
       if (copy.wire_labels && copy.wire_labels[name] !== undefined) {
-        copy.wire_labels[s] = copy.wire_labels[name];
+        copy.wire_labels[nn] = copy.wire_labels[name];
         delete copy.wire_labels[name];
       }
       selected = null;
     }
-    copy.particles[s].sign = sign;
+    copy.particles[nn].sign = sign;
     commit(copy);
   }
 
@@ -2350,38 +2386,112 @@ function render({ model, el }) {
   root.className = 'qp-root';
   el.appendChild(root);
 
-  function draw() {
-    const d = model.get('data') || {};
+  // Persistent accumulation: the raster lives here and each volley's
+  // new hits are ADDED into it — only pixels that were actually hit
+  // get touched, and the DOM holds a single <image> node however many
+  // hits pile up. `data` carries the full hit history only as a
+  // rebuild baseline (remounts, curve changes, mode toggles); the
+  // per-volley hot path is the `hits_chunk` delta.
+  let allHits = [];
+  let counts = new Map();
+  let cv = null, ctx = null, img = null, titleNode = null;
+  let cfg = {};
+  let lastSeq = (model.get('hits_chunk') || {}).seq ?? -1;
+
+  const SCREEN_H = 190, LINE_H = 100, GAP = 4;
+  const M = { l: 46, r: 10, t: 26, b: 40 };
+  const TAU = 4;     // film response: hits on a pixel to ~63% white
+
+  function dims() {
+    // two pixel columns per engine sample: the grain follows the
+    // screen-resolution slider
+    const pw = cfg.width || 380;
+    const nx = Math.max(1, 2 * ((cfg.curve?.x?.length || 2) - 1));
+    const ny = Math.max(1, Math.round(SCREEN_H * nx / pw));
+    return { pw, nx, ny };
+  }
+
+  function paint(pts) {
+    if (!ctx) return;
+    const { nx, ny } = dims();
+    for (const [x, y] of pts) {
+      const i = Math.max(0, Math.min(nx - 1,
+        Math.floor((x + 1) / 2 * nx)));
+      const j = Math.max(0, Math.min(ny - 1, Math.floor(y * ny)));
+      const k = j * nx + i;
+      const n = (counts.get(k) || 0) + 1;
+      counts.set(k, n);
+      const c = Math.round(255 * (1 - Math.exp(-n / TAU)));
+      ctx.fillStyle = `rgb(${c},${c},${c})`;
+      ctx.fillRect(i, ny - 1 - j, 1, 1);
+    }
+  }
+
+  function refresh(total) {
+    if (img && cv) img.setAttribute('href', cv.toDataURL());
+    if (titleNode)
+      titleNode.textContent =
+        `${cfg.title || ''} (${total ?? allHits.length} hits)`;
+  }
+
+  function build() {
+    cfg = model.get('data') || {};
     root.innerHTML = '';
-    if (!d.curve) return;
-    const M = { l: 46, r: 10, t: 26, b: 40 };
-    const pw = (d.width || 380);
-    const SCREEN_H = 190, LINE_H = 100, GAP = 4;
+    counts = new Map();
+    cv = ctx = img = titleNode = null;
+    if (!cfg.curve) return;
+    allHits = (cfg.hits || []).map((p) => [p[0], p[1]]);
+    const { pw, nx, ny } = dims();
     const W = M.l + pw + M.r;
     const H = M.t + SCREEN_H + GAP + LINE_H + M.b;
     const svg = h('svg', { viewBox: `0 0 ${W} ${H}`,
                            width: W, height: H });
     root.appendChild(svg);
-    svg.appendChild(h('text', { x: M.l + pw / 2, y: 16,
+    titleNode = h('text', { x: M.l + pw / 2, y: 16,
       'text-anchor': 'middle', 'font-size': 12, 'font-weight': 'bold',
-      fill: '#000', 'font-family': 'sans-serif' }, d.title || ''));
-    // the screen: a dark plate that lights up where particles land
+      fill: '#000', 'font-family': 'sans-serif' }, '');
+    svg.appendChild(titleNode);
+    // the screen: a dark plate the raster canvas sits on
     svg.appendChild(h('rect', { x: M.l, y: M.t, width: pw,
       height: SCREEN_H, fill: '#101018', stroke: '#444' }));
-    const hx = (x) => M.l + (x + 1) / 2 * pw;
-    const hy = (y) => M.t + SCREEN_H - y * SCREEN_H;
-    for (const [x, y] of d.hits || [])
-      svg.appendChild(h('circle', { cx: hx(x), cy: hy(y), r: 1.4,
-        fill: '#f5f0c0', opacity: 0.65 }));
+    cv = document.createElement('canvas');
+    cv.width = nx;
+    cv.height = ny;
+    ctx = cv.getContext('2d');
+    img = h('image', { x: M.l, y: M.t, width: pw, height: SCREEN_H,
+      preserveAspectRatio: 'none',
+      style: 'image-rendering: pixelated' });
+    svg.appendChild(img);
     // the exact intensity curve, flush under the screen
     const oy = M.t + SCREEN_H + GAP;
     const { sx, sy } = axes(svg, M, pw, LINE_H, oy, [-1, 1], [0, 1.05],
                             'screen position', 'intensity');
-    svg.appendChild(polyline(d.curve.x, d.curve.y, sx, sy, '#4477cc'));
+    svg.appendChild(polyline(cfg.curve.x, cfg.curve.y, sx, sy,
+                             '#4477cc'));
+    paint(allHits);
+    refresh();
   }
 
-  model.on('change:data', draw);
-  draw();
+  function chunk() {
+    const c = model.get('hits_chunk') || {};
+    if (c.seq === undefined || c.seq === lastSeq) return;
+    lastSeq = c.seq;
+    if (c.reset) {
+      allHits = [];
+      counts = new Map();
+      if (ctx && cv) ctx.clearRect(0, 0, cv.width, cv.height);
+      refresh(0);
+      return;
+    }
+    const pts = (c.pts || []).map((p) => [p[0], p[1]]);
+    allHits.push(...pts);
+    paint(pts);
+    refresh(c.total);
+  }
+
+  model.on('change:data', build);
+  model.on('change:hits_chunk', chunk);
+  build();
 }
 
 export default { render };
@@ -2439,11 +2549,17 @@ export default { render };
 
 class ScreenPanelWidget(anywidget.AnyWidget):
     """The double-slit results panel: a dark screen accumulating
-    photon hits, with the exact intensity curve flush beneath it —
-    both panels flush-aligned in one native SVG."""
+    photon hits (grayscale film: pixels brighten as hits accumulate
+    on them), with the exact
+    intensity curve flush beneath it. `data` holds the panel config
+    plus the full hit history as a rebuild baseline; per-volley
+    deltas stream through `hits_chunk` ({seq, pts, total} or
+    {seq, reset: True}) and are added into the client's persistent
+    raster — only newly-hit pixels are touched."""
     _esm = _SCREEN_ESM
     _css = _PLOT_CSS
     data = traitlets.Dict({}).tag(sync=True)
+    hits_chunk = traitlets.Dict({}).tag(sync=True)
 
 
 class LinePlotWidget(anywidget.AnyWidget):

@@ -43,6 +43,18 @@
     font-size: 1.0em;
 }
 
+/* The gate-angles note (implementation-level controls): the theme's
+   prose margins open a wide gap between the lead-in line and its list;
+   keep them snug. */
+.gates-note .paragraph {
+    margin-bottom: 0 !important;
+}
+
+.gates-note ul {
+    margin-top: 0.25rem !important;
+    margin-bottom: 0.25rem !important;
+}
+
 /* Marimo caps cell output at 610px and scrolls inside the cell; let the
    simulation-results panels render at full height instead. */
 .output-area {

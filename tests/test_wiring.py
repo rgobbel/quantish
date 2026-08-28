@@ -37,6 +37,32 @@ class TestWiring(unittest.TestCase):
         self.assertEqual(sim.links['g1.control'], 'd1.control')
         self.assertEqual(sim.delay_gates['d1'].source, 'g1.control')
 
+    def test_bare_phase_plate_links_imply_control(self):
+        cfg = make_config(
+            run_stages={'first': ['g1'], 'second': ['d1', 'g2'],
+                        'third': ['pp']},
+            phase_plates={'pp': 0})
+        cfg.links['g2.upper'] = 'pp'
+        sim = Simulation(cfg)
+        self.assertEqual(sim.links['g2.upper'], 'pp.control')
+        self.assertIn('pp', sim.phase_plates)
+
+    def test_phase_plate_on_switch_wire_raises(self):
+        cfg = make_config(
+            run_stages={'first': ['g1'], 'second': ['d1', 'g2'],
+                        'third': ['pp']},
+            phase_plates={'pp': 0})
+        cfg.links['g2.upper'] = 'pp.upper'
+        with self.assertRaises(ValueError) as ctx:
+            Simulation(cfg)
+        self.assertIn('control wire', str(ctx.exception))
+
+    def test_phase_plate_also_declared_as_gate_raises(self):
+        cfg = make_config(phase_plates={'g2': 0})
+        with self.assertRaises(ValueError) as ctx:
+            Simulation(cfg)
+        self.assertIn('both gates and phase_plates', str(ctx.exception))
+
     def test_wire_labels_load_with_delay_sugar(self):
         cfg = make_config(wire_labels={'p1': 'w2', 'g1.upper': 'w2a',
                                        'g1.control': 'w1a'})

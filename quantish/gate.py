@@ -16,15 +16,13 @@ class FredkinGate:
     the gate by e^{iφ} — switch-wire particles via the split components
     (multiplied through below), control-wire pass-throughs via
     phase_factor in the runner (config_space.particle_splits). A phase
-    never changes a magnitude, so an angle-0 gate with a phase, entered
-    through its control wire, is a pure phase plate: one particle in,
-    same particle out, weight rotated by φ in the complex plane.
+    never changes a magnitude. The pure rotate-only device is the
+    PhasePlate below; the phase on a full gate exists so the weight
+    explorer can fiddle with angle and phase together.
 
     The phase is an extension beyond the book's gates, which have only
     the measurement angle; its default of 0 leaves every book circuit
-    unchanged. The name comes from the optics device — a thin
-    transparent plate inserted into one light path, delaying the wave so
-    its phase shifts without its amplitude changing."""
+    unchanged."""
 
     def __init__(self, name:str, theta:Real=0, phase:Real=0):
         self.name = name
@@ -32,7 +30,7 @@ class FredkinGate:
         # so an angle entered as -30º displays as -30º, not 330º)
         self.theta = qify(theta)
         self.phase = qify(phase)
-        if type(self) is DelayGate:
+        if isinstance(self, DelayGate):
             return
         self.twist = self.theta - PI/2
 
@@ -112,3 +110,25 @@ class DelayGate(FredkinGate):
     @theta.setter
     def theta(self, value):
         pass
+
+
+class PhasePlate(DelayGate):
+    """A pure phase plate: a delay gate that rotates every traversing
+    particle's weight by e^{iφ} — one particle in through the control
+    wire, the same particle out, magnitude untouched. Declared in a
+    model's phase_plates section, mapping the plate's name to its
+    phase spec ({φ: phi}). The name comes from the optics device: a
+    thin transparent slip inserted into one light path, delaying the
+    wave so its phase shifts without its amplitude changing."""
+
+    def __init__(self, name, phase:Real=0, source:str='', sink:str=''):
+        super().__init__(name, source, sink)
+        self.phase = qify(phase)
+        if not zerop(self.phase):
+            self.phase_factor = Complex(1).rotate(self.phase)   # e^{iφ}
+
+    def report_type(self):
+        return 'PhasePlate'
+
+    def __repr__(self):
+        return f'{self.name}(φ={self.phase.degrees:.2f}º)'

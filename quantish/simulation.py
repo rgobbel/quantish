@@ -4,7 +4,7 @@ from collections import defaultdict
 from addict import Addict
 import networkx as nx
 from quantish.particle import Particle
-from quantish.gate import DelayGate, FredkinGate
+from quantish.gate import DelayGate, FredkinGate, PhasePlate
 from quantish.config_space import (Position, GatePort, PCoordinate,
                                      ConfigSpacePoint, ConfigSpaceRunner)
 import quantish.qnumber as qn
@@ -47,6 +47,7 @@ class Simulation:
         self.particles = Addict()
         self.fredkin_gates = Addict()
         self.delay_gates = Addict()
+        self.phase_plates = Addict()
         self.gates = Addict()
         self.initial_coords = {}
         self.initial_point = None
@@ -60,7 +61,8 @@ class Simulation:
         self.diagram_groups = (self.normalize_groups(config.get('diagram_groups'))
                                or self.declared_run_stages)
         self.find_pass_through_gates()
-        self.gates = self.fredkin_gates | self.delay_gates
+        self.gates = (self.fredkin_gates | self.delay_gates
+                      | self.phase_plates)
         self.log_model(logging.DEBUG)
 
     def load_variables(self, config):
@@ -76,10 +78,12 @@ class Simulation:
             self.qvars[vname] = qify(vval, self.qvars)
 
     def canonicalize_links(self, config):
-        """A delay gate has exactly one port (control), so links may name it
-        bare — 'd5: d6' — with the '.control' implied. Canonicalize both
-        link endpoints and build the reverse (sources) map."""
-        delays = set(config.get('delay_gates', []))
+        """A delay gate (phase plates included) has exactly one port
+        (control), so links may name it bare — 'd5: d6' — with the
+        '.control' implied. Canonicalize both link endpoints and build
+        the reverse (sources) map."""
+        delays = (set(config.get('delay_gates', []))
+                  | set(config.get('phase_plates', {})))
 
         def canon(end):
             return f'{end}{SEP}control' if end in delays else end
@@ -213,8 +217,28 @@ class Simulation:
         have at least one input, and every link must target a declared
         gate. Works from the raw config so it can run before anything is
         built on top of the links."""
-        declared = set(config.gates.keys()) | set(config.get('delay_gates', []))
+        plates = set(config.get('phase_plates', {}))
+        declared = (set(config.gates.keys())
+                    | set(config.get('delay_gates', [])) | plates)
         problems = []
+        both = plates & set(config.gates.keys())
+        if both:
+            problems.append(
+                f'{sorted(both)} declared in both gates and phase_plates')
+        for end in list(self.links.keys()) + list(self.links.values()):
+            parts = end.split(SEP)
+            if len(parts) == 2 and parts[0] in plates \
+                    and parts[1] != 'control':
+                problems.append(
+                    f"'{end}': a phase plate only uses its control wire")
+        # display_strings maps object names to display text; a key that
+        # names nothing is a stale leftover (e.g. after a rename)
+        nameable = declared | set(config.particles.keys())
+        for dname in dict(config.get('display_strings', {})):
+            if dname not in nameable:
+                problems.append(
+                    f"display_strings entry '{dname}' names no declared "
+                    f"gate, delay gate, phase plate, or particle")
         for pname in config.particles.keys():
             if pname not in self.links:
                 problems.append(
@@ -240,6 +264,11 @@ class Simulation:
         log.debug(' ')
         particles = config.particles
         for pname, pval in particles.items():
+            if 'display_string' in pval:
+                raise ValueError(
+                    f"particle '{pname}': display_string moved to the "
+                    f"top-level display_strings section "
+                    f"({{{pname}: ...}})")
             pweight = Complex(qify(pval.get('weight', 1), self.qvars))
             new_particle = Particle(pname, pweight, qify(pval.sign, self.qvars),
                                     precision=self.precision)
@@ -267,6 +296,11 @@ class Simulation:
                 raise ValueError(
                     f"gate '{gname}' declares no angle "
                     f"(found keys: {sorted(gval.keys())})")
+            if 'display_string' in gval:
+                raise ValueError(
+                    f"gate '{gname}': display_string moved to the "
+                    f"top-level display_strings section "
+                    f"({{{gname}: ...}})")
             new_gate = FredkinGate(
                 gname, qify(angle_spec(angle), self.qvars),
                 phase=qify(angle_spec(gval.get('phase', 0)), self.qvars))
@@ -280,6 +314,22 @@ class Simulation:
                               self.links.get(dport, ''))
             self.delay_gates[dgname] = dgate
             self.gates[dgname] = dgate
+        # a phase plate's declaration is its phase spec ({φ: phi});
+        # like any angle it resolves through the model's variables and
+        # honors angle_unit for plain numbers
+        for ppname, ppspec in dict(config.get('phase_plates', {})).items():
+            if isinstance(ppspec, dict):
+                raise ValueError(
+                    f"phase plate '{ppname}' should map straight to its "
+                    f"phase spec ({ppname}: phi), not a mapping "
+                    f"(found keys: {sorted(ppspec.keys())})")
+            pport = f'{ppname}{SEP}control'
+            plate = PhasePlate(ppname,
+                               qify(angle_spec(ppspec), self.qvars),
+                               self.sources.get(pport, ''),
+                               self.links.get(pport, ''))
+            self.phase_plates[ppname] = plate
+            self.gates[ppname] = plate
         for source, dest in links.items():
             source_parts = source.split(SEP)
             dest_gate_name, dest_port = dest.split(SEP)

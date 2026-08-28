@@ -70,7 +70,8 @@ for p in sorted(top.rglob('*.yaml')):
     models[str(p.relative_to(top))] = p.read_text()
 payload = json.dumps(models)
 for app_dir in ('quantish_app', 'quantish_app_edit', 'builder_app',
-                'builder_app_edit'):
+                'builder_app_edit', 'double_slit_app',
+                'double_slit_app_edit'):
     (out / app_dir / 'public' / 'models.json').write_text(payload)
 print(f'bundled {len(models)} model files')
 PYEOF

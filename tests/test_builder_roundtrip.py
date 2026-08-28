@@ -43,6 +43,45 @@ def test_angle_degrees_reads_unit():
 def test_validate_graph_respects_unit():
     graph, _ = config_to_graph(CONFIG)
     assert validate_graph(graph, angle_unit='degrees') == []
+
+
+def test_display_string_round_trip():
+    # one top-level dict names every kind of object, delays included
+    cfg = dict(CONFIG)
+    cfg['run_stages'] = {'s1': ['g1'], 's2': ['g2', 'd1']}
+    cfg['links'] = {'p1': 'g1.upper', 'g1.upper': 'g2.upper',
+                    'g1.control': 'd1'}
+    cfg['delay_gates'] = ['d1']
+    cfg['display_strings'] = {'g1': '$g_{split}$', 'p1': '$p_1$',
+                              'd1': '$delay_1$'}
+    graph, notes = config_to_graph(cfg)
+    assert notes == []
+    assert graph['gates']['g1']['display_string'] == '$g_{split}$'
+    assert graph['gates']['d1']['display_string'] == '$delay_1$'
+    assert graph['particles']['p1']['display_string'] == '$p_1$'
+    out = graph_to_config(graph, cfg['title'],
+                          angle_unit=cfg['angle_unit'])
+    back = yaml.safe_load(config_to_yaml(out))
+    assert back['display_strings'] == cfg['display_strings']
+    assert 'display_string' not in back['gates']['g1']
+    assert 'display_string' not in back['particles']['p1']
+
+
+def test_phase_plate_round_trip():
+    cfg = dict(CONFIG)
+    cfg['run_stages'] = {'s1': ['g1'], 'plate': ['pp'], 's2': ['g2']}
+    cfg['links'] = {'p1': 'g1.upper', 'g1.upper': 'pp',
+                    'pp': 'g2.upper'}
+    cfg['phase_plates'] = {'pp': '30°'}
+    graph, notes = config_to_graph(cfg)
+    assert notes == []
+    assert graph['gates']['pp'] == {
+        **graph['gates']['pp'], 'kind': 'phase', 'phase': '30°'}
+    out = graph_to_config(graph, cfg['title'],
+                          angle_unit=cfg['angle_unit'])
+    back = yaml.safe_load(config_to_yaml(out))
+    assert back['phase_plates'] == {'pp': '30°'}
+    assert 'pp' not in back['gates']
     # read as radians, 30 is more than a full turn — the tripwire fires
     assert any('full turn' in p
                for p in validate_graph(graph, angle_unit='radians'))

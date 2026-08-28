@@ -3,7 +3,8 @@
 **Note:** All references to figures use the numbering in the 2026 revision of chapter 4 of *Good and Real*.
 
 In this notebook, particles are fired one at a time at a two-slit barrier built from Fredkin
-gates, and we see the interference pattern building up dot by dot. Then
+gates, and we see the interference pattern building up particle by
+particle. Then
 one slit is blocked, or a "which-way recorder" is attached to one source (as in figure 4.10), and
 the fringes give way to flat single-slit light, as in
 figures 4.13 to 4.15.
@@ -49,9 +50,19 @@ async def initialization():
         ], deps=False)
         await micropip.install(['sympy', 'scipy', 'networkx',
                                 'pyyaml', 'anywidget'])
+        # the model library, frozen into the page at build time — the
+        # engine reads the apparatus from models/extras/double_slit.yaml
+        import json as _json
+
+        from pyodide.http import pyfetch
+        _base = str(mo.notebook_location())
+        _resp = await pyfetch(f'{_base}/public/models.json')
+        for _rel, _text in _json.loads(await _resp.string()).items():
+            _p = Path('/wasm-data/models') / _rel
+            _p.parent.mkdir(parents=True, exist_ok=True)
+            _p.write_text(_text)
         # Under WASM, mo.app_meta().mode reports 'edit' for BOTH export
         # modes; the page's own mount config records which one this is.
-        from pyodide.http import pyfetch
         _page = await (await pyfetch(f'{_base}/index.html')).string()
         _wasm_editor = '"mode": "edit"' in _page
 
@@ -124,14 +135,14 @@ def _(mo):
       shows exactly the classical sum, though nothing blocked either path.
 
     Below each screen is a diagram of the actual gate network the
-    engine ran to produce it. No single particle makes a pattern; every
-    dot is one particle, drawn from exact world-amplitudes computed by
-    the quantish engine.
+    engine ran to produce it. Every
+    particle's landing point is drawn from exact world-amplitudes
+    computed by the quantish engine.
     """)
     return
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(r"""
     ## Overview
@@ -150,64 +161,96 @@ def _(DEFAULT_THETA_S, math, mo):
     a <style> tag emitted from a cell gets sanitized away."""
     _step_by_step = mo.md(r"""
     Two conventions are used throughout:
-    - gate $g_1$'s **upper** switch output
+    - gate $g_{split}$'s **upper** switch output
     leads to the **left** slit ($S_1$) and its **lower** switch output to
     the **right** slit ($S_2$). 
     - Several wires route a particle through
     a **control input** (the slit boxes $S_n$, the blocks $B_n$, the
-    recorder gate $g_4$, and the phase plate $\varphi$). A control input never changes the particle
+    recorder gate $g_{obs}$, and the phase plate $\varphi$). A control input never changes the particle
     passing through it–its occupancy decides only whether or not that gate
     swaps its switch wires. (One deliberate exception: a gate with a
     **phase** setting, like $\varphi$, rotates the weight of every particle
     traversing it, control input included, without effecting amplitude.)
 
-    | real-world experiment | quantish circuit |
-    |---|:---|
-    | a photon or electron, fired at the barrier | particle $p_1$, weight 1 |
-    | the two slits | the two switch outputs of gate $g_1$ (angle 45°): upper for the left slit, lower for the right |
-    | passing through both slits at once | $g_1$ splits $p_1$'s world into superposed configuration-space points, one per slit, each carrying part of the weight |
-    | the two slits themselves | the boxes $S_1$ and $S_2$, entered through their control inputs (pass-throughs; they change no amplitudes) |
-    | different path lengths from the two slits to screen position $x$ | the phase plate $\varphi$ (an angle-0 gate with phase $\varphi(x)$) on the right slit's wire: it rotates the passing amplitude by $e^{i\varphi(x)}$ and changes nothing else |
-    | the screen pixel at $x$ | the remerge gate $g_2$ (matched to the split) followed by the sign sorter $g_5$; a particle reaching the detector box $S$ is a hit at this pixel |
-    | blocking slit $n$ | the block $B_n$ standing in that slit's place. The wire is diverted into it and those worlds never reach the screen |
-    | a which-way detector at one slit | recorder particle $p_2$ enters gate $g_4$'s upper switch input, and the wire to the right slit passes through $g_4$'s `control` input on its way to $S_2$. In the worlds where $p_1$ heads for the right slit, the occupied control makes $g_4$ swap its switch wires and $p_2$ exits on the lower wire; in the other worlds it exits on the upper wire. $p_2$'s exit records which slit $p_1$ used, without touching $p_1$ |
+    #####  **Real-world vs. quantish model**
 
-    In optics, a *phase plate* it is a thin slip of transparent
-    material inserted into one light path: the wave crosses it more
-    slowly and comes out with its phase shifted but its brightness
-    untouched (the trick behind Zernike's phase-contrast microscope).
-    Our $\varphi$ is its quantish counterpart: an angle-0 gate whose
-    **phase** setting rotates every traversing weight by $e^{i\varphi}$.
-    The book's gates have only a measurement angle — the phase setting is
-    this simulator's one extension beyond chapter 4's physics, and its
-    default of 0 leaves every circuit from the book exactly as printed.
+    | real-world experiment                                            | quantish circuit                                           |
+    |------------------------------------------------------------------|:-----------------------------------------------------------|
+    | a photon or electron, fired at the barrier                       | particle $p_1$, weight 1                                   |
+    | the two slits                                                    | the two switch outputs of Fredkin gate $g_{split}$ (angle 45°): upper for the left slit, lower for the right   |
+    | passing through both slits at once                               | Fredkin gate $g_{split}$ splits $p_1$'s world into superposed configuration-space points, one per slit, each carrying part of the weight |
+    | the two slits themselves                                         | delay gates $S_1$ and $S_2$ (passthroughs) |
+    | different path lengths from the two slits to screen position $x$ | the phase plate $\varphi$ rotates the passing amplitude by its *angle* parameter and changes nothing else                      |
+    | the screen pixel at $x$                                          | the remerge gate $g_{merge}$ (matched to the split) followed by the sign sorter $g_{sort}$. A particle reaching the detector box $S$ is a hit at this pixel |
+    | blocking slit $n$                                                | the block $B_n$ standing in that slit's place. The wire is diverted into it and those worlds never reach the screen |
+    | a which-way detector at one slit                                 | recorder particle $p_2$ enters gate $g_{obs}$'s upper switch input, and the wire to the right slit passes through $g_{obs}$'s `control` input on its way to $S_2$. In the worlds where $p_1$ heads for the right slit, the occupied control makes $g_{obs}$ swap its switch wires and $p_2$ exits on the lower wire, otherwise on the upper wire. $p_2$'s exit records which slit $p_1$ used, without touching $p_1$ |
 
-    Why sweep a phase and not a gate angle? A gate's angle changes magnitudes
-    and phase together, so sweeping any gate's angle changes even a single
-    slit's throughput, a $\cos^2$ modulation that would show fringes even with
-    only one slit open. The phase knob is different: $\lvert e^{i\varphi}\rvert = 1$,
-    so $\varphi$ can never change what a single path delivers, and anything
-    the screen shows beyond a flat line is genuine two-path interference.
+    ##### **Components of the model**
 
-    And why the sorter, $g_5$? At the matched remerge, the relative phase
-    does *not* steer $p_1$ between $g_2$'s output wires. Rather, it moves weight
-    between the two sign components of the upper wire, and a position
-    detector placed right there would see nothing. But a minus-sign
-    particle entering a switch wire exits on the *other* wire, so the
-    angle-0 gate $g_5$ turns the sign difference back into a position
-    difference: plus-sign arrivals exit toward the detector $S$,
-    minus-sign toward $D$. A plain position detector at $S$ then reads
-    $P = \tfrac{1}{2}(1 + \cos\varphi)$: the fringes.
+    - ##### The **splitter** $g_{split}$
+
+        $g_{split}$ puts each input particle into superposition. Its 45° angle splits its input evenly between top and bottom, so left and right slits.
+
+    - ##### **slits** $S_1$ and $S_2$ and **blocks** $B_1$ and $B_2$
+
+        The slit and block gates are implemented by delay gates. Slits have connected outputs, blocks have none. They are not essential to the
+        functioning of the circuit, and are added only to make the diagram easier to understand.
+
+    - ##### The **phase plate** $\varphi$
+
+        In optics, a *phase plate* it is a thin slip of transparent
+        material inserted into one light path: the wave crosses it more
+        slowly and comes out with its phase shifted but its brightness
+        untouched (the trick behind Zernike's phase-contrast microscope).
+        Our $\varphi$ is its quantish counterpart: a simple gate that rotates every traversing weight
+        in the complex plane by its only parameter, an angle.
+
+        We sweep phase rather than gate angle because changing a gate's angle changes magnitudes
+        and phase together, so sweeping a gate's angle changes even a single
+        slit's result, a modulation that would show fringes even with
+        only one slit open. The phase setting is different: the phase plate changes angles without
+        affecting amplitudes.
+
+    - ##### The **merge** $g_{merge}$
+
+        As we sweep $\varphi$ through a series of phase angles, the two
+        inputs to $g_{merge}$ stay equal in size and change only in
+        relative direction. The merge gate is the split gate applied
+        again at the same angle, so at $\varphi = 0$ it exactly undoes
+        the split (figure 4.7's lesson) and everything returns on the
+        upper wire. At other phases the recombination is only partial —
+        but the leftover does *not* exit on the lower wire, as one
+        might expect. It stays on the upper wire with its **sign**
+        flipped, which is why a sorter has to come next.
+
+    - ##### The **sorter** $g_{sort}$
+
+        At the matched remerge, the relative phase 
+        doesn't steer $p_1$ between $g_{merge}$'s output wires. Rather, it moves weight
+        between the two sign components of the upper wire, and a position
+        detector placed right there would see nothing. But a minus-sign
+        particle entering a switch wire exits on the opposite wire, so the
+        angle-0 gate $g_{sort}$ turns the sign difference back into a position
+        difference: plus-sign arrivals exit toward the detector $S$,
+        minus-sign toward $D$. A plain position detector at $S$ then reads
+        $P = \tfrac{1}{2}(1 + \cos\varphi)$: the fringes.
+
+    - ##### the **recorder** $g_{obs}$
+
+        A second particle, $p_2$, is input to $g_{obs}$'s upper input. The control input of $g_{obs}$ is fed by the right slit.
+        If $p_1$ travels through the right slit, $p_2$ exits on the lower wire, otherwise on the upper wire, so $p_2$'s exit position records which slit $p_1$ went through without affecting $p_1$.
+
+
     """)
 
     _deg = math.degrees(DEFAULT_THETA_S)
     _curves = mo.md(rf"""
-    A **condition** consists of a complete apparatus for one version of
+    A **condition** consists of a complete setup for one version of
     the experiment. Every condition contains the source particle $p_1$,
-    the split gate $g_1$, the remerge gate $g_2$, and the sign sorter
-    $g_5$; conditions differ in what stands at each slit ($S_n$ where it
+    the split gate $g_{{split}}$, the remerge gate $g_{{merge}}$, and the sign sorter
+    $g_{{sort}}$; conditions differ in what stands at each slit ($S_n$ where it
     is open, the block $B_n$ where it is blocked) and, in the recorder
-    condition only, in gate $g_4$, which couples the which-way particle
+    condition only, in gate $g_{{obs}}$, which couples the which-way particle
     $p_2$ to the right slit's wire. The four conditions (both open, left
     blocked, right blocked, recorder) are shown in the four networks
     drawn beneath their screens.
@@ -217,31 +260,37 @@ def _(DEFAULT_THETA_S, math, mo):
     phase plate $\varphi$ carries that difference as its phase setting
     $\varphi(x) = f\pi x$ ($f$ = the fringes slider). For each $x$ the
     engine propagates $p_1$ (weight 1) through the circuit exactly: the
-    split rule at $g_1$ (angle $\theta = {_deg:.0f}°$) divides $p_1$'s
+    split rule at $g_{{split}}$ (angle $\theta = {_deg:.0f}°$) divides $p_1$'s
     world into superposed configuration-space points headed for the two
-    slits; the right slit's points pick up $e^{{i\varphi(x)}}$ at $\varphi$;
-    the matched remerge $g_2$ recombines whatever the engine's remerge
-    rule allows to interfere; and $g_5$ sorts the result into the
+    slits. The right slit's points pick up $e^{{i\varphi(x)}}$ at $\varphi$;
+    the matched remerge $g_{{merge}}$ recombines whatever the engine's remerge
+    rule allows to interfere; and $g_{{sort}}$ sorts the result into the
     detectors $S$ and $D$. What the screen shows at $x$ is the
     **intensity** $\mathcal{{I}}(x)$: the probability that $p_1$ ends at
     $S$, the arrival rate a long exposure at that pixel records. (Intensity is designated by a script
     $\mathcal{{I}}$, to keep it clearly apart from the imaginary unit
-    $i$.)
+    $i$.). $y$ coordinates are chosen from a uniform random distribution.
 
-    - **Both slits**: the two slits' worlds interfere at $g_2$. Where
-      the fringes come from: when an amplitude is a sum of two paths,
-      the intensity is *not* the sum of the two paths' intensities —
-      $\lvert a_L + a_R\rvert^2 = \lvert a_L\rvert^2 +
-      \lvert a_R\rvert^2 + 2\,\mathrm{{Re}}(a_L \overline{{a_R}})$,
-      and the third piece (the **interference term**) swings with the
-      phase difference between the paths. Here each path carries
-      amplitude $\tfrac{{1}}{{2}}$ and the plate sets their phase
-      difference to $f\pi x$, so
-      $\mathcal{{I}} = \tfrac{{1}}{{4}} + \tfrac{{1}}{{4}} +
-      \tfrac{{1}}{{2}}\cos(f\pi x) =
-      \tfrac{{1}}{{2}}\bigl(1 + \cos(f\pi x)\bigr)$:
-      fringes from 0 to 1, peaking at 4 times the single-slit
-      intensity, with true zeros where the worlds cancel.
+    ##### **Conditions**
+
+    - **Both slits**: the two slits' worlds interfere at $g_{{merge}}$. Where
+      the fringes come from: each slit delivers a weight to this
+      pixel — draw it as an arrow of length $\tfrac{{1}}{{2}}$. Weights
+      have direction as well as magnitude, and the phase plate turns the
+      right slit's arrow by $\varphi(x) = f\pi x$ without changing its
+      magnitude. The pixel's brightness is the squared length of the two
+      arrows added tip to tail:
+      $\tfrac{{1}}{{4}} + \tfrac{{1}}{{4}} +
+      2\cdot\tfrac{{1}}{{2}}\cdot\tfrac{{1}}{{2}}\cos\varphi$ —
+      what each slit would deliver alone, plus a third piece set by the
+      angle between the arrows. Arrows pointing the same way reinforce:
+      $\mathcal{{I}} = 1$, four times what one slit alone delivers.
+      Opposed arrows cancel: $\mathcal{{I}} = 0$. In between,
+      $\mathcal{{I}} = \tfrac{{1}}{{2}}\bigl(1 + \cos(f\pi x)\bigr)$: the
+      fringes.
+          <span style="font-size:0.85em">*(Note: Optics texts write the same law
+      in intensities: $\mathcal{{I}} = \mathcal{{I}}_{{left}} + \mathcal{{I}}_{{right}} +
+      2\sqrt{{\mathcal{{I}}_{{left}} \mathcal{{I}}_{{right}}}}\cos\varphi$.)*</span>
     - **One slit blocked**: the other wire ends at its block $B_n$, and
       a pure phase cannot change a lone path's magnitude, so the resulting intensity
       $\mathcal{{I}} = \tfrac{{1}}{{4}}$ is flat.
@@ -281,7 +330,7 @@ def _(mo):
           screen edges always sit on dark fringes.
         - **screen resolution** controls the granularity of each raster display.
         - **particles per volley** controls how many simulated particles will be fired at the apparatus with each press of **fire particles**.
-        - **fire particles** does just that: it fires a volley in each of the four conditions displayed, and displays every particle that reaches the screen. Not all of them do: blocking a slit absorbs about half the volley, so those rasters fill half as fast. The hit counts in the titles keep score.
+        - **fire particles** does just that: it fires a volley in each of the four conditions displayed, and displays every particle that reaches the screen. Not all of them do: blocking a slit absorbs about half the volley, so those rasters fill half as fast. The hit counts in the titles record how many particles went through in each condition.
         - **reset screens** erases the raster displays.
         """)
         # Book-style footnote: a plain <details> element styled small by
@@ -323,11 +372,39 @@ def _(mo):
                          show_value=True)
     fire_btn = mo.ui.run_button(label='🔫 fire particles')
     reset_btn = mo.ui.run_button(label='reset screens')
+    # gate-angle experiments: break the ideal conditions and watch
+    theta_split_sl = mo.ui.slider(0, 90, step=5, value=45,
+                                  label='θ split (°)', show_value=True)
+    theta_merge_sl = mo.ui.slider(0, 90, step=5, value=45,
+                                  label='θ merge (°)', show_value=True)
+    theta_sort_sl = mo.ui.slider(0, 90, step=5, value=0,
+                                label='θ sorter (°)', show_value=True)
+    # .gates-note (css/double_slit_app.css) keeps the lead-in line snug
+    # against its list
+    _gates_note = mo.Html('<div class="gates-note">' + mo.md("""
+    _Gate angles:_
+    - _an unequal split (θ split ≠ 45°) fills in the dark fringes_
+    - _a mismatched merge (θ merge ≠ θ split) reduces the maximum intensity_
+    - _changing the sorter angle reduces the contrast between high and low intensities._
+    """).text + '</div>')
     mo.vstack([_mtext,
         mo.hstack([fringes, n_points, shots, fire_btn, reset_btn],
                   wrap=True, justify='start'),
+        mo.accordion({'Implementation-level controls': mo.vstack([
+            mo.hstack([theta_split_sl, theta_merge_sl, theta_sort_sl],
+                      wrap=True, justify='start'),
+            _gates_note])}),
         _ftext])
-    return fire_btn, fringes, n_points, reset_btn, shots
+    return (
+        fire_btn,
+        fringes,
+        n_points,
+        reset_btn,
+        shots,
+        theta_merge_sl,
+        theta_sort_sl,
+        theta_split_sl,
+    )
 
 
 @app.cell(hide_code=True)
@@ -335,50 +412,50 @@ def _(mo):
     mo.md(r"""
     ## Simulation results
 
-    These are best viewed with a wide window on a large screen. The black rectangles are screens, 
+    These are best viewed with a wide window on a large screen. The black rectangles are screens,
     which will light up where particles fired at the apparatus land.
 
-    Each dot is one particle. Its **horizontal** position is drawn at
-    random from that condition's exact intensity distribution — the
-    curve under the screen — so the fringes emerge dot by dot, the way
-    a long exposure builds them up. Its **vertical** position is
-    uniformly random and purely decorative: the quantish model is
-    one-dimensional, so all of the physics lives in $x$, and the $y$
-    spread only makes the raster look like a physical screen.
-    Interference never happens *between* dots — each particle's own
-    superposed worlds interfere (in $x$) before it lands, one particle
-    at a time.
+    Each particle brightens the pixel where it lands, like a grain of
+    photographic film: a pixel's first hit turns it dim gray, and
+    repeated hits build it toward white. The **horizontal** landing
+    position is drawn at random from that condition's exact intensity
+    distribution — the curve under the screen — so the fringes develop
+    out of the dark, the way a long exposure builds them up. The
+    **vertical** position is uniformly random and purely decorative:
+    the quantish model is one-dimensional, so all of the physics lives
+    in $x$, and the $y$ spread only makes the screen look like a
+    physical screen. Interference never happens *between* particles —
+    each particle's own superposed worlds interfere (in $x$) before it
+    lands, one particle at a time.
     """)
     return
 
 
 @app.cell(hide_code=True)
-def _(ScreenPanelWidget, curves, diagrams, hits_get, mo, xs):
-    def _panel(title, curve, hits, width=380):
-        # one SVG for the dark screen and its intensity curve, so the
-        # two plot areas stay flush by construction
-        return mo.ui.anywidget(ScreenPanelWidget(data={
-            'title': f'{title} ({len(hits)} hits)',
-            'hits': [[h[0], h[1]] for h in hits],
-            'curve': {'x': list(xs), 'y': list(curve)},
-            'width': width,
-        }))
+def _(MODES, PANEL_TITLES, curves, hit_store, panel_widgets, xs):
+    # a curve change rebuilds each panel in place; the client replays
+    # the accumulated hits from this baseline
+    for _m in MODES:
+        panel_widgets[_m].data = {
+            'title': PANEL_TITLES[_m],
+            'curve': {'x': list(xs), 'y': list(curves[_m])},
+            'width': 380,
+            'hits': [list(_p) for _p in hit_store['hits'][_m]],
+        }
+    return
 
-    _hits = hits_get()
 
+@app.cell(hide_code=True)
+def _(diagrams, mo, panels):
     # A 4×2 grid: one condition per row — the circuit on the left, the
     # screen/curve pair to its right.
-    def _row(title, mode):
-        return mo.hstack([diagrams[mode],
-                          _panel(title, curves[mode], _hits[mode])],
-                         align='center', justify='start', gap=1, wrap=True)
+    def _row(mode):
+        return mo.hstack([diagrams[mode], panels[mode]],
+                         align='center', justify='start', gap=1,
+                         wrap=True)
 
-    mo.vstack([
-        _row('both slits open', 'both'),
-        _row('left slit blocked', 'slit2'),
-        _row('right slit blocked', 'slit1'),
-        _row('recorder on right slit (both open)', 'observed'),
-    ], gap=2)
+    mo.vstack([_row('both'), _row('slit2'), _row('slit1'),
+               _row('observed')], gap=2)
     return
 
 
@@ -418,13 +495,13 @@ def _(mo):
     recombining gate makes superposed worlds interfere (see figures 4.13 and 4.14: worlds
     remerge only when they agree in *every* particle). Here that gate
     really is in the circuit: each screen pixel is one engine run through
-    the remerge gate $g_2$ (matched to the split at $g_1$, as in figure
-    4.7), with the path-length difference to that pixel carried by the
-    phase plate $\varphi$ and the result sorted into the detectors by $g_5$.
+    the remerge gate $g_{merge}$ (matched to the split at $g_{split}$, as in figure
+    4.7), with the effective path-length difference to that pixel carried by the
+    phase plate $\varphi$ and the result sorted into the detectors by $g_{sort}$.
     That is also exactly why the
     recorder kills the fringes: $p_2$ makes the two slits' worlds disagree, and the
-    remerge rule then has nothing it is allowed to merge, and why
-    blocking a slit (diverting its wire into the block $B_n$) gives a flat
+    remerge rule then has nothing it is allowed to merge with. This is why
+    blocking a slit gives a flat
     line. A single world has nothing to interfere with.
     """)
     return
@@ -452,19 +529,44 @@ def _(EDITOR_UI, mo):
 
 
 @app.cell(hide_code=True)
-def _(mo):
-    hits_get, hits_set = mo.state(
-        {'slit1': [], 'both': [], 'slit2': [], 'observed': []})
-    return hits_get, hits_set
+def _(ScreenPanelWidget, mo):
+    # Persistent screen panels: created once and updated in place.
+    # Each volley streams only its NEW hits to the client, which adds
+    # them into its raster; hit_store keeps the accumulated history as
+    # the rebuild baseline (remounts, curve changes).
+    MODES = ('both', 'slit2', 'slit1', 'observed')
+    PANEL_TITLES = {'both': 'both slits open',
+                    'slit2': 'left slit blocked',
+                    'slit1': 'right slit blocked',
+                    'observed': 'recorder on right slit (both open)'}
+    panel_widgets = {_m: ScreenPanelWidget() for _m in MODES}
+    panels = {_m: mo.ui.anywidget(_w)
+              for _m, _w in panel_widgets.items()}
+    hit_store = {'seq': 0, 'hits': {_m: [] for _m in MODES}}
+    return MODES, PANEL_TITLES, hit_store, panel_widgets, panels
 
 
 @app.cell(hide_code=True)
-def _(fringes, mo, n_points, screen_curve, screen_positions):
+def _(
+    fringes,
+    math,
+    mo,
+    n_points,
+    screen_curve,
+    screen_positions,
+    theta_merge_sl,
+    theta_sort_sl,
+    theta_split_sl,
+):
     """Exact screen intensities: one engine run per screen pixel per
     condition, the pixel's path difference set as the phase plate's
-    phase."""
+    phase and the gate angles taken from the sliders."""
     with mo.status.spinner(title='running the exact simulations…'):
-        curves = {mode: screen_curve(n_points.value, fringes.value, mode)[1]
+        curves = {mode: screen_curve(
+                      n_points.value, fringes.value, mode,
+                      theta_s=math.radians(theta_split_sl.value),
+                      theta_merge=math.radians(theta_merge_sl.value),
+                      theta_sort=math.radians(theta_sort_sl.value))[1]
                   for mode in ('slit1', 'both', 'slit2', 'observed')}
         xs = screen_positions(n_points.value)
     return curves, xs
@@ -472,23 +574,30 @@ def _(fringes, mo, n_points, screen_curve, screen_positions):
 
 @app.cell(hide_code=True)
 def _(
-    DEFAULT_THETA_S,
     DiagramWidget,
     diagram_geometry,
     math,
     mo,
     slit_sim,
+    theta_merge_sl,
+    theta_sort_sl,
+    theta_split_sl,
 ):
     """One circuit diagram per condition, rendered from the Simulation
     objects that yield the curves (Sn = slit n, Bn = a block in its place)."""
     def _diagram(mode, width):
         try:
             _g = diagram_geometry(
-                slit_sim(mode), has_run=False,
+                slit_sim(mode,
+                         theta_s=math.radians(theta_split_sl.value),
+                         theta_merge=math.radians(theta_merge_sl.value),
+                         theta_sort=math.radians(theta_sort_sl.value)),
+                has_run=False,
                 angle_overrides={
-                    'g1': f'{math.degrees(DEFAULT_THETA_S):.0f}°',
-                    'g2': f'{math.degrees(DEFAULT_THETA_S):.0f}°',
-                    'g4': '0°', 'g5': '0°', 'φ': 'φ(x)'})
+                    'g_split': f'{theta_split_sl.value:.0f}°',
+                    'g_merge': f'{theta_merge_sl.value:.0f}°',
+                    'g_obs': '0°',
+                    'g_sort': f'{theta_sort_sl.value:.0f}°', 'φ': 'φ(x)'})
             # the grid rows size their own frames
             _g['frame_w'] = width
             _g['frame_h'] = 330
@@ -504,11 +613,12 @@ def _(
 
 @app.cell(hide_code=True)
 def _(
+    MODES,
     curves,
     fire_btn,
-    hits_get,
-    hits_set,
+    hit_store,
     mo,
+    panel_widgets,
     random,
     sample_hits,
     shots,
@@ -516,17 +626,25 @@ def _(
 ):
     mo.stop(not fire_btn.value)
     _rng = random.Random()
-    _cur = hits_get()
-    hits_set({mode: _cur[mode] + sample_hits(xs, curve, shots.value, _rng)
-              for mode, curve in curves.items()})
+    hit_store['seq'] += 1
+    for _m in MODES:
+        _new = sample_hits(xs, curves[_m], shots.value, _rng)
+        hit_store['hits'][_m].extend(_new)
+        panel_widgets[_m].hits_chunk = {
+            'seq': hit_store['seq'],
+            'pts': [list(_p) for _p in _new],
+            'total': len(hit_store['hits'][_m])}
     return
 
 
 @app.cell(hide_code=True)
-def _(hits_get, hits_set, mo, reset_btn):
+def _(MODES, hit_store, mo, panel_widgets, reset_btn):
     mo.stop(not reset_btn.value)
-    hits_get()  # subscription keeps ordering sane
-    hits_set({'slit1': [], 'both': [], 'slit2': [], 'observed': []})
+    hit_store['seq'] += 1
+    for _m in MODES:
+        hit_store['hits'][_m] = []
+        panel_widgets[_m].hits_chunk = {'seq': hit_store['seq'],
+                                        'reset': True}
     return
 
 

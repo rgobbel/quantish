@@ -82,11 +82,11 @@ async def initialization():
         if models_top else {}
     return (
         Addict,
-        WASM_MODE,
         BuilderWidget,
         CalcMode,
         DiagramWidget,
         Simulation,
+        WASM_MODE,
         angle_degrees,
         angle_label,
         coherence_warnings,
@@ -99,7 +99,6 @@ async def initialization():
         mo,
         model_paths,
         models_top,
-        qn,
         validate_graph,
         variables_env,
         yaml,
@@ -118,13 +117,13 @@ def _(mo):
     one of them. Basic circuit elements are above the divider, grouping elements are below.
     """), mo.accordion({'- Types of components': mo.md(r"""
     - Gates are quantish Fredkin gates, as described in *Good and Real*.
-    - Phase plates (φ) are simple gates that rotate every traversing weight by $e^{i\varphi}$ without affecting amplitude.
-    - Delay gates are simple pass-throughs, mainly useful for achieving a pleasing layout, but not needed for execution.
+    - Phase plates (φ) are simple gates that rotate every traversing weight by a set angle without affecting amplitude.
+    - Delay gates are simple passthroughs, mainly useful for achieving a pleasing layout, but having no effect on execution.
     """), '- Creating and editing a network': mo.md(r"""
-    - Drag from an **output port** on the right side of any component and to a free
+    - Drag from an **output port** on the right side of any gate or particle to a free
       **input port** on the left side of another element to wire them together.
     - Double-click in the middle of a Fredkin gate to set its measurement angle, or for a phase
-      plate: its rotation angle.
+      plate, its rotation angle.
 
       - Angles can be entered using the full expression syntax supported in the the models' YAML files:
         - Arithmetic expressions such `pi/6`, `rad(30)`, `acos(4/5)`, or `pi/2 + pi/8` produce values in radians.
@@ -133,6 +132,11 @@ def _(mo):
     - Double-click a particle to flip its sign.
     - Double-click a **name** to rename any object
       - A particle's prompt takes the sign as well
+      - Append a **display string** after the name, separated by a space
+        (`g_split $g_{split}$`), to have the object drawn with that string
+        instead of its name — math notation renders with real sub- and
+        superscripts. Remove the display string to go back to the name.
+        Saved models keep these in a top-level `display_strings` section.
       - Changing a stage or group box label renames the whole group
         - A group name that exactly matches a stage name collapses the two borders into one
     - Click a component or wire and press **delete
@@ -149,7 +153,7 @@ def _(mo):
       clears either)
     """), '- Grouping': mo.md(r"""
     - Every gate must be in an execution stage
-    - Ungrouped gates get automatic stages derived from the wiring, and a stage may contain internal wiring. Gates fire in dependency order.
+    - Ungrouped gates get automatically generated stages derived from the wiring, and a stage may contain internal wiring. Gates fire in dependency order.
     - Run stages *are* the diagram groups until you create a group
       that isn't exactly the same as an existing stage. That promotes every named stage to
       a diagram group of its own, which can then be edited.
@@ -454,8 +458,15 @@ def _(get_loaded, mo):
         + [mo.hstack([model_title, file_name, mode_pick, unit_pick],
                      justify='start', gap=0.75)],
         align='stretch')
-    return (caption_input, file_name, mode_pick, model_title,
-            notes_input, unit_pick, variables_editor)
+    return (
+        caption_input,
+        file_name,
+        mode_pick,
+        model_title,
+        notes_input,
+        unit_pick,
+        variables_editor,
+    )
 
 
 @app.cell(hide_code=True)
@@ -594,7 +605,7 @@ def _(builder_config, mo):
 
 
 @app.cell(hide_code=True)
-def _(Addict, CalcMode, Simulation, builder_config, mo, qn, run_network_btn):
+def _(Addict, CalcMode, Simulation, builder_config, mo, run_network_btn):
     # sim_built is None until a successful run of the CURRENT network;
     # any canvas change recreates the button unpressed, clearing stale
     # results (the same staleness scheme as the main app)

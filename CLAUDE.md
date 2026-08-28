@@ -74,9 +74,13 @@ Configuration is split between:
    - Optional `phase` (an extension beyond the book's gates): every
      traversing particle's weight is rotated by e^(iφ) — switch-wire
      particles via the components, control pass-throughs via
-     `phase_factor` in the runner. An angle-0 gate with a phase, entered
-     through its control wire, is a pure phase plate (the double-slit
-     demo's path-length difference)
+     `phase_factor` in the runner
+   - `PhasePlate` (a `DelayGate` subclass) is the pure rotate-only
+     device: a control-only pass-through whose phase rotates the
+     traversing weight and changes nothing else (the double-slit demo's
+     path-length difference). Declared in a model's `phase_plates`
+     section (`{φ: phi}`, name → phase spec); the legacy spelling — an
+     angle-0 gate with a `phase` in `gates` — still loads
 
 3. **Particle** (`quantish/particle.py`)
    - A particle: name, complex-valued initial weight, sign (+1 or -1)
@@ -128,6 +132,12 @@ Model files define:
 - `variables`: Symbolic constants (angles, weights) using YAML anchors
 - `particles`: Initial particles with weight and sign
 - `gates`: Fredkin gates with rotation angles (and optionally a `phase`)
+- `phase_plates` (optional): phase plates, name → phase spec ({φ: phi});
+  control-only pass-throughs that rotate traversing weights by e^(iφ)
+- `display_strings` (optional): object name → the string displays draw
+  in place of the name ({g_split: '$g_{split}$'}); covers gates, delay
+  gates, phase plates, and particles alike — the name stays the
+  identifier everywhere
 - `links`: Connectivity graph (particle/gate outputs → gate inputs)
 - `wire_labels` (optional): the book's wire-segment names, keyed by the
   link the label sits on ({p1: w2, g1.upper: w2a}). A `'>g.port'` key is

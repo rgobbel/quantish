@@ -68,6 +68,22 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
     routes = route_wires(spec, L)
     parsed = spec.topology['parsed']
 
+    # the model's optional display_strings dict: object name → whatever
+    # markdown/math should be shown in place of the raw name
+    # ($g_{split}$ for g_split), for gates, delays, plates, and
+    # particles alike; the name itself stays the identifier everywhere
+    _cfg = getattr(sim, 'config', {}) or {}
+    _displays = {str(_n): str(_ds) for _n, _ds
+                 in dict(_cfg.get('display_strings') or {}).items()
+                 if _ds}
+
+    def display_text(name):
+        """(unicode_line, runs_or_None) for an object's display."""
+        ds = _displays.get(name)
+        if ds:
+            return math_to_unicode(ds), math_runs(ds)
+        return _sub(name), None
+
     # after a run the boxes hold their value text: rows spread
     # vertically and columns horizontally to make room
     KY = 1.6 if has_run else 1.0
@@ -202,8 +218,12 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
         # between the angle text and the control box stays modest when
         # value blocks spread the rows
         KH = 1 + (KY - 1) * 0.5
-        texts.append(dict(x=cx, y=top - 0.24 * KH, lines=[_sub(gname)],
-                          size=13, color='#222222', weight='bold'))
+        _gline, _gruns = display_text(gname)
+        _gtx = dict(x=cx, y=top - 0.24 * KH, lines=[_gline],
+                    size=13, color='#222222', weight='bold')
+        if _gruns:
+            _gtx['runs'] = [_gruns]
+        texts.append(_gtx)
         angle_text = ((angle_overrides or {}).get(gname)
                       or _sub(gdata.get('angle', '')))
         _gph = getattr(sim.gates.get(gname), 'phase', None)
@@ -219,7 +239,7 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
         # compass needle: just to the right of the gate name, anchored
         # to the name's own position so it sits identically before and
         # after a run
-        ccx = cx + 0.115 * (len(gname) + 1) / 2 + 0.45
+        ccx = cx + 0.115 * (len(_gline) + 1) / 2 + 0.45
         ccy = top - 0.24 * KH
         dx_c, dy_c = math.cos(math.radians(deg)), math.sin(math.radians(deg))
         wires.append([dict(route=f'{gname}~c', order=0,
@@ -290,26 +310,34 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
     for dname, (dx_, dy_) in L.delay_xy.items():
         pos = f'{dname}{SEP}control'
         vals = value_lines(pos) if pos in parsed.links else []
-        _ph = getattr(sim.gates.get(dname), 'phase', None)
-        _is_plate = _ph is not None and abs(complex(_ph.v)) > 1e-12
+        _dg = sim.gates.get(dname)
+        _ph = getattr(_dg, 'phase', None)
+        # a PhasePlate is a plate whatever its phase; an angle-0 gate
+        # with a phase (the legacy spelling) qualifies by value
+        _is_plate = (_dg is not None
+                     and (_dg.report_type() == 'PhasePlate'
+                          or (_ph is not None
+                              and abs(complex(_ph.v)) > 1e-12)))
         if _is_plate:
             # a phase plate: its phase — and the resulting aggregate
             # angle of what passed through — are the whole story;
             # magnitudes are unaffected (full values stay on hover)
             _override = (angle_overrides or {}).get(dname)
-            _spec = ((sim.config.get('gates', {}).get(dname) or {})
+            _spec = (sim.config.get('phase_plates', {}).get(dname)
+                     or (sim.config.get('gates', {}).get(dname) or {})
                      .get('phase', 0))
             _angles = re.findall(r'∠\S+', ' '.join(vals))
             vals = ([_override if _override
                      else _sub(angle_label(_spec, float(_ph.degrees),
                                            '°'))]
                     + _angles)
-        lines = ([_sub(dname)] + vals) if vals else [_sub(dname)]
+        _dline, _druns = display_text(dname)
+        lines = ([_dline] + vals) if vals else [_dline]
         w, h = measure(lines, 2 * CONTROL_HALF_W)
         if _is_plate:
             # the compass needle sits to the right of the name inside
             # the box — widen the box so the needle never pokes out
-            _needle_ext = 0.115 * (len(dname) + 1) / 2 + 0.38 + 0.22
+            _needle_ext = 0.115 * (len(_dline) + 1) / 2 + 0.38 + 0.22
             w = max(w, 2 * (_needle_ext + 0.12))
         # A delay sharing its column with gates tucks in just below the
         # lowest gate frame: scaling its layout row by KY would open a
@@ -322,13 +350,18 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
         if _mates:
             _cy = min(f[1] for f in _mates) - 0.45 - h / 2
         emit_box(fx(dx_), _cy, w, h, lines, DELAY_FILL, DELAY_STROKE,
-                 corner=3, tip=value_lines(pos), shown=[_sub(dname)])
+                 corner=3, tip=value_lines(pos), shown=[_dline])
+        if _druns:
+            # emit_box appended one text for the (bold) name line and,
+            # in the values view with values, one more for the rest
+            _appended = 2 if (show_values and len(lines) > 1) else 1
+            texts[-_appended]['runs'] = [_druns]
         if _is_plate:
             # the same compass needle full gates carry, angled by the
             # phase, just to the right of the plate's name (the name is
             # the first display line, centered in the box)
             _deg = float(_ph.degrees)
-            _ncx = fx(dx_) + 0.115 * (len(dname) + 1) / 2 + 0.38
+            _ncx = fx(dx_) + 0.115 * (len(_dline) + 1) / 2 + 0.38
             _ncy = _cy + (len(lines) - 1) * LINE_H / 2
             _dxc, _dyc = (math.cos(math.radians(_deg)),
                           math.sin(math.radians(_deg)))
@@ -363,7 +396,8 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
     # clips longer names like AIM_Figure12's control1/control2)
     for pname, (px, py) in L.particle_xy.items():
         sign = spec.topology['topo']['particle_signs'].get(pname, 1)
-        label = f'{"+" if sign > 0 else "−"}{_sub(pname)}'
+        _pline, _pruns = display_text(pname)
+        label = f'{"+" if sign > 0 else "−"}{_pline}'
         pw = 2 * PORT_PAD + CHAR_W * (len(label) + 1)
         ph = 2 * PORT_PAD + LINE_H
         cx, cy = fx(px), py * KY
@@ -371,8 +405,11 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
                           y=cy - ph / 2, y2=cy + ph / 2,
                           fill=PARTICLE_FILL, stroke=VALUE_STROKE,
                           corner=int(ph * scale / 2), amp='', pr=''))
-        texts.append(dict(x=cx, y=cy, lines=[label],
-                          size=11, color='#333333', weight='bold'))
+        _ptx = dict(x=cx, y=cy, lines=[label],
+                    size=11, color='#333333', weight='bold')
+        if _pruns:
+            _ptx['runs'] = [[(('+' if sign > 0 else '−'), 0)] + _pruns]
+        texts.append(_ptx)
         # the particle's wire starts at the blob: clip its first point
         # to the stadium's right edge
         edge_clip[clip_key(fx(px + 0.4), cy)] = cx + pw / 2
@@ -436,6 +473,27 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
 
     # wires, arrowheads, wire labels (scaled by KX/KY)
     CHAMFER = 0.12
+    # Stage-box rectangles, computed before the wires so a wire
+    # vertical that the display-space x-compression squeezes under a
+    # box's padding can be nudged back out (drawn after the wires,
+    # further below).
+    _SB_PAD = 0.18
+    stage_rects = []   # (label, x1, y1, x2, y2) — None label = no box
+    for _members, _slabel in zip(parsed.stage_gates, parsed.stage_names):
+        if len(_members) == 1 and _slabel == _members[0]:
+            # a stage that IS its one gate: the box and label would
+            # only repeat the gate — draw neither (the same collapse
+            # rule as matching stage/group names)
+            continue
+        _rects = [frames[m] for m in _members if m in frames]
+        if not _rects:
+            continue
+        stage_rects.append((_slabel,
+                            min(r[0] for r in _rects) - _SB_PAD,
+                            min(r[1] for r in _rects) - _SB_PAD,
+                            max(r[2] for r in _rects) + _SB_PAD,
+                            max(r[3] for r in _rects) + _SB_PAD))
+
     for i, r in enumerate(routes):
         if len(r.points) < 2:
             continue
@@ -464,6 +522,39 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
                    ([] if abs(pe[1] - new_y) < 1e-6 else
                     [(safe_r, new_y), (safe_r, pe[1])]) +
                    [pe])
+        # a vertical segment inside a stage box (the x-compression can
+        # squeeze a router channel under the box padding) gets nudged
+        # out to the nearest border: no wire pierces a box's top or
+        # bottom edge
+        for k in range(1, len(pts) - 2):
+            (vx, vy1), (vx2, vy2) = pts[k], pts[k + 1]
+            if abs(vx - vx2) > 1e-9 or abs(vy1 - vy2) < 1e-9:
+                continue
+            ylo, yhi = min(vy1, vy2), max(vy1, vy2)
+            for _, bx1, by1, bx2, by2 in stage_rects:
+                if not bx1 + 0.02 < vx < bx2 - 0.02:
+                    continue
+                if not (ylo < by1 < yhi or ylo < by2 < yhi):
+                    continue
+                # strictly LOCAL: a nudge may only shift the vertical
+                # by a hair — anything farther would reroute the wire
+                # through foreign territory, which is worse than a
+                # border graze
+                left, right = bx1 - 0.05, bx2 + 0.05
+                _MAX_NUDGE = 0.6
+
+                def _boxed(x_):
+                    return any(ox1 + 0.02 < x_ < ox2 - 0.02
+                               for _, ox1, _, ox2, _ in stage_rects)
+
+                nx = left if vx - bx1 <= bx2 - vx else right
+                if _boxed(nx) or abs(nx - vx) > _MAX_NUDGE:
+                    nx = right if nx == left else left
+                if _boxed(nx) or abs(nx - vx) > _MAX_NUDGE:
+                    break   # no local free slot: leave it
+                pts[k] = (nx, vy1)
+                pts[k + 1] = (nx, vy2)
+                break
         # round interior corners: a small quadratic bezier through each
         # corner, sampled into the polyline
         if len(pts) > 2:
@@ -524,15 +615,7 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
     # small enough that adjacent stage boxes (e.g. a delay-only stage
     # like the double-slit's slits/phase next to a gate stage) never
     # overlap their neighbors
-    GROUP_PAD = 0.18
-    for members, label in zip(parsed.stage_gates, parsed.stage_names):
-        rects = [frames[m] for m in members if m in frames]
-        if not rects:
-            continue
-        gx1 = min(r[0] for r in rects) - GROUP_PAD
-        gy1 = min(r[1] for r in rects) - GROUP_PAD
-        gx2 = max(r[2] for r in rects) + GROUP_PAD
-        gy2 = max(r[3] for r in rects) + GROUP_PAD
+    for label, gx1, gy1, gx2, gy2 in stage_rects:
         boxes.insert(0, dict(x=gx1, x2=gx2, y=gy1, y2=gy2,
                              fill=STAGE_FILL, stroke=STAGE_STROKE,
                              corner=6, amp='', pr=''))

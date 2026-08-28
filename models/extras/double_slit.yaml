@@ -1,0 +1,53 @@
+title: Double slit (one pixel)
+
+caption: One screen pixel of the double-slit apparatus — the recombining gate of figure 4.14 with a phase plate carrying that pixel's path-length difference.
+
+notes: |-
+  The double-slit app loads this network as its base circuit and, per
+  condition, swaps a block box in for a slit or adds the which-way
+  recorder gate; per screen pixel it overrides phi with the pixel's
+  path-length phase. Loaded standalone (phi = 0), it is the both-slits
+  apparatus at the brightest pixel.
+
+variables:
+   theta_split: 45°
+   theta_merge: 45°
+   theta_sort: 0
+   phi: 0
+
+run_stages:
+   split: [g_split]
+   slits: [S1, S2]
+   phase: [φ]
+   merge: [g_merge]
+   sort: [g_sort]
+   detect: [S, D]
+
+particles:
+   p1: {sign: 1, weight: 1}
+
+gates:
+   g_split: {angle: theta_split}
+   g_merge: {angle: theta_merge}
+   g_sort: {angle: theta_sort}
+
+delay_gates: [S1, S2, S, D]
+
+phase_plates:
+   φ: phi
+
+display_strings:
+   g_split: '$g_{split}$'
+   g_merge: '$g_{merge}$'
+   g_sort: '$g_{sort}$'
+
+links:
+   p1: g_split.upper
+   g_split.upper: S1
+   S1: g_merge.upper
+   g_split.lower: S2
+   S2: φ.control
+   φ.control: g_merge.lower
+   g_merge.upper: g_sort.upper
+   g_sort.upper: S
+   g_sort.lower: D

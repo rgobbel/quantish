@@ -100,15 +100,16 @@ def spec_from_simulation(sim, fig: str = None) -> DiagramSpec:
     # canonical link source; the router attaches them to routes
     wire_labels = dict(getattr(sim, 'wire_labels', {}))
 
-    # A pass-through gate that carries a phase is a phase plate: annotate
-    # its box with the phase (an angle_overrides entry for the box name
-    # replaces the annotation text).
+    # A phase plate (or, legacy spelling, a pass-through gate that
+    # carries a phase) is annotated with its phase (an angle_overrides
+    # entry for the box name replaces the annotation text).
     delay_notes = {}
     for gname in _pass_through:
-        phase = config.gates[gname].get('phase')
+        phase = (config.get('phase_plates', {}).get(gname)
+                 or config.get('gates', {}).get(gname, {}).get('phase'))
         if phase is not None:
             delay_notes[gname] = 'φ=' + angle_label(
-                phase, sim.fredkin_gates[gname].phase.degrees,
+                phase, sim.gates[gname].phase.degrees,
                 degree_sign='°')
 
     # Particle links stay in `links` for routing; the renderer draws them
@@ -170,7 +171,9 @@ PARTICLE_OFFSET_X = -1.8    # particle column relative to stage 1's gate left ed
 PORT_W = 1.1                # port / delay box width
 CONTROL_HALF_W = PORT_W / 2
 DELAY_COL_WIDTH = PORT_W    # a column of only delay boxes is just that wide
-DELAY_COL_GAP = 0.45        # gap beside a delay-only (inline-box) column
+DELAY_COL_GAP = 0.80        # gap beside a delay-only (inline-box) column
+                            # — wide enough for a wire channel between
+                            # the stage boxes' padded borders
 WIRE_STUB_LEN = 0.75        # how far a labeled stub wire reaches beyond the gate body
 
 # Port-row y-offsets, measured from the gate's *top* (north anchor). The
@@ -263,9 +266,28 @@ def compute_layout(circuit: Circuit) -> Layout:
     delay_only = [all(name in delays for name in names)
                   for names in engine_steps]
 
+    # A phase plate's drawn box is wider than a plain delay's — the
+    # name shares its line with the compass needle, and the phase
+    # annotation sits beneath — and the router needs a real corridor
+    # beside it for any wire that has to change rows at the plate's
+    # column. Reserve that width here so the drawn geometry and the
+    # routing model agree.
+    _plate_notes = circuit.topology['topo'].get('delay_notes', {})
+
+    def _delay_col_width(names_) -> float:
+        w = DELAY_COL_WIDTH
+        for n in names_:
+            if n not in _plate_notes:
+                continue
+            needle_w = 0.115 * (len(n) + 1) + 1.44
+            note_w = 0.115 * len(_plate_notes[n]) + 0.6
+            w = max(w, needle_w + 0.6, note_w + 0.6)
+        return w
+
     x = 0.0
     for col, names in enumerate(engine_steps):
-        width = DELAY_COL_WIDTH if delay_only[col] else GATE_WIDTH
+        width = (_delay_col_width(names) if delay_only[col]
+                 else GATE_WIDTH)
         L.col_x.append(x)
         L.col_width.append(width)
         row_ys = stage_ys(parsed, names, top, row_stride, delay_stride)
@@ -575,6 +597,25 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
         if hi - lo < 0.3:   # narrow (inline-box) gap: pare the margins
             mid = (gate_right + next_left) / 2
             lo, hi = mid - 0.15, mid + 0.15
+        # Group boxes protrude into narrow gaps (a delay column's box
+        # pads past its port edges): keep the window out of any box
+        # interior — a vertical inside a border reads as a wire
+        # piercing the stage. If a box swallows the whole window, keep
+        # it as-is (best effort beats no channel at all).
+        for _gb in boxes_geom:
+            bx1, bx2 = _gb['x1'] - 0.08, _gb['x2'] + 0.08
+            if bx1 <= lo and bx2 >= hi:
+                break
+            if bx1 >= hi or bx2 <= lo:
+                continue
+            if bx1 <= lo:
+                lo = bx2
+            elif bx2 >= hi:
+                hi = bx1
+            elif bx1 - lo >= hi - bx2:
+                hi = bx1
+            else:
+                lo = bx2
         return lo, hi
 
     # Track per-gap channel (vertical-segment) allocations: list of
@@ -677,11 +718,23 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
     # Minimum visual separation between two channels in the same gap.
     _CHANNEL_MIN_GAP = 0.30
 
+    def channel_crossings(cx: float, y_low: float, y_high: float) -> int:
+        """Existing horizontal segments a vertical at cx over (y_low,
+        y_high) would cross mid-run (corner touches excluded). Crossings
+        are legal but ugly; channel choice prefers zero."""
+        n = 0
+        for sy_, sx_lo, sx_hi in horizontal_segments:
+            if y_low + 0.08 < sy_ < y_high - 0.08 \
+                    and sx_lo + _CORNER_EPS < cx < sx_hi - _CORNER_EPS:
+                n += 1
+        return n
+
     def alloc_channel(gap: int, y_low: float, y_high: float,
                       stub_y: float | None = None,
                       stub_to: float | None = None,
                       spread: bool = False,
-                      exclude_xs: frozenset = frozenset()) -> float:
+                      exclude_xs: frozenset = frozenset(),
+                      hug_x: float | None = None) -> float:
         """Pick a channel x in `gap` whose vertical span doesn't overlap any
         already-allocated channel whose y-span overlaps ours.
 
@@ -725,19 +778,32 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
         # headed farthest right — get larger x's, so their long horizontal
         # runs start to the right of every earlier-routed vertical and
         # never cross one.
-        if not spread and stub_to is not None:
+        if not spread and (hug_x is not None or stub_to is not None):
             # Otherwise, hug the stub's far end: a channel near the port its
             # stub runs to keeps that stub short, so wires sharing a y take
             # naturally disjoint spans — an exit stub (running left to its
             # source port) gets a left-side channel, an entry stub (running
-            # right into its destination) a right-side one.
-            candidates.sort(key=lambda c: abs(c - stub_to))
+            # right into its destination) a right-side one. A caller may
+            # override the target via hug_x (e.g. a multi-row vertical
+            # turns as early as possible).
+            _target = stub_to if hug_x is None else hug_x
+            candidates.sort(key=lambda c: abs(c - _target))
 
         def stub_ok(cx: float) -> bool:
             if stub_y is None or stub_to is None:
                 return True
             return stub_clean(stub_y, cx, stub_to)
 
+        for cx in candidates:
+            if not all(abs(cx - cf) >= _CHANNEL_MIN_GAP for cf in proximity_xs):
+                continue
+            if not stub_ok(cx):
+                continue
+            if channel_crossings(cx, y_low, y_high):
+                continue
+            used.append((cx, y_low, y_high))
+            return cx
+        # Relaxation 0: allow crossings, keep stub clearance and min-gap.
         for cx in candidates:
             if not all(abs(cx - cf) >= _CHANNEL_MIN_GAP for cf in proximity_xs):
                 continue
@@ -894,8 +960,17 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
                 # In the particle corridor (gap == -1), spread successive
                 # particle wires so they cascade rather than stack on the
                 # leftmost slot.
+                # A vertical spanning more than one row pitch cuts across
+                # intermediate port rows; when it leaves a full gate
+                # column (three port rows, all busy with stubs), turning
+                # as early as possible keeps it clear of them. Delay and
+                # plate columns have no such congestion — their wires
+                # keep hugging the destination.
+                _hug = (sx if y_hi - y_lo > 1.2
+                        and endpoint_gate(src) in L.gate_xy else None)
                 cx = alloc_channel(gap, y_lo, y_hi, stub_y=dy, stub_to=dx,
-                                   spread=(gap == -1), exclude_xs=tried)
+                                   spread=(gap == -1), exclude_xs=tried,
+                                   hug_x=_hug)
                 # Validate against gates and horizontal stubs.
                 bad = (hit_horizontal(sy, sx + 0.02, cx, exclude=skip_set)
                        or hit_horizontal(dy, cx, dx - 0.02, exclude=skip_set)

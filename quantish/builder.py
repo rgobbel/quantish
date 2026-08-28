@@ -19,8 +19,10 @@ source, by '>gate.port' for a labeled null input, or by an unlinked
 output for a labeled null output. A link source is a particle name
 ('p1') or a gate output
 ('g1.upper'), and a destination is always a gate input ('g2.control').
-A gate with kind 'phase' is a phase plate — an angle-0 gate with a
-phase, used through its control wire only. A gate with kind 'delay'
+A gate with kind 'phase' is a phase plate (gate.PhasePlate): a
+pass-through that only rotates traversing weights by e^{iφ}, used
+through its control wire only and emitted as the model's phase_plates
+section (name → phase spec). A gate with kind 'delay'
 is a delay gate: a portless pass-through, addressed in links by its
 bare name ('g1.upper: d1', 'd1: g2.control'), emitted as the model's
 delay_gates list. 'stage' names a user-assigned execution stage and
@@ -321,21 +323,46 @@ def graph_to_config(graph, title: str, caption: str | None = None,
     if symbolic is not None:
         config['calculation_mode'] = 'symbolic' if symbolic else 'float'
     config['run_stages'] = derive_stages(graph)
+    def _particle_entry(p):
+        return {'weight': p.get('weight', 1), 'sign': p.get('sign', 1)}
+
     config['particles'] = {
-        name: {'weight': p.get('weight', 1), 'sign': p.get('sign', 1)}
+        name: _particle_entry(p)
         for name, p in sorted(graph.get('particles', {}).items())}
     def _spec(v):
         # degree-marked entries ('30°') are engine-legal specs and pass
         # through verbatim, like everything else
         return v if isinstance(v, (int, float)) else str(v)
 
+    def _gate_entry(g):
+        return ({'angle': 0, 'phase': _spec(g.get('phase', 0))}
+                if g.get('kind') == 'phase'
+                else {'angle': _spec(g.get('angle', 0))})
+
+    # phase plates go in the model's phase_plates section (name →
+    # phase spec)
+    plates = sorted((n for n, g in gates.items()
+                     if g.get('kind') == 'phase'), key=_natural)
     config['gates'] = {
-        name: ({'angle': 0, 'phase': _spec(g.get('phase', 0))}
-               if g.get('kind') == 'phase'
-               else {'angle': _spec(g.get('angle', 0))})
-        for name, g in sorted(gates.items()) if name not in delays}
+        name: _gate_entry(g)
+        for name, g in sorted(gates.items())
+        if name not in delays and name not in plates}
     if delays:
         config['delay_gates'] = delays
+    if plates:
+        config['phase_plates'] = {
+            name: _spec(gates[name].get('phase', 0)) for name in plates}
+    # display strings live in one top-level dict, so every named
+    # object — delay gates included — can carry one
+    displays = {name: str(g['display_string'])
+                for name, g in sorted(gates.items())
+                if g.get('display_string')}
+    displays.update({name: str(p['display_string'])
+                     for name, p
+                     in sorted(graph.get('particles', {}).items())
+                     if p.get('display_string')})
+    if displays:
+        config['display_strings'] = displays
     if variables:
         config['variables'] = {str(k): v for k, v in variables.items()}
     config['links'] = {src: dst for src, dst in graph.get('links', [])}
@@ -433,6 +460,8 @@ def config_to_graph(config) -> tuple[dict, list[str]]:
                  for g in gs if not (d == g and list(gs) == [g])}
 
     graph = {'gates': {}, 'particles': {}, 'links': []}
+    _displays = {str(k): str(v) for k, v
+                 in dict(config.get('display_strings') or {}).items()}
     col_of = {s: i for i, s in enumerate(config['run_stages'])}
     row_count = {}
     for name, gate in sim.fredkin_gates.items():
@@ -456,6 +485,8 @@ def config_to_graph(config) -> tuple[dict, list[str]]:
                 return expr
             return spec if isinstance(spec, (int, float)) else str(spec)
 
+        if name in _displays:
+            gd['display_string'] = _displays[name]
         if pdeg and not deg:
             gd['kind'] = 'phase'
             gd['phase'] = _keep(
@@ -478,6 +509,31 @@ def config_to_graph(config) -> tuple[dict, list[str]]:
         row_count[col] += 1
         gd = {'x': 170 + col * 200, 'y': 40 + row * 150,
               'kind': 'delay'}
+        if name in _displays:
+            gd['display_string'] = _displays[name]
+        if name in stage_of:
+            gd['stage'] = stage_of[name]
+        if name in dgroup_of:
+            gd['dgroup'] = dgroup_of[name]
+        graph['gates'][name] = gd
+
+    for name, plate in sim.phase_plates.items():
+        pdeg = round(float(plate.phase.degrees), 10)
+        col = col_of.get(stage_of.get(name), 0)
+        row = row_count[col] = row_count.get(col, 0)
+        row_count[col] += 1
+        spec = config.get('phase_plates', {}).get(name, 0)
+        try:
+            angle_degrees(spec, env)
+            phase = spec if isinstance(spec, (int, float)) else str(spec)
+        except Exception:  # noqa: BLE001 — any unparseable spec
+            phase = _angle_expr(pdeg)
+            notes.append(f'{name}: phase {spec} loaded as its '
+                         f'value {phase}')
+        gd = {'x': 170 + col * 200, 'y': 40 + row * 150,
+              'kind': 'phase', 'phase': phase}
+        if name in _displays:
+            gd['display_string'] = _displays[name]
         if name in stage_of:
             gd['stage'] = stage_of[name]
         if name in dgroup_of:
@@ -492,6 +548,8 @@ def config_to_graph(config) -> tuple[dict, list[str]]:
         graph['particles'][name] = {'x': 24, 'y': 60 + i * 70,
                                     'sign': int(p.get('sign', 1)),
                                     'weight': w}
+        if name in _displays:
+            graph['particles'][name]['display_string'] = _displays[name]
     graph['links'] = [[src, dst] for src, dst in config['links'].items()]
     if config.get('wire_labels'):
         graph['wire_labels'] = {str(k): str(v) for k, v
@@ -541,7 +599,8 @@ def config_to_yaml(config) -> str:
         w = p['weight']
         wtxt = (f'{w:.12g}' if isinstance(w, (int, float))
                 else f"'{w}'")
-        lines.append(f"  {name}: {{weight: {wtxt}, sign: {p['sign']}}}")
+        opts = f"weight: {wtxt}, sign: {p['sign']}"
+        lines.append(f'  {name}: {{{opts}}}')
     lines += ['', 'gates:']
     for name, g in config['gates'].items():
         opts = f"angle: {g['angle']}"
@@ -551,6 +610,14 @@ def config_to_yaml(config) -> str:
     if config.get('delay_gates'):
         lines += ['', f"delay_gates: "
                       f"[{', '.join(config['delay_gates'])}]"]
+    if config.get('phase_plates'):
+        lines += ['', 'phase_plates:']
+        for name, spec in config['phase_plates'].items():
+            lines.append(f'  {name}: {_scalar(spec)}')
+    if config.get('display_strings'):
+        lines += ['', 'display_strings:']
+        for name, ds in config['display_strings'].items():
+            lines.append(f'  {name}: {_scalar(ds)}')
     if config.get('variables'):
         lines += ['', 'variables:']
         for vname, vval in config['variables'].items():
