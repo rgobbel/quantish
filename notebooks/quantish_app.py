@@ -1323,7 +1323,7 @@ def _(
                             tally += sample_terminal(job_sim.result_space,
                                                      k, rng)
                         else:
-                            t, d = sample_paths(job_sim.initial_point,
+                            t, d = sample_paths(job_sim.initial_points,
                                                 len(job_sim.run_stages),
                                                 k, rng)
                             tally += t

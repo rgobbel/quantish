@@ -144,7 +144,7 @@ class TestQify:
         try:
             qn.set_calc_mode('Symbolic')
             assert qify('pi/6').v == sym.pi / 6
-            assert 'pi' in str(qify('rad(30)'))
+            assert 'PI' in str(qify('rad(30)'))   # printed the way qnumber spells it
         finally:
             qn.set_calc_mode(prev)
 
@@ -446,3 +446,33 @@ class TestConj:
     def test_conj_is_reserved(self):
         assert qn.reserved_name('conj')
         assert qn.reserved_name('conjugate')
+
+
+# 'm@φ' is a weight by magnitude and phase, exact in Symbolic mode.
+
+def test_float_polar_literal():
+    CalcMode.default('Float')
+    w = qify('0.7@30°')
+    assert abs(float(abs(w)) - 0.7) < 1e-9
+    assert abs(float(w.phase.degrees) - 30) < 1e-9
+    # radians when unmarked, and it composes with arithmetic
+    assert abs(float(qify('1@pi/2').phase.degrees) - 90) < 1e-9
+    assert abs(float(abs(qify('2*0.5@45°'))) - 1.0) < 1e-9
+
+
+def test_symbolic_polar_literal_is_exact():
+    CalcMode.default('Symbolic')
+    try:
+        assert qn.zerop(qify('1@45°') - qify('exp(I*PI/4)'))
+        # and it prints the way qnumber spells the constant
+        assert 'PI' in str(qify('1@45°'))
+    finally:
+        CalcMode.default('Float')
+
+
+def test_polar_literal_with_variables():
+    CalcMode.default('Float')
+    env = {'mag': qify('0.5'), 'ph': qify('60°')}
+    w = qify('mag@ph', env)
+    assert abs(float(abs(w)) - 0.5) < 1e-9
+    assert abs(float(w.phase.degrees) - 60) < 1e-9

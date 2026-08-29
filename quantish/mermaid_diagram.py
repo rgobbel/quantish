@@ -2,7 +2,7 @@ from pathlib import Path
 
 from quantish.display import pos_value_str
 from quantish.simulation import Simulation
-from quantish.util import (SEP, angle_label, fmt_label,
+from quantish.util import (base_name, SEP, angle_label, fmt_label,
                            math_to_unicode, parse_position)
 import quantish.qnumber as qn
 import python_mermaid.diagram as pmd
@@ -249,7 +249,7 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
             ctrl_source_name = sim.sources[control_pos]
             ctrl_source_parts = parse_position(ctrl_source_name)
             if type(ctrl_source_parts) is str:
-                ctrl_input_node = mermaid_nodes[ctrl_source_name]
+                ctrl_input_node = mermaid_nodes[base_name(ctrl_source_name)]
                 mermaid_links.append(pmd.Link(
                     ctrl_input_node, ctrl_gate_node,
                     message=wire_label(ctrl_source_name)))
@@ -284,7 +284,7 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
                     switch_input = sim.sources[switch_pos]
                     input_pos = parse_position(switch_input)
                     if type(input_pos) is str:
-                        switch_input_node = mermaid_nodes[switch_input]
+                        switch_input_node = mermaid_nodes[base_name(switch_input)]
                         mermaid_links.append(pmd.Link(
                             switch_input_node, switch_node,
                             message=wire_label(switch_input)))

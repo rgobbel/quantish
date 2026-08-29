@@ -32,7 +32,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from quantish.util import SEP, angle_label
+from quantish.util import base_name, SEP, angle_label
 
 
 # --------------------------------------------------------------------------
@@ -312,6 +312,12 @@ def compute_layout(circuit: Circuit) -> Layout:
     # bottommost-gate-bottom across all columns). With more vertical room
     # particles cascade more cleanly and circles can't visually overlap.
     n_particles = len(parsed.particles)
+    # the corridor between the particles and the first column hosts one
+    # vertical channel per particle wire that changes rows, at the
+    # router's minimum spacing, beside any labeled null-input stubs
+    # reaching in from the gates — so with more than two particles the
+    # column steps left to make room
+    particle_x = PARTICLE_OFFSET_X - 0.3 * max(0, n_particles - 2)
     if n_particles > 0:
         if L.gate_xy:
             top_y = max(y for _, y in L.gate_xy.values())
@@ -332,7 +338,7 @@ def compute_layout(circuit: Circuit) -> Layout:
                 ys = [top_y - i * step for i in range(n_particles)]
         # Insertion order of parsed.particles is the execution order.
         for i, pname in enumerate(parsed.particles):
-            L.particle_xy[pname] = (PARTICLE_OFFSET_X, ys[i])
+            L.particle_xy[pname] = (particle_x, ys[i])
 
     # Stage-label band y, above the topmost gate (the labels themselves
     # are drawn from group_boxes in emit_tex).
@@ -341,7 +347,7 @@ def compute_layout(circuit: Circuit) -> Layout:
         L.stage_label_y = topmost + 0.7
 
     # Bounding box.
-    xs = [PARTICLE_OFFSET_X - 0.5]
+    xs = [particle_x - 0.5]
     ys = [0.0]
     # labeled null-input/output stub wires extend beyond the port edges
     for endpoint in stub_endpoints(circuit, L):
@@ -586,10 +592,12 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
     def gap_x_range(gap: int) -> tuple[float, float]:
         if gap < 0:
             # Particle corridor: start past the right edge of the particle
-            # circles (centers at PARTICLE_OFFSET_X, radius ~0.4) with extra
-            # clearance so a vertical channel doesn't graze a particle, and
-            # end clear of the first column's group-box border.
-            return (PARTICLE_OFFSET_X + 0.55, -_GAP_MARGIN)
+            # circles (radius ~0.4) with extra clearance so a vertical
+            # channel doesn't graze a particle, and end clear of the first
+            # column's group-box border.
+            px = (max(x for x, _ in L.particle_xy.values())
+                  if L.particle_xy else PARTICLE_OFFSET_X)
+            return (px + 0.55, -_GAP_MARGIN)
         gate_right = L.col_x[gap] + L.col_width[gap]
         next_left = (L.col_x[gap + 1] if gap + 1 < len(L.col_x)
                      else gate_right + COL_GAP)
@@ -622,16 +630,33 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
     # (x, y_low, y_high). When picking a new channel, we prefer one that
     # doesn't overlap any existing wire's vertical segment.
     gap_channels_used: dict[int, list[tuple[float, float, float]]] = {}
+    # who allocated each channel: the two arms of a branching particle
+    # SHARE one — the fork — so a sibling's channel is never a conflict
+    channel_owner: dict[tuple[int, float], str | None] = {}
 
     # Track horizontal segments globally: list of (y, x_lo, x_hi). Used to
     # avoid placing a new horizontal at the same y on top of an existing one
     # over the same x-range. Two horizontals at the same y but disjoint x
     # are fine (they look like two separate strokes on the same baseline).
+    cur_link: list = [None]   # the link being routed, exempt from its own reserve
     horizontal_segments: list[tuple[float, float, float]] = []
+    label_zones: list[tuple[float, float, float]] = []
+    # who laid each horizontal (its link source), so the two arms of a
+    # branching particle may share the stretch leaving the particle:
+    # they fork at a channel, and the overlap IS the fork
+    segment_owner: dict[int, str] = {}
 
-    def add_horizontal(y: float, x_lo: float, x_hi: float) -> None:
+    def add_horizontal(y: float, x_lo: float, x_hi: float,
+                       owner: str | None = None) -> None:
         if x_hi > x_lo + 0.02:
+            segment_owner[len(horizontal_segments)] = owner
             horizontal_segments.append((y, min(x_lo, x_hi), max(x_lo, x_hi)))
+
+    def _sibling_arm(owner: str | None) -> bool:
+        cur = cur_link[0][0] if cur_link[0] else None
+        return (owner is not None and cur is not None and SEP not in cur
+                and SEP not in owner and base_name(owner) == base_name(cur)
+                and owner != cur)
 
     # Two segments at "the same y" match within this tolerance (a pair of
     # near-but-not-identical baselines would render as overlapping lines).
@@ -646,10 +671,12 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
         """If a horizontal at y overlapping [x_lo, x_hi] is already in use,
         return the (x_lo, x_hi) of the conflicting segment."""
         lo, hi = min(x_lo, x_hi), max(x_lo, x_hi)
-        for sy, sx_lo, sx_hi in horizontal_segments:
+        for i, (sy, sx_lo, sx_hi) in enumerate(horizontal_segments):
             if abs(sy - y) > _Y_MATCH_TOL:
                 continue
             if sx_hi < lo + 0.05 or sx_lo > hi - 0.05:
+                continue
+            if _sibling_arm(segment_owner.get(i)):
                 continue
             return sx_lo, sx_hi
         return None
@@ -680,7 +707,7 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
                      _gap_hi - _APPROACH_CLEAR)
         entry_reserves.append(((_src, _dst), _d_xy[1], _rx_lo, _d_xy[0]))
 
-    cur_link: list = [None]   # the link being routed, exempt from its own reserve
+    # (cur_link is declared above the segment helpers)
 
     def reserve_blocked(y: float, x_lo: float, x_hi: float) -> bool:
         """Does a horizontal at y over [x_lo, x_hi] sit along another
@@ -718,14 +745,32 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
     # Minimum visual separation between two channels in the same gap.
     _CHANNEL_MIN_GAP = 0.30
 
+    def touches_stub_end(cx: float, y_low: float, y_high: float) -> bool:
+        """Would a vertical at cx over (y_low, y_high) pass through the
+        END of an existing horizontal (a labeled null-input stub, a
+        port stub)? That reads as a T-junction — the stub appears to
+        branch off the vertical — so it is never an acceptable channel."""
+        for i, (sy_, sx_lo, sx_hi) in enumerate(horizontal_segments):
+            if _sibling_arm(segment_owner.get(i)):
+                continue   # the sibling arm's corner IS the fork
+            if y_low + 0.05 < sy_ < y_high - 0.05 \
+                    and (abs(cx - sx_lo) < 0.12 or abs(cx - sx_hi) < 0.12):
+                return True
+        return False
+
     def channel_crossings(cx: float, y_low: float, y_high: float) -> int:
         """Existing horizontal segments a vertical at cx over (y_low,
         y_high) would cross mid-run (corner touches excluded). Crossings
         are legal but ugly; channel choice prefers zero."""
         n = 0
-        for sy_, sx_lo, sx_hi in horizontal_segments:
+        for i, (sy_, sx_lo, sx_hi) in enumerate(horizontal_segments):
+            if _sibling_arm(segment_owner.get(i)):
+                continue
             if y_low + 0.08 < sy_ < y_high - 0.08 \
                     and sx_lo + _CORNER_EPS < cx < sx_hi - _CORNER_EPS:
+                n += 1
+        for sy_, sx_lo, sx_hi in label_zones:
+            if y_low + 0.08 < sy_ < y_high - 0.08 and sx_lo < cx < sx_hi:
                 n += 1
         return n
 
@@ -760,15 +805,19 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
         """
         x_lo, x_hi = gap_x_range(gap)
         used = gap_channels_used.setdefault(gap, [])
+        sibling_xs = [ux for ux, _, _ in used
+                      if _sibling_arm(channel_owner.get((gap, ux)))]
         # spans that merely touch at an endpoint (one channel ends where the
-        # other begins) are NOT conflicts — only genuine overlap is
+        # other begins) are NOT conflicts — only genuine overlap is; a
+        # sibling arm's channel is the one we WANT to share
         conflicts = [
             ux for ux, uy_lo, uy_hi in used
             if not (y_high < uy_lo + 0.10 or y_low > uy_hi - 0.10)
+            and ux not in sibling_xs
         ] + list(exclude_xs)
         # When spreading, every prior x acts as a soft-conflict for proximity.
-        proximity_xs = ([ux for ux, _, _ in used] + list(exclude_xs)
-                        if spread else conflicts)
+        proximity_xs = ([ux for ux, _, _ in used if ux not in sibling_xs]
+                        + list(exclude_xs) if spread else conflicts)
 
         n = 32
         candidates = [x_lo + (x_hi - x_lo) * (i + 0.5) / n for i in range(n)]
@@ -794,38 +843,48 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
                 return True
             return stub_clean(stub_y, cx, stub_to)
 
+        def take(cx: float) -> float:
+            used.append((cx, y_low, y_high))
+            channel_owner[(gap, cx)] = cur_link[0][0] if cur_link[0] else None
+            return cx
+
+        # a sibling arm's channel is shared outright — the fork — unless
+        # the caller already rejected it against the gates
+        for sx_ in sibling_xs:
+            if sx_ not in exclude_xs:
+                return take(sx_)
+
         for cx in candidates:
             if not all(abs(cx - cf) >= _CHANNEL_MIN_GAP for cf in proximity_xs):
                 continue
-            if not stub_ok(cx):
+            if not stub_ok(cx) or touches_stub_end(cx, y_low, y_high):
                 continue
             if channel_crossings(cx, y_low, y_high):
                 continue
-            used.append((cx, y_low, y_high))
-            return cx
-        # Relaxation 0: allow crossings, keep stub clearance and min-gap.
-        for cx in candidates:
+            return take(cx)
+        # Relaxation 0: allow crossings — the fewest first — keeping stub
+        # clearance and min-gap.
+        for cx in sorted(candidates,
+                         key=lambda c: channel_crossings(c, y_low, y_high)):
             if not all(abs(cx - cf) >= _CHANNEL_MIN_GAP for cf in proximity_xs):
                 continue
-            if not stub_ok(cx):
+            if not stub_ok(cx) or touches_stub_end(cx, y_low, y_high):
                 continue
-            used.append((cx, y_low, y_high))
-            return cx
-        # Relaxation 1: drop the stub-clearance constraint, keep min-gap.
+            return take(cx)
+        # Relaxation 1: drop the stub-clearance constraint, keep min-gap
+        # (a T-junction on a stub end stays off limits).
         for cx in candidates:
-            if all(abs(cx - cf) >= _CHANNEL_MIN_GAP for cf in proximity_xs):
-                used.append((cx, y_low, y_high))
-                return cx
+            if all(abs(cx - cf) >= _CHANNEL_MIN_GAP for cf in proximity_xs) \
+                    and not touches_stub_end(cx, y_low, y_high):
+                return take(cx)
         # Relaxation 2: drop spread, keep y-conflict avoidance.
         if spread:
             for cx in candidates:
                 if all(abs(cx - cf) >= _CHANNEL_MIN_GAP for cf in conflicts):
-                    used.append((cx, y_low, y_high))
-                    return cx
+                    return take(cx)
         # Last-resort: max distance from conflicts.
         best = max(candidates, key=lambda cx: min((abs(cx - cf) for cf in conflicts), default=10))
-        used.append((best, y_low, y_high))
-        return best
+        return take(best)
 
     # Track per-lane usage. The below-base clears group-box bottoms, which
     # protrude GROUP_PAD beyond the lowest gate.
@@ -871,9 +930,15 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
     # they still occupy their row: register their spans before routing
     # so no channel or entry stub lands on top of them.
     stub_specs = list(labeled_stubs(circuit, L))
+    # a stub's label sits beside it: channels avoid crossing that room
+    # (label_zones feed channel_crossings), but the room is not a wire
+    # end, so it never counts as a T-junction
+    _LABEL_ROOM = 0.55
     for points, _, _, _ in stub_specs:
         (ax, ay), (bx, by) = points[0], points[-1]
         add_horizontal(ay, ax, bx)
+        label_zones.append((ay, min(ax, bx) - _LABEL_ROOM,
+                            max(ax, bx) + _LABEL_ROOM))
 
     def wire_label_at(src, dst, sy, dy):
         """Where a wire's label sits. Wires leaving a gate label just
@@ -922,7 +987,7 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
                 and not reserve_blocked(sy, sx, dx)):
             routes.append(Route([(sx, sy), (dx, dy)], label=w_label,
                                 label_at=w_at, label_side=w_side))
-            add_horizontal(sy, sx, dx)
+            add_horizontal(sy, sx, dx, owner=src)
             continue
 
         # ---- Try a two-step route (out, vertical channel, in). ----
@@ -995,8 +1060,8 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
             routes.append(Route(two_step, label=w_label,
                                 label_at=w_at, label_side=w_side))
             # Record both stubs as occupied horizontals.
-            add_horizontal(sy, sx, two_step[1][0])
-            add_horizontal(dy, two_step[2][0], dx)
+            add_horizontal(sy, sx, two_step[1][0], owner=src)
+            add_horizontal(dy, two_step[2][0], dx, owner=src)
             continue
 
         # ---- Detour through a *local* lane. ----
@@ -1171,9 +1236,9 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
             (dx, dy),
         ], label=w_label, label_at=w_at, label_side=w_side))
         # Record all three horizontal segments of the route.
-        add_horizontal(sy, sx, cx)
-        add_horizontal(lane_y, cx, d_cx)
-        add_horizontal(dy, d_cx, dx)
+        add_horizontal(sy, sx, cx, owner=src)
+        add_horizontal(lane_y, cx, d_cx, owner=src)
+        add_horizontal(dy, d_cx, dx, owner=src)
 
     # Labeled null-input/output stubs: short wires drawn only because a
     # label asks for them (the book's empty w₁/w₃ inputs, w₂ᵦ outputs).
@@ -1186,8 +1251,8 @@ def src_xy(L: Layout, src: str, particles: set, delays: set):
     if '.' in src:
         gname, port = src.split('.', 1)
         return port_xy(L, gname, port, 'out')
-    if src in particles:
-        cx, cy = L.particle_xy[src]
+    if base_name(src) in particles:
+        cx, cy = L.particle_xy[base_name(src)]
         return cx + 0.4, cy
     if src in delays:
         return port_xy(L, src, '_delay', 'out')
@@ -1206,7 +1271,7 @@ def col_of_src(L: Layout, src: str, particles: set, delays: set) -> int | None:
         return L.col_of.get(src.split('.', 1)[0])
     if src in delays:
         return L.col_of.get(src)
-    if src in particles:
+    if base_name(src) in particles:
         return -1   # virtual particle column
     return None
 

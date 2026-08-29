@@ -1,0 +1,45 @@
+title: Figure 4.3 (U2)
+
+caption: The configuration-space view in U2 — particles $p_2$ and $p_3$ observe particle $p_1$, which starts in a superposition of two positions.
+
+notes: |-
+  Figure 4.3 (numbered the same in both editions), the U2 universe of
+  noninterfering superpositions. p1 starts on either w1 or w4, each
+  with probability 1/2 (the book's weights s1a and s1b), and the two
+  angle-0 gates route p2 and p3 classically: whichever branch p1 is
+  in, exactly one of them crosses over, so p2 and p3 have observed
+  p1's position. The two branches never meet, so nothing interferes, which is
+  the point of U2. The gates are U3 gates at angle 0, and the U3 engine
+  carries branch weights of 1/sqrt(2) whose squares are the book's
+  probabilities of 1/2 — the Pr column shows those.
+
+run_stages:
+   observe: [g1, g2]
+
+particles:
+   p1: {sign: 1, weight: 1}
+   p2: {sign: 1, weight: 1}
+   p3: {sign: 1, weight: 1}
+
+gates:
+   g1: {angle: 0}
+   g2: {angle: 0}
+
+links:
+   p1: [g1.control, g2.control, 0.5]
+   p2: g1.upper
+   p3: g2.upper
+
+wire_labels:
+   p1>g1.control: $w_1$
+   p2: $w_2$
+   '>g1.lower': $w_3$
+   p1>g2.control: $w_4$
+   p3: $w_5$
+   '>g2.lower': $w_6$
+   g1.control: $w_{1a}$
+   g1.upper: $w_{2a}$
+   g1.lower: $w_{3a}$
+   g2.control: $w_{4a}$
+   g2.upper: $w_{5a}$
+   g2.lower: $w_{6a}$

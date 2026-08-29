@@ -1,0 +1,33 @@
+title: Figure 4.2 (U1)
+
+caption: The classical universe U1 — a state moves through configuration space. With *p1* on gate *g*'s control wire, *p2* crosses over from *w2* to *w3a*.
+
+notes: |-
+  Figure 4.2 (numbered the same in both editions) shows the U1
+  "classical" universe: a Fredkin gate that only routes, with no
+  splitting. An angle-0 quantish gate carrying plus-sign particles is
+  exactly that gate, so U1 is the special case of U3 with every angle
+  at 0. One particle in, one particle out, and one classical state
+  throughout.
+
+run_stages:
+   g: [g]
+
+particles:
+   p1: {sign: 1, weight: 1}
+   p2: {sign: 1, weight: 1}
+
+gates:
+   g: {angle: 0}
+
+links:
+   p1: g.control
+   p2: g.upper
+
+wire_labels:
+   p1: $w_1$
+   p2: $w_2$
+   '>g.lower': $w_3$
+   g.control: $w_{1a}$
+   g.upper: $w_{2a}$
+   g.lower: $w_{3a}$

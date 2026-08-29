@@ -51,7 +51,8 @@ summary h1, summary h2, summary h3, summary h4 {
 select, option {
     color: #000 !important;
 }
-input:not(:placeholder-shown), input[type="number"] {
+input:not(:placeholder-shown), input[type="number"],
+textarea {
     color: #000 !important;
 }
 [role="radio"][data-state="checked"] + label,

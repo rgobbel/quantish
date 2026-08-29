@@ -276,6 +276,19 @@ def parse_position(pos:str):
     else:
         return parts
 
+# A branching particle (links: p1: [g1.control, g2.control, 0.25]) has
+# two start positions. Its first arm keeps the particle's own name as
+# its link source; the second arm's source is the name plus this mark,
+# so single-destination consumers keep working and the few that walk
+# sources map back with base_name().
+BRANCH_MARK = '|2'
+
+
+def base_name(src: str) -> str:
+    """The particle behind a link source, second-arm mark stripped."""
+    return src[:-len(BRANCH_MARK)] if src.endswith(BRANCH_MARK) else src
+
+
 def simplify_graph(links):
     slinks = nx.DiGraph()
     for source_pos, dest_pos in links.items():
@@ -284,7 +297,7 @@ def simplify_graph(links):
         dest_gate, dest_wire = dest_parts
         if len(source_parts) == 1:
             source_type = 'particle'
-            source = source_pos
+            source = base_name(source_pos)
         else:
             source_type = 'gate'
             source_gate, source_wire = source_parts

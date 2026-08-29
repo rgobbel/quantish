@@ -1,6 +1,6 @@
-title: Figure 4.16
+title: Figure 4.16 (lower wire connected)
 
-caption: As in previous models, this shows the effect of connecting the lower output of *g1*.
+caption: Figure 4.16 (4.15 in the 2006 edition), but with the lower output of *g1* connected as well.
 
 run_stages:
    prepare: [g0]

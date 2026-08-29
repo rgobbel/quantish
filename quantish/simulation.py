@@ -9,9 +9,20 @@ from quantish.config_space import (Position, GatePort, PCoordinate,
                                      ConfigSpacePoint, ConfigSpaceRunner)
 import quantish.qnumber as qn
 from quantish.qnumber import qify, Complex
-from quantish.util import SEP, WIRES, flat_list, simplify_graph, log_seq
+from quantish.util import (BRANCH_MARK, SEP, WIRES, base_name, flat_list,
+                           simplify_graph, log_seq)
 
 log = logging.getLogger('quantish')
+
+def _prob_text(spec, rest: bool = False) -> str:
+    """How a branch probability reads on its wire: the spec as written
+    ('0.25', 'p'), or its complement for the second arm ('0.75',
+    '1-p')."""
+    if isinstance(spec, (int, float)) and not isinstance(spec, bool):
+        val = 1 - spec if rest else spec
+        return f'{val:g}'
+    return f'1-({spec})' if rest else str(spec)
+
 
 class Simulation:
     def __init__(self, config):
@@ -88,8 +99,30 @@ class Simulation:
         def canon(end):
             return f'{end}{SEP}control' if end in delays else end
 
-        self.links = {canon(src): canon(dst)
-                      for src, dst in config.links.items()}
+        # A particle may branch: `p1: [g1.control, g2.control, 0.25]`
+        # starts it in a superposition over two destinations, with the
+        # given probability (default an even split) of the FIRST one.
+        # The first arm is linked under the particle's own name, the
+        # second under the name plus BRANCH_MARK; the probability spec
+        # waits in branch_specs until the variables can resolve it.
+        self.links = {}
+        self.branch_specs = {}
+        for src, dst in config.links.items():
+            if isinstance(dst, (list, tuple)):
+                arms = [d for d in dst if isinstance(d, str)]
+                probs = [d for d in dst if not isinstance(d, str)]
+                if src not in config.particles or len(arms) != 2 \
+                        or len(probs) > 1 or len(dst) != len(arms) + len(probs):
+                    raise ValueError(
+                        f"link '{src}': a branching link is a particle "
+                        f"with exactly two destinations and at most one "
+                        f"probability ([g1.control, g2.control, 0.25]), "
+                        f"got {list(dst)!r}")
+                self.links[src] = canon(arms[0])
+                self.links[f'{src}{BRANCH_MARK}'] = canon(arms[1])
+                self.branch_specs[src] = probs[0] if probs else 0.5
+            else:
+                self.links[canon(src)] = canon(dst)
         self.sources = {v: k for k, v in self.links.items()}
 
         # Optional wire labels (the book's w₂, w₂ₐ, ... segment names).
@@ -116,6 +149,17 @@ class Simulation:
                         f"source ('{self.sources[port]}') instead")
                 else:
                     self.wire_labels[f'>{port}'] = str(label)
+            elif '>' in key and key.split('>', 1)[0] in self.branch_specs:
+                # one arm of a branching particle, named by where it
+                # goes: 'p1>g2.control'
+                pname, dst = key.split('>', 1)
+                arm = next((k for k in (pname, f'{pname}{BRANCH_MARK}')
+                            if self.links.get(k) == canon(dst)), None)
+                if arm is None:
+                    problems.append(f"'{key}': {pname} does not branch "
+                                    f"to {dst}")
+                else:
+                    self.wire_labels[arm] = str(label)
             else:
                 src = canon(key)
                 if src in self.links or src in ports:
@@ -330,16 +374,40 @@ class Simulation:
                                self.links.get(pport, ''))
             self.phase_plates[ppname] = plate
             self.gates[ppname] = plate
+        # Branch probabilities: p for the first arm, 1-p for the second,
+        # each arm's amplitude the square root (real, so the two start
+        # states carry exactly those probabilities and no phase — the
+        # U2 reading of a superposition; see the schema notes)
+        self.branch_amps = {}
+        for pname, spec in self.branch_specs.items():
+            prob = qify(spec, self.qvars)
+            if not 0 <= float(prob) <= 1:
+                raise ValueError(
+                    f"particle '{pname}': branch probability {spec!r} "
+                    f"is {float(prob):g}, outside 0..1")
+            self.branch_amps[pname] = (
+                qify(f'sqrt({spec})', self.qvars),
+                qify(f'sqrt(1 - ({spec}))', self.qvars))
+            # every renderer labels the two arms with their probabilities
+            # (alongside any model label), so which arm got the number is
+            # never a matter of memory
+            for arm, ptxt in ((pname, _prob_text(spec)),
+                              (f'{pname}{BRANCH_MARK}', _prob_text(spec, rest=True))):
+                lab = self.wire_labels.get(arm)
+                self.wire_labels[arm] = f'{lab} ({ptxt})' if lab else ptxt
+        # each particle's possible starts: [(coordinate, amplitude)]
+        starts = {}
         for source, dest in links.items():
             source_parts = source.split(SEP)
             dest_gate_name, dest_port = dest.split(SEP)
             dest_wire = GatePort(dest_gate_name, dest_port)
             dest_pos = Position(endpoint=dest_wire)
             if len(source_parts) == 1:
+                pname = base_name(source)
                 # .get, not [..]: Addict would silently auto-create a
                 # phantom for an undeclared name (e.g. a stale link after
                 # renaming a particle) and crash much later
-                particle = self.particles.get(source)
+                particle = self.particles.get(pname)
                 if particle is None:
                     raise ValueError(
                         f"link source '{source}' is neither a gate port nor "
@@ -351,24 +419,43 @@ class Simulation:
                     log.debug(f'PARTICLE {particle} has zero weight: absent')
                     continue
                 pcoord = PCoordinate(particle.name, particle.sign, dest_pos)
-                self.initial_coords[source] = pcoord
-                log.debug(f'PARTICLE {particle}, INITIAL POSITION: {pcoord}')
+                amp = None
+                if pname in self.branch_amps:
+                    amp = self.branch_amps[pname][0 if source == pname else 1]
+                starts.setdefault(pname, []).append((pcoord, amp))
+                log.debug(f'PARTICLE {particle}, INITIAL POSITION: {pcoord}'
+                          + (f' (branch amplitude {amp})' if amp is not None else ''))
         log.debug(' ')
-        # the initial configuration-space point's weight is the product of
-        # the configured particle weights
-        # absent (zero-weight) particles route gates by their absence but
-        # must not zero the initial configuration-space point's weight, so they stay out of the product
-        initial_weight = qn.prod([p.weight for p in self.particles.values()
-                                  if not qn.zerop(p.weight)])
-        self.initial_point = ConfigSpacePoint(0, list(self.initial_coords.values()), initial_weight)
-        # display data: each particle's initial "component" is its
-        # configured weight (see the weight-evolution graph's band glyphs)
-        self.initial_point.particles = {p.name: p.weight for p in self.particles.values()}
+        # the initial configuration-space points: one per combination of
+        # the particles' starts (a single point unless something
+        # branches), each weighted by the product of the configured
+        # particle weights and its branch amplitudes. Absent
+        # (zero-weight) particles route gates by their absence but must
+        # not zero the weight, so they stay out of the product.
+        base_weight = qn.prod([p.weight for p in self.particles.values()
+                               if not qn.zerop(p.weight)])
+        combos = [[]]
+        for pname, alts in starts.items():
+            combos = [c + [(pname, coord, amp)] for c in combos
+                      for coord, amp in alts]
+        self.initial_points = []
+        for combo in combos:
+            weight = base_weight
+            for _, _, amp in combo:
+                if amp is not None:
+                    weight = weight * amp
+            point = ConfigSpacePoint(0, [coord for _, coord, _ in combo], weight)
+            # display data: each particle's initial "component" is its
+            # configured weight (see the weight-evolution graph's band glyphs)
+            point.particles = {p.name: p.weight for p in self.particles.values()}
+            self.initial_points.append(point)
+        self.initial_point = self.initial_points[0]
+        self.initial_coords = {pname: coord for pname, coord, _ in combos[0]}
         log_seq('particles', particles, logging.DEBUG)
         log_seq('gates', gates, logging.DEBUG)
 
     def run(self):
-        result_space, all_points = ConfigSpaceRunner(self).run(self.initial_point)
+        result_space, all_points = ConfigSpaceRunner(self).run(self.initial_points)
         self.result_space = result_space
         self.all_points = all_points
         log.debug(' ')

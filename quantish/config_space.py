@@ -178,12 +178,17 @@ class ConfigSpacePoint:
 class ConfigSpace:
     __slots__ = ('index', 'max_step')
 
-    def __init__(self, initial_point: ConfigSpacePoint = None):
+    def __init__(self, initial_point=None):
+        """Seeded with one configuration-space point, or a list of them
+        (a model whose particle branches starts in a superposition)."""
         self.index: dict[str, ConfigSpacePoint] = {}
         self.max_step = 0
-        if initial_point is not None:
-            self.index[initial_point.key] = initial_point
-            self.max_step = initial_point.step
+        points = ([] if initial_point is None
+                  else list(initial_point) if isinstance(initial_point, (list, tuple))
+                  else [initial_point])
+        for point in points:
+            self.index[point.key] = point
+            self.max_step = point.step
 
     def add_point(self, point: ConfigSpacePoint) -> ConfigSpacePoint:
         """Merge a successor into this space. Configuration-space points with identical
@@ -308,9 +313,12 @@ class ConfigSpaceRunner:
         dropped.
         """
         sim = self.sim
-        Q = ConfigSpace(initial_point)
+        points = (list(initial_point) if isinstance(initial_point, (list, tuple))
+                  else [initial_point])
+        Q = ConfigSpace(points)
         all_points = ConfigSpace()
-        all_points.record(initial_point)
+        for point in points:
+            all_points.record(point)
         for step, stage in enumerate(sim.run_stages):
             stage_gates = {gname: sim.gates[gname] for gname in stage}
             log.debug(f'BEGIN STEP {step}: {", ".join(str(g) for g in stage_gates.values())}')

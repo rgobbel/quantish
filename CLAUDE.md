@@ -138,7 +138,11 @@ Model files define:
   in place of the name ({g_split: '$g_{split}$'}); covers gates, delay
   gates, phase plates, and particles alike — the name stays the
   identifier everywhere
-- `links`: Connectivity graph (particle/gate outputs → gate inputs)
+- `links`: Connectivity graph (particle/gate outputs → gate inputs). A
+  particle may branch — `p1: [g1.control, g2.control, 0.25]` starts
+  it in a superposition over two destinations, the number being the
+  probability of the first (even split when omitted; real amplitudes,
+  the U2 notion of a superposition)
 - `wire_labels` (optional): the book's wire-segment names, keyed by the
   link the label sits on ({p1: w2, g1.upper: w2a}). A `'>g.port'` key is
   an empty (null) input into that port; an unlinked output port's key is

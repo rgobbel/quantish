@@ -8,7 +8,13 @@ The builder widget edits a plain dict:
                            'kind': 'phase'?, 'phase': degrees?}},
       'particles': {name: {'x': …, 'y': …, 'sign': 1 | -1, 'weight': 1.0}},
       'links':     [[src, dst], …],
+      'branches':  {particle: probability-spec},   # optional
     }
+
+A particle with two links branches: it starts in a superposition over
+both destinations, the first-listed one with the probability in
+'branches' (an even split when absent) — the model files' `p1:
+[g1.control, g2.control, 0.25]`.
 
 An angle (or a φ plate's phase) is a spec in the model files' own
 syntax — radians, expressions included: 0, 'pi/6', 'rad(30)', 0.5 —
@@ -35,7 +41,7 @@ from fractions import Fraction
 
 import sympy as sym
 
-from quantish.qnumber import qify, reserved_name
+from quantish.qnumber import qify, reserved_name, sym_text
 from quantish.util import SEP, WIRES
 
 
@@ -81,15 +87,15 @@ def angle_degrees(spec, env=None, unit: str = 'radians') -> float:
 
 def _angle_expr(deg) -> str:
     """The model-file spelling of an angle given in degrees: sympy's
-    own rendering ('0', 'pi/6', '3*pi/8', '-pi/4') when the angle is an
+    own rendering ('0', 'PI/6', '3*PI/8', '-PI/4') when the angle is an
     exact fraction of pi, rad(<degrees>) only otherwise. The canvas
     stores degrees as floats, so they are rationalized first — going
     straight through Real(deg).radians would drag a sympy Float along
     ('0.1666...*pi')."""
     frac = Fraction(deg / 180).limit_denominator(360)
     if abs(float(frac) - deg / 180) < 1e-12:
-        return str(sym.Rational(frac.numerator, frac.denominator)
-                   * sym.pi)
+        return sym_text(sym.Rational(frac.numerator, frac.denominator)
+                        * sym.pi)
     return f'rad({deg:.12g})'
 
 
@@ -134,7 +140,24 @@ def validate_graph(graph, variables=None,
     sources = [src for src, _ in links]
     dests = [dst for _, dst in links]
     for src in {s for s in sources if sources.count(s) > 1}:
-        problems.append(f'{src} feeds more than one input')
+        if src in particles and sources.count(src) == 2:
+            continue   # a branching particle: two arms are its whole point
+        problems.append(f'{src} feeds more than one input'
+                        + (' (a particle branches two ways at most)'
+                           if src in particles else ''))
+    for pname, spec in (graph.get('branches') or {}).items():
+        if sources.count(pname) != 2:
+            problems.append(f'{pname}: a branch probability needs two '
+                            'destinations')
+            continue
+        try:
+            val = float(qify(spec, env))
+            if not 0 <= val <= 1:
+                problems.append(f'{pname}: branch probability {spec!r} '
+                                f'is {val:g}, outside 0..1')
+        except Exception as exc:  # noqa: BLE001 — qify's message informs
+            problems.append(f'{pname}: cannot use branch probability '
+                            f'{spec!r} — {str(exc).splitlines()[0]}')
     for dst in {d for d in dests if dests.count(d) > 1}:
         problems.append(f'{dst} is fed by more than one wire')
     for src, dst in links:
@@ -174,6 +197,13 @@ def validate_graph(graph, variables=None,
                             'control wire')
 
     for key in (graph.get('wire_labels') or {}):
+        if '>' in str(key)[1:]:
+            # 'p1>g2.control': one arm of a branching particle
+            pname, dst = str(key).split('>', 1)
+            if pname not in particles or (pname, dst) not in links:
+                problems.append(f'wire label {key}: {pname} does not go '
+                                f'to {dst}')
+            continue
         end = str(key)[1:] if str(key).startswith('>') else str(key)
         eg, ew = _endpoint(end, gates)
         if eg is None and end not in particles:
@@ -200,6 +230,18 @@ def validate_graph(graph, variables=None,
             reason = str(exc).splitlines()[0]
             problems.append(f'{name}: cannot use {field} '
                             f'{g.get(field)!r} — {reason}')
+
+    for name, p in sorted(particles.items()):
+        spec = p.get('weight', 1)
+        try:
+            qify(spec, env)
+        except sym.SympifyError:
+            problems.append(f'{name}: weight {spec!r} is not a valid '
+                            'expression')
+        except Exception as exc:  # noqa: BLE001 — qify's message informs
+            reason = str(exc).splitlines()[0]
+            problems.append(f'{name}: cannot use weight {spec!r} — '
+                            f'{reason}')
     return problems
 
 
@@ -365,7 +407,17 @@ def graph_to_config(graph, title: str, caption: str | None = None,
         config['display_strings'] = displays
     if variables:
         config['variables'] = {str(k): v for k, v in variables.items()}
-    config['links'] = {src: dst for src, dst in graph.get('links', [])}
+    # a particle with two links becomes a branching link, its
+    # probability (when set) riding as the list's third item
+    config['links'] = {}
+    branches = graph.get('branches') or {}
+    for src, dst in graph.get('links', []):
+        if src in config['links']:
+            arms = [config['links'][src], dst]
+            prob = branches.get(src)
+            config['links'][src] = arms if prob is None else arms + [_spec(prob)]
+        else:
+            config['links'][src] = dst
     if graph.get('wire_labels'):
         config['wire_labels'] = {str(k): str(v) for k, v
                                  in graph['wire_labels'].items()}
@@ -550,7 +602,18 @@ def config_to_graph(config) -> tuple[dict, list[str]]:
                                     'weight': w}
         if name in _displays:
             graph['particles'][name]['display_string'] = _displays[name]
-    graph['links'] = [[src, dst] for src, dst in config['links'].items()]
+    graph['links'] = []
+    for src, dst in config['links'].items():
+        if isinstance(dst, (list, tuple)):
+            arms = [d for d in dst if isinstance(d, str)]
+            probs = [d for d in dst if not isinstance(d, str)]
+            graph['links'] += [[src, d] for d in arms]
+            if probs:
+                graph.setdefault('branches', {})[src] = (
+                    probs[0] if isinstance(probs[0], (int, float))
+                    else str(probs[0]))
+        else:
+            graph['links'].append([src, dst])
     if config.get('wire_labels'):
         graph['wire_labels'] = {str(k): str(v) for k, v
                                 in config['wire_labels'].items()}
@@ -624,7 +687,11 @@ def config_to_yaml(config) -> str:
             lines.append(f'  {vname}: {_scalar(vval)}')
     lines += ['', 'links:']
     for src, dst in config['links'].items():
-        lines.append(f'  {src}: {dst}')
+        if isinstance(dst, (list, tuple)):
+            items = [d if isinstance(d, str) else _scalar(d) for d in dst]
+            lines.append(f"  {src}: [{', '.join(items)}]")
+        else:
+            lines.append(f'  {src}: {dst}')
     if config.get('wire_labels'):
         lines += ['', 'wire_labels:']
         for key, label in config['wire_labels'].items():

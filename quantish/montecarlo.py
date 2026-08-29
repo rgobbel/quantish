@@ -64,8 +64,14 @@ def sample_paths(initial_point, n_steps: int, n_trials: int,
     """
     tally = Counter()
     dead_ends = 0
+    # a branching model has several starting points: each trial draws
+    # one by its probability, like every later step draws a successor
+    starts = (list(initial_point) if isinstance(initial_point, (list, tuple))
+              else [initial_point])
+    start_weights = [_prob(s.weight) for s in starts]
     for _ in range(n_trials):
-        world = initial_point
+        world = (starts[0] if len(starts) == 1
+                 else rng.choices(starts, weights=start_weights)[0])
         for _step in range(n_steps):
             children = [s for s in world.successors if s.step == world.step + 1]
             weights = [_prob(s.contributions[world]) for s in children
@@ -125,7 +131,7 @@ def run_monte_carlo(sim, n_trials: int, mode: str = 'terminal', seed=None) -> di
 
     if mode in ('path', 'both'):
         n_steps = len(sim.run_stages)
-        tally, dead_ends = sample_paths(sim.initial_point, n_steps, n_trials, rng)
+        tally, dead_ends = sample_paths(sim.initial_points, n_steps, n_trials, rng)
         results['path'] = tally
         results['path_dead_ends'] = dead_ends
         log_tally('path sampling (one world-line per trial; collapses at every stage)',

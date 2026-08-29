@@ -85,3 +85,31 @@ def test_phase_plate_round_trip():
     # read as radians, 30 is more than a full turn — the tripwire fires
     assert any('full turn' in p
                for p in validate_graph(graph, angle_unit='radians'))
+
+
+def test_validate_graph_checks_particle_weights():
+    graph, _ = config_to_graph(CONFIG)
+    graph['particles']['p1']['weight'] = '0.5+0.87j'
+    assert validate_graph(graph, angle_unit='degrees') == []
+    graph['particles']['p1']['weight'] = 'bogus_name'
+    problems = validate_graph(graph, angle_unit='degrees')
+    assert any('p1' in pr and 'weight' in pr for pr in problems)
+
+
+def test_branching_particle_round_trip():
+    cfg = dict(CONFIG)
+    cfg['run_stages'] = {'s1': ['g1', 'g2']}
+    cfg['links'] = {'p1': ['g1.upper', 'g2.upper', 0.25]}
+    graph, notes = config_to_graph(cfg)
+    assert notes == []
+    assert [l for l in graph['links'] if l[0] == 'p1'] == \
+        [['p1', 'g1.upper'], ['p1', 'g2.upper']]
+    assert graph['branches'] == {'p1': 0.25}
+    assert validate_graph(graph, angle_unit='degrees') == []
+    out = graph_to_config(graph, cfg['title'], angle_unit=cfg['angle_unit'])
+    back = yaml.safe_load(config_to_yaml(out))
+    assert back['links']['p1'] == ['g1.upper', 'g2.upper', 0.25]
+    # three arms is one too many
+    graph['links'].append(['p1', 'g1.lower'])
+    assert any('two ways at most' in pr
+               for pr in validate_graph(graph, angle_unit='degrees'))

@@ -141,6 +141,62 @@ _DEG_NUM = rex.compile(r'(\d+(?:\.\d+)?)\s*[°º˚]')
 _DEG_PAREN = rex.compile(r'\)\s*[°º˚]')
 
 
+# A polar literal: magnitude@phase, each side a number, a name, or a
+# parenthesized expression, the phase optionally degree-marked
+# ('0.7@30°', 'q45@(q5+q6)°', '1@pi/4').
+_TERM = r'(?:\([^()]*(?:\([^()]*\)[^()]*)*\)|[A-Za-z_][A-Za-z_0-9]*|\d*\.?\d+(?:[eE][+-]?\d+)?)'
+# each side of the @ is a multiplicative chain of terms, so '1@pi/2'
+# takes the whole 'pi/2' as its phase and '+'/'-' still bind looser
+_CHAIN = rf'{_TERM}(?:\s*[*/]\s*{_TERM})*'
+_POLAR_AT = rex.compile(rf'({_CHAIN})\s*@\s*([+-]?{_CHAIN}\s*[°º˚]?)')
+
+
+def polar_at_to_rotate(s: str) -> str:
+    """Rewrite 'm@φ' (magnitude and phase) as 'rotate((m), (φ))' — the
+    weight written the way the displays print it, evaluated by
+    Complex.rotate so the meaning of a phase is defined once. The
+    phase keeps any degree mark for degrees_marks_to_radians to
+    resolve, so '0.7@30°' is exact in Symbolic mode."""
+    prev = None
+    while prev != s:
+        prev = s
+        s = _POLAR_AT.sub(r'rotate((\1), (\2))', s)
+    return s
+
+
+def spec_rewrites(s: str) -> str:
+    """The expression sugar qnumber understands beyond sympy's own
+    syntax: polar literals ('0.7@30°') and postfix degree marks."""
+    if '@' in s:
+        s = polar_at_to_rotate(s)
+    if any(m in s for m in '°º˚'):
+        s = degrees_marks_to_radians(s)
+    return s
+
+
+def _rotate_spec(mag, phase):
+    """The 'rotate' bound in expressions: Complex.rotate in the current
+    mode, handed back to sympify as a plain value."""
+    return Complex(mag).rotate(phase).v
+
+
+def spec_locals() -> dict:
+    """The names qnumber binds in every expression beyond sympy's own:
+    PI (the constant as qnumber spells it), conj (the short spelling of
+    conjugate), and rotate (magnitude, phase — what 'm@φ' becomes)."""
+    return {'PI': sym.pi, 'conj': sym.conjugate, 'rotate': _rotate_spec}
+
+
+_PI_WORD = rex.compile(r'\bpi\b')
+
+
+def sym_text(v) -> str:
+    """The printed form of a value: sympy's text with the constant
+    spelled PI, the way qnumber exports it and model expressions
+    write it — never sympy's lowercase pi."""
+    return _PI_WORD.sub('PI', str(v))
+
+
 def degrees_marks_to_radians(s: str) -> str:
     """Rewrite postfix degree marks into exact radians: '30°' becomes
     '(30*pi/180)', '(a+b)°' becomes '(a+b)*(pi/180)' — so the degree
@@ -154,16 +210,16 @@ def qify(x, env: dict | None = None) -> 'Complex':
     """Parse x into a Q number. `env` is an optional {name: value} table
     of model variables usable in string expressions ('(q5 + q6) - theta2');
     values may be Q numbers or sympy expressions. Postfix degree marks
-    are understood ('30°', '(q5+q6)°'). An expression that still
+    are understood ('30°', '(q5+q6)°'), as are polar literals
+    ('0.7@30°': magnitude and phase). An expression that still
     contains unknown names raises — every quantity must be concrete."""
     if isq(x): return x
     elif iscplx(x): return Complex(x)
-    if isinstance(x, str) and any(m in x for m in '°º˚'):
-        x = degrees_marks_to_radians(x)
-    # sympify knows pi/E/I already; PI is the same constant spelled
-    # the way the qnumber module exports it, and conj is the short
-    # spelling of conjugate (sympify only binds the long name)
-    local_env = {'PI': sym.pi, 'conj': sym.conjugate}
+    if isinstance(x, str):
+        x = spec_rewrites(x)
+    # sympify knows pi/E/I already; spec_locals adds qnumber's own
+    # spellings (PI, conj, rotate)
+    local_env = spec_locals()
     if env:
         local_env.update({name: (val.v if isq(val) else val)
                           for name, val in env.items()})
@@ -188,7 +244,7 @@ def qify(x, env: dict | None = None) -> 'Complex':
 # meaning wins consistently.)
 RESERVED_NAMES = frozenset({
     'pi', 'PI', 'E', 'I', 'oo', 'zoo', 'nan',
-    'rad', 'deg', 'sqrt', 'exp', 'log', 'conj', 'conjugate',
+    'rad', 'deg', 'sqrt', 'exp', 'log', 'conj', 'conjugate', 'rotate',
     'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'atan2',
 })
 
@@ -210,9 +266,9 @@ def exact(x) -> 'Real':
         # sympify's rational=True only applies to strings; route authored
         # decimals through repr so 0.5 becomes Rational(1,2), not Float.
         x = repr(x)
-    if isinstance(x, str) and any(m in x for m in '°º˚'):
-        x = degrees_marks_to_radians(x)
-    val = _sympify(x, rational=True, locals={'PI': sym.pi})
+    if isinstance(x, str):
+        x = spec_rewrites(x)
+    val = _sympify(x, rational=True, locals=spec_locals())
     if not isinstance(val, sym.Expr):
         # sympify can "successfully" parse junk like 'not-a-number' into a
         # boolean expression; only genuine numeric expressions get through.
@@ -274,9 +330,9 @@ class Complex(n.Number):
             mode = CalcMode.default()
         if mode == 'Symbolic':
             if not issym(value):
-                if isinstance(value, str) and \
-                        any(m in value for m in '°º˚'):
-                    value = degrees_marks_to_radians(value)
+                if isinstance(value, str):
+                    value = spec_rewrites(value)
+                    value = sym.sympify(value, locals=spec_locals())
                 self._value = sym.sympify(value)
             else:
                 self._value = value
@@ -362,16 +418,16 @@ class Complex(n.Number):
 
 
     def __repr__(self):
-        return f'Complex({self._value}, {self.mm})'
+        return f'Complex({sym_text(self._value)}, {self.mm})'
 
     def __str__(self):
-        return f'{self._value}'
+        return sym_text(self._value)
 
     def __format__(self, format_spec):
         try:
-            return self._value.__format__(format_spec)
+            return sym_text(self._value.__format__(format_spec))
         except RecursionError:
-            return str(self._value)
+            return sym_text(self._value)
 
     def display(self, precision: int = 2) -> str:
         """Compact display: fixed-precision 're+imj' for float-backed
@@ -529,10 +585,10 @@ class Real(Complex):
         return instance
 
     def __repr__(self):
-        return f'Real({self._value}, mode={self.mm})'
+        return f'Real({sym_text(self._value)}, mode={self.mm})'
 
     def __str__(self):
-        return f'{self._value}'
+        return sym_text(self._value)
 
     def as_integer_ratio(self):
         if realtype(self._value): val = self._value.as_integer_ratio()

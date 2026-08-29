@@ -123,5 +123,39 @@ class TestWiring(unittest.TestCase):
         self.assertIn("run_stages omits linked gates ['d1']", str(ctx.exception))
 
 
+    def test_branching_particle_starts_in_superposition(self):
+        cfg = make_config(
+            run_stages={'first': ['g1', 'g2'], 'second': ['d1']},
+            links={'p1': ['g1.upper', 'g2.upper', 0.25],
+                   'g1.control': 'd1'})
+        sim = Simulation(cfg)
+        self.assertEqual(len(sim.initial_points), 2)
+        probs = sorted(round(float(p.probability), 6)
+                       for p in sim.initial_points)
+        self.assertEqual(probs, [0.25, 0.75])
+        # the arms are labeled with their probabilities
+        self.assertEqual(sim.wire_labels['p1'], '0.25')
+        self.assertEqual(sim.wire_labels['p1|2'], '0.75')
+
+    def test_branching_link_shape_is_checked(self):
+        for bad in (['g1.upper', 'g2.upper', 'g1.control'],
+                    ['g1.upper'], ['g1.upper', 'g2.upper', 0.25, 0.5]):
+            cfg = make_config(links={'p1': bad, 'g1.control': 'd1'})
+            with self.assertRaises(ValueError):
+                Simulation(cfg)
+        # only particles branch
+        cfg = make_config(links={'p1': 'g1.upper',
+                                 'g1.upper': ['g2.upper', 'g2.lower'],
+                                 'g1.control': 'd1'})
+        with self.assertRaises(ValueError):
+            Simulation(cfg)
+        # the probability stays in 0..1
+        cfg = make_config(links={'p1': ['g1.upper', 'g2.upper', 1.5],
+                                 'g1.control': 'd1'})
+        with self.assertRaises(ValueError) as ctx:
+            Simulation(cfg)
+        self.assertIn('outside 0..1', str(ctx.exception))
+
+
 if __name__ == '__main__':
     unittest.main()

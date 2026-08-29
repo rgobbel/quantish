@@ -155,9 +155,15 @@ def _(mo):
         - Arithmetic expressions such `pi/6`, `rad(30)`, `acos(4/5)`, or `pi/2 + pi/8` produce values in radians.
         - Numeric values with no other expressions included, or suffixed with a degree symbol (°) are interpreted as degrees.
         - Anything unparseable is flagged on the gate and detailed in the status line.
-    - Double-click a particle to flip its sign.
-    - Double-click a **name** to rename any object
-      - A particle's prompt takes the sign as well
+    - Double-click anywhere on a particle to edit it: its name (sign
+      first, as `+p1` or `-p1`, with an optional display string after a
+      space) and its initial weight, which can be a number, a complex
+      literal such as `0.5+0.87j`, a magnitude and phase such as `0.7@30°`,
+      an expression, or a variable name. A particle wired to **two** inputs
+      starts in a superposition over both (the book's U2 branching); its
+      dialog then also takes the probability of the first-wired one.
+    - Double-click a gate's **name** to rename it (particles rename in
+      their own dialog, above)
       - Append a **display string** after the name, separated by a space
         (`g_split $g_{split}$`), to have the object drawn with that string
         instead of its name — math notation renders with real sub- and
@@ -452,10 +458,11 @@ def _(get_loaded, mo):
         label='angle unit (default: radians)')
     caption_input = mo.ui.text_area(
         value=_loaded.get('caption') or '', rows=2, full_width=True,
-        label='**caption** (displayed on network diagrams)')
+        placeholder='a caption to be displayed in the network diagram',
+        label='**caption**')
     notes_input = mo.ui.text_area(
         value=_loaded.get('model_notes') or '', rows=3, full_width=True,
-        label='**notes** (free text)')
+        placeholder='free-form text', label='**notes**')
 
     def _vars_text(vs):
         return '\n'.join(
@@ -464,7 +471,8 @@ def _(get_loaded, mo):
 
     variables_editor = mo.ui.text_area(
         value=_vars_text(_loaded.get('variables')), rows=6,
-        full_width=True)
+        full_width=True,
+        placeholder='variable definitions in YAML format')
     _report = None
     if _loaded and _loaded.get('source'):
         _msg = ('<span style="font-size: 0.9em">loaded '
@@ -610,8 +618,7 @@ def _(caption_input, mo, notes_input, variables_editor):
                   mo.vstack([
         caption_input,
         notes_input,
-        mo.md('<span style="font-size: 0.9em">**variables** '
-              'name: expression (YAML syntax)</span>'),
+        mo.md('<span style="font-size: 0.9em">**variables**</span>'),
         variables_editor], align='stretch')})
     return
 

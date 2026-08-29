@@ -9,7 +9,8 @@
 # suite (tests/test_model_schema.py) checks every model file.
 #
 # Angle, weight, and phase specs are strings (expressions like
-# 'rad(30)', 'pi/8', degree-marked forms '30°' / '(q5+q6)°', or the
+# 'rad(30)', 'pi/8', degree-marked forms '30°' / '(q5+q6)°', polar
+# literals '0.7@30°' (magnitude and phase, for weights), or the
 # bare name of a variable) or plain numbers, read in angle_unit
 # ('radians' unless the model says 'degrees'; expression specs carry
 # their own units). Option keys
@@ -75,9 +76,25 @@ properties:
       properties:
         angle: {$ref: '#/$defs/spec'}
         phase: {$ref: '#/$defs/spec'}
+  # a link is 'source: destination'. A particle may branch instead —
+  # [g1.control, g2.control, 0.25]: it starts in a superposition over
+  # the two destinations, the number being the probability of the
+  # FIRST (omit it for an even split). Two arms at most, and the
+  # amplitudes are real (sqrt of the probabilities): this is U2's
+  # notion of a superposition, with no phase between the branches.
   links:
     type: object
-    additionalProperties: {type: string}
+    additionalProperties:
+      oneOf:
+        - {type: string}
+        - type: array
+          minItems: 2
+          maxItems: 3
+          prefixItems:
+            - {type: string}
+            - {type: string}
+            - {$ref: '#/$defs/spec'}
+          items: false
   wire_labels:
     type: object
     additionalProperties: {type: string}

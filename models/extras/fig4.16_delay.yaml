@@ -1,6 +1,6 @@
 title: Figure 4.16 (delay gates)
 
-caption: The network of figure 4.16, this time with delay gates added. The result is identical to that from figure 4.16
+caption: The network of figure 4.16 (4.15 in the 2006 edition) with delay gates added to keep the particles in step. The result is identical.
 
 run_stages:
    prepare: [g0]

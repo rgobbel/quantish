@@ -28,7 +28,10 @@ Interactions:
                  string after the name — 'g_split $g_{split}$'; a
                  stage or diagram-group box label renames the
                  whole group) - gate body: edit its angle - phase
-                 plate body: its phase - particle body: flip its sign -
+                 plate body: its phase - a particle (anywhere on
+                 it): one dialog for its name, sign, display
+                 string, weight, and — when it feeds two inputs —
+                 its branch probability -
                  a wire or port: edit the wire label (an unconnected
                  port labels a null input/output stub)
   keyboard       Delete removes the selection; ⌘Z / ⇧⌘Z undo and redo
@@ -70,8 +73,11 @@ _CSS = """
              background: #fff; border: 1px solid #8b93a0;
              border-radius: 8px; padding: 12px 14px;
              box-shadow: 0 4px 16px rgba(20, 30, 50, 0.18);
-             min-width: 340px; font-size: 13px; color: #000; }
+             min-width: 340px; max-width: 480px;
+             font-size: 13px; color: #000; }
 .qb-dialog .qb-dlg-title { font-weight: 600; margin-bottom: 8px; }
+.qb-dialog .qb-dlg-grid { display: grid; grid-template-columns: auto 1fr;
+                          gap: 6px 10px; align-items: center; }
 .qb-dialog input { width: 100%; box-sizing: border-box;
                    font-size: 14px; padding: 5px 8px;
                    border: 1px solid #bbb; border-radius: 5px;
@@ -333,7 +339,16 @@ function render({ model, el }) {
   // Drags mutate the model's graph in place while moving, so they pass
   // their own before-drag snapshot.
   const undoStack = [], redoStack = [];
+  // a branch probability belongs to a particle with exactly two arms;
+  // anything else (an arm or the particle deleted) drops it
+  const tidyBranches = (g) => {
+    if (!g.branches) return;
+    for (const k of Object.keys(g.branches))
+      if (!g.particles[k] || srcCount(g, k) !== 2) delete g.branches[k];
+    if (!Object.keys(g.branches).length) delete g.branches;
+  };
   const commit = (g, before) => {
+    tidyBranches(g);
     undoStack.push(before ?? JSON.stringify(model.get('graph')));
     if (undoStack.length > 80) undoStack.shift();
     redoStack.length = 0;
@@ -393,7 +408,12 @@ function render({ model, el }) {
     const gd = g.gates[gn];
     return gd && [gd.x, gd.y + portY(gd, w)];
   };
-  const usedSrc = (g) => new Set(g.links.map((l) => l[0]));
+  // a gate output feeds one input; a particle may branch two ways
+  const srcCount = (g, src) => g.links.filter((l) => l[0] === src).length;
+  const srcFree = (g, src) =>
+    srcCount(g, src) < (g.particles[src] ? 2 : 1);
+  const usedSrc = (g) => new Set(
+    g.links.map((l) => l[0]).filter((s) => !srcFree(g, s)));
   const usedDst = (g) => new Set(g.links.map((l) => l[1]));
 
   // A small orthogonal router for the committed wires: straight when
@@ -424,21 +444,26 @@ function render({ model, el }) {
         Math.max(Math.min(ya, yb), ay) < Math.min(Math.max(ya, yb), by));
     const usedV = [], usedH = [];
     const SPREAD = 8;
+    // the two arms of a branching particle leave it along one stretch
+    // and share one channel — the fork — so a sibling's segments are
+    // never a clash for the other arm (`cur` is the link being routed)
+    let cur = null;
+    const sibling = (s) => s.o !== null && s.o === cur && !!g.particles[cur];
     const vClash = (x, ya, yb) => usedV.some(
-      (s) => Math.abs(s.x - x) < SPREAD &&
+      (s) => !sibling(s) && Math.abs(s.x - x) < SPREAD &&
              Math.max(Math.min(ya, yb), s.a) <
              Math.min(Math.max(ya, yb), s.b));
     const hClash = (y, xa, xb) => usedH.some(
-      (s) => Math.abs(s.y - y) < SPREAD &&
+      (s) => !sibling(s) && Math.abs(s.y - y) < SPREAD &&
              Math.max(Math.min(xa, xb), s.a) + 2 <
              Math.min(Math.max(xa, xb), s.b) - 2);
     const register = (pts) => {
       for (let j = 0; j + 1 < pts.length; j++) {
         const [x1, y1] = pts[j], [x2, y2] = pts[j + 1];
         if (Math.abs(y1 - y2) < 0.5)
-          usedH.push({ y: y1, a: Math.min(x1, x2), b: Math.max(x1, x2) });
+          usedH.push({ y: y1, a: Math.min(x1, x2), b: Math.max(x1, x2), o: cur });
         else
-          usedV.push({ x: x1, a: Math.min(y1, y2), b: Math.max(y1, y2) });
+          usedV.push({ x: x1, a: Math.min(y1, y2), b: Math.max(y1, y2), o: cur });
       }
     };
 
@@ -447,6 +472,7 @@ function render({ model, el }) {
       const a = outXY(g, l[0]), b = inXY(g, l[1]);
       if (!a || !b) return null;
       skip = new Set([endNode(l[0]), endNode(l[1])]);
+      cur = l[0];
       const [sx, sy] = a, [dx, dy] = b;
       let pts = null;
       if (Math.abs(dy - sy) < 1 && dx > sx + 4 &&
@@ -454,15 +480,23 @@ function render({ model, el }) {
         pts = [[sx, sy], [dx, dy]];
       if (!pts && dx > sx + 2 * SPREAD) {
         // a vertical channel between the endpoints, fanned around the
-        // midpoint until everything clears
-        for (let k = 0; k < 24 && !pts; k++) {
+        // midpoint until everything clears; a sibling arm's channel
+        // comes first, so the fork reuses it
+        const sibX = usedV.filter(sibling).map((s) => s.x)
+          .filter((x) => x > sx + SPREAD && x < dx - SPREAD);
+        const cands = [...sibX];
+        for (let k = 0; k < 24; k++) {
           const f = 0.5 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.06;
           if (f < 0.04 || f > 0.96) continue;
-          const cx = sx + (dx - sx) * f;
+          cands.push(sx + (dx - sx) * f);
+        }
+        for (const cx of cands) {
           if (!hBlocked(sy, sx + 1, cx) && !hBlocked(dy, cx, dx - 1) &&
               !vBlocked(cx, sy, dy) && !vClash(cx, sy, dy) &&
-              !hClash(sy, sx, cx) && !hClash(dy, cx, dx))
+              !hClash(sy, sx, cx) && !hClash(dy, cx, dx)) {
             pts = [[sx, sy], [cx, sy], [cx, dy], [dx, dy]];
+            break;
+          }
         }
       }
       if (!pts) {
@@ -646,10 +680,28 @@ function render({ model, el }) {
       });
       layer.appendChild(el);
     };
+    // a branching particle's arms are labeled by where they go
+    // ('p1>g2.control') and carry their probabilities; every other
+    // wire is labeled by its source
+    const armsOf = (src) => g.links.filter((k) => k[0] === src);
     g.links.forEach((l, i) => {
-      if (!wl[l[0]] || !routed[i]) return;
-      const [x0, y0] = routed[i][0];
-      wlText(x0 + 24, y0 - 7, wl[l[0]]);
+      if (!routed[i]) return;
+      const arms = g.particles[l[0]] ? armsOf(l[0]) : [];
+      let label = arms.length === 2 ? wl[`${l[0]}>${l[1]}`] : wl[l[0]];
+      if (arms.length === 2) {
+        const p = (g.branches || {})[l[0]] ?? 0.5;
+        const first = arms[0][1] === l[1];
+        const ptxt = typeof p === 'number'
+          ? `${first ? p : Math.round((1 - p) * 1e6) / 1e6}`
+          : (first ? `${p}` : `1-(${p})`);
+        label = label ? `${label} (${ptxt})` : ptxt;
+      }
+      if (!label) return;
+      // an arm's label sits where the arm becomes its own wire (the
+      // start of its final segment); other wires label at their source
+      const pts = routed[i];
+      const [x0, y0] = arms.length === 2 ? pts[pts.length - 2] : pts[0];
+      wlText(x0 + 24, y0 - 7, label);
     });
     for (const [key, label] of Object.entries(wl)) {
       if (key.startsWith('>')) {
@@ -662,7 +714,9 @@ function render({ model, el }) {
           stroke: C.wire, 'stroke-width': 2,
         }));
         wlText(p[0] - 18, p[1] - 7, label);
-      } else if (!srcTaken.has(key)) {
+      } else if (key.includes('>')) {
+        continue;   // an arm label, drawn on its wire above
+      } else if (srcCount(g, key) === 0) {
         const p = outXY(g, key);
         if (!p) continue;
         layer.appendChild(h('line', {
@@ -802,6 +856,13 @@ function render({ model, el }) {
         'font-size': 14, 'font-weight': 600, fill: '#000',
         'data-name': name,
       }, (p.sign < 0 ? '−' : '+') + (p.display_string || name)));
+      if (String(p.weight ?? 1) !== '1') {
+        // a non-unit weight is worth seeing on the canvas
+        grp.appendChild(h('text', {
+          x: p.x + pw / 2, y: p.y + 2 * PR + 13, 'text-anchor': 'middle',
+          'font-size': 11, fill: '#000',
+        }, `w = ${p.weight}`));
+      }
       grp.appendChild(h('circle', {
         cx: p.x + pw, cy: p.y + PR, r: 6,
         fill: srcTaken.has(name) ? C.portStroke : C.portFill,
@@ -880,7 +941,7 @@ function render({ model, el }) {
     if (kind === 'particle') {
       const name = nextName('p', g.particles);
       const [x, y] = at
-        ? [Math.max(0, at[0] - PR), Math.max(0, at[1] - PR)]
+        ? [at[0] - PR, at[1] - PR]
         : freeSpot(Object.values(g.particles), partSlot);
       copy.particles[name] = { x, y, sign: 1, weight: 1 };
     } else {
@@ -892,7 +953,7 @@ function render({ model, el }) {
       const name = nextName(prefix, g.gates);
       const [w0, h0] = dims(proto);
       const [x, y] = at
-        ? [Math.max(0, at[0] - w0 / 2), Math.max(0, at[1] - h0 / 2)]
+        ? [at[0] - w0 / 2, at[1] - h0 / 2]
         : freeSpot(Object.values(g.gates), gateSlot);
       copy.gates[name] = { x, y, ...proto };
     }
@@ -1056,6 +1117,10 @@ function render({ model, el }) {
   // SVG nodes, and the browser only counts clicks on the *same* node,
   // so the native dblclick event never fires here.
   let lastDown = { key: null, t: 0 };
+  // ports keep their own double-click memory: a press on an in-port
+  // falls through to start a node drag, which records ITS key in
+  // lastDown and would otherwise erase the port's
+  let lastPort = { key: null, t: 0 };
 
   // A quick local radians evaluator for the live degrees preview in
   // the angle dialog: numbers, pi, rad(), and the usual functions.
@@ -1101,7 +1166,38 @@ function render({ model, el }) {
     return v === null ? null : v * 180 / Math.PI;
   };
 
-  function angleDialog(title, initial, onOk) {
+  // a weight typed as a plain number or a simple complex literal
+  // (0.5, -1, 0.5+0.87j, 1j) previews its magnitude; expressions and
+  // variable names are left to the app's validation
+  // A weight spec the canvas can evaluate on its own: a plain number,
+  // a complex literal (0.5+0.87j, 1j, -j), or a polar literal
+  // (0.7@30°). Anything else — expressions, variable names — is the
+  // app's to check.
+  const parseWeight = (s) => {
+    let m;
+    const one = (d) => (d === '' || d === '+' || d === '-') ? d + '1' : d;
+    if ((m = /^([+-]?\d*\.?\d+)\s*@\s*([+-]?\d*\.?\d+)\s*(°)?$/.exec(s))) {
+      // polar literal: magnitude@phase, degrees when marked
+      const mag = parseFloat(m[1]);
+      const ph = parseFloat(m[2]) * (m[3] ? Math.PI / 180 : 1);
+      return { re: mag * Math.cos(ph), im: mag * Math.sin(ph) };
+    }
+    if ((m = /^([+-]?\d*\.?\d*)[jJ]$/.exec(s)))
+      return { re: 0, im: parseFloat(one(m[1])) };
+    if ((m = /^([+-]?\d*\.?\d+)(?:\s*([+-])\s*(\d*\.?\d*)[jJ])?$/.exec(s)))
+      return { re: parseFloat(m[1]),
+               im: m[2] ? parseFloat(m[2] + one(m[3])) : 0 };
+    return null;
+  };
+  const previewWeight = (s) => {
+    const w = parseWeight(s);
+    if (!w) return '= ? (checked by the app)';
+    const mag = Math.hypot(w.re, w.im);
+    const deg = Math.round(Math.atan2(w.im, w.re) * 180 / Math.PI * 10) / 10;
+    return `|w| = ${Math.round(mag * 1000) / 1000}, |w|² = `
+      + `${Math.round(mag * mag * 1000) / 1000}, φ = ${deg}°`;
+  };
+  function angleDialog(title, initial, onOk, opts = {}) {
     const box = document.createElement('div');
     box.className = 'qb-dialog';
     const head = document.createElement('div');
@@ -1109,6 +1205,7 @@ function render({ model, el }) {
     head.textContent = title;
     const input = document.createElement('input');
     input.value = `${initial}`;
+    const aux = opts.aux ? opts.aux(input) : null;
     const row = document.createElement('div');
     row.className = 'qb-dlg-row';
     const preview = document.createElement('span');
@@ -1118,17 +1215,29 @@ function render({ model, el }) {
     const ok = document.createElement('button');
     ok.textContent = 'OK';
     ok.className = 'qb-dlg-ok';
-    row.append(preview, cancel, ok);
-    box.append(head, input, row);
+    const close = () => box.remove();
+    const extras = (opts.extra || []).map(({ label, onClick }) => {
+      const b = document.createElement('button');
+      b.textContent = label;
+      b.onclick = () => { close(); onClick(); };
+      return b;
+    });
+    row.append(preview, ...extras, cancel, ok);
+    // an aux block may lay the main input out itself (a labeled grid)
+    box.append(head, ...(aux ? [aux] : []),
+               ...(aux && aux.contains(input) ? [] : [input]), row);
     root.appendChild(box);
     const update = () => {
+      if (opts.preview) {
+        preview.textContent = opts.preview(input.value.trim());
+        return;
+      }
       const v = previewDeg(input.value.trim());
       preview.textContent = v === null ? '= ?°'
         : `= ${Math.round(v * 100) / 100}°`;
     };
     update();
     input.addEventListener('input', update);
-    const close = () => box.remove();
     cancel.onclick = close;
     ok.onclick = () => {
       const s = input.value.trim();
@@ -1245,15 +1354,12 @@ function render({ model, el }) {
     commit(copy);
   }
 
-  function renameParticle(copy, name) {
+  // "+name display" (sign first, optional display string after a
+  // space) applied to a particle: sign, display string, and — when the
+  // name changed — every link and wire label that used it. Returns the
+  // particle's (possibly new) name, or null when the name was refused.
+  function applyParticleName(copy, name, raw) {
     const p = copy.particles[name];
-    const cur = (p.sign < 0 ? '-' : '+') + name
-      + (p.display_string ? ' ' + p.display_string : '');
-    const raw = window.prompt(
-      'particle name, sign first (+name or -name) — append a display '
-      + "string after a space ('+p1 $p_1$'); remove it to display "
-      + 'the name', cur);
-    if (raw === null) return;
     let s = raw.trim();
     let sign = p.sign;
     if (s.startsWith('+')) { sign = 1; s = s.slice(1).trim(); }
@@ -1262,7 +1368,7 @@ function render({ model, el }) {
       s = s.slice(1).trim();
     }
     const [nn, disp] = splitDisplay(s);
-    if (!nn || !checkName(copy, nn, name)) return;
+    if (!nn || !checkName(copy, nn, name)) return null;
     if (disp) p.display_string = disp;
     else delete p.display_string;
     if (nn !== name) {
@@ -1271,14 +1377,22 @@ function render({ model, el }) {
         parts[k === name ? nn : k] = v;
       copy.particles = parts;
       copy.links = copy.links.map(([a, b]) => [a === name ? nn : a, b]);
-      if (copy.wire_labels && copy.wire_labels[name] !== undefined) {
-        copy.wire_labels[nn] = copy.wire_labels[name];
-        delete copy.wire_labels[name];
+      if (copy.wire_labels) {
+        const renamed = {};
+        for (const [key, lab] of Object.entries(copy.wire_labels))
+          renamed[key === name ? nn
+                  : key.startsWith(name + '>') ? nn + key.slice(name.length)
+                  : key] = lab;
+        copy.wire_labels = renamed;
+      }
+      if (copy.branches && copy.branches[name] !== undefined) {
+        copy.branches[nn] = copy.branches[name];
+        delete copy.branches[name];
       }
       selected = null;
     }
     copy.particles[nn].sign = sign;
-    commit(copy);
+    return nn;
   }
 
   function editNode(grp, target) {
@@ -1307,12 +1421,70 @@ function render({ model, el }) {
         });
       return;
     } else {
-      if (onName) {
-        renameParticle(copy, grp.dataset.particle);
-        return;
-      }
-      const p = copy.particles[grp.dataset.particle];
-      p.sign = p.sign < 0 ? 1 : -1;
+      // a particle's pill is mostly its name, so a double-click
+      // anywhere on it opens the one dialog that covers everything:
+      // name (sign first, optional display string) and weight
+      const pname = grp.dataset.particle;
+      const p = copy.particles[pname];
+      let nameInput = null;
+      let branchInput = null;
+      const nameRow = (input) => {
+        // a two-column form: labels left, both fields sharing one
+        // left edge; the dialog's own weight input joins the grid
+        const grid = document.createElement('div');
+        grid.className = 'qb-dlg-grid';
+        const cell = (txt) => {
+          const d = document.createElement('div');
+          d.textContent = txt;
+          return d;
+        };
+        nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.value = (p.sign < 0 ? '-' : '+') + pname
+          + (p.display_string ? ' ' + p.display_string : '');
+        nameInput.title = 'sign first (+p1 or -p1); a display string '
+          + 'may follow after a space (+p1 $p_1$)';
+        input.title = 'a number, a complex literal (0.5+0.87j), a '
+          + 'magnitude and phase (0.7@30°), an expression, or a '
+          + 'variable name';
+        grid.append(cell('name'), nameInput, cell('weight'), input);
+        const arms = copy.links.filter((l) => l[0] === pname).map((l) => l[1]);
+        if (arms.length === 2) {
+          // a branching particle: the probability of its FIRST arm; the
+          // rest goes down the second
+          branchInput = document.createElement('input');
+          branchInput.type = 'text';
+          branchInput.value = `${(copy.branches || {})[pname] ?? 0.5}`;
+          branchInput.title = `probability of going to ${arms[0]} `
+            + `(the rest goes to ${arms[1]}): a number from 0 to 1, an `
+            + 'expression, or a variable name';
+          grid.append(cell(`→ ${arms[0]}`), branchInput);
+          const note = cell(`the rest → ${arms[1]}`);
+          note.style.gridColumn = '2';
+          note.style.fontSize = '12px';
+          grid.append(note);
+        }
+        return grid;
+      };
+      angleDialog(`particle ${pname}`, p.weight ?? 1,
+        (s) => {
+          const fresh = JSON.parse(JSON.stringify(graph()));
+          if (!fresh.particles[pname]) return;
+          const nn = applyParticleName(fresh, pname, nameInput.value);
+          if (nn === null) return;
+          // a plain number stores as a number, anything else verbatim
+          const asSpec = (v) => /^[+-]?\d*\.?\d+$/.test(v) ? parseFloat(v) : v;
+          fresh.particles[nn].weight = asSpec(s);
+          if (branchInput) {
+            const b = branchInput.value.trim();
+            fresh.branches = fresh.branches || {};
+            if (b === '' || b === '0.5') delete fresh.branches[nn];
+            else fresh.branches[nn] = asSpec(b);
+          }
+          commit(fresh);
+        },
+        { preview: previewWeight, aux: nameRow });
+      return;
     }
     commit(copy);
   }
@@ -1338,9 +1510,10 @@ function render({ model, el }) {
     }
     if (t.dataset.inport && !ev.shiftKey) {
       const ikey = `ip:${t.dataset.inport}`;
-      if (lastDown.key === ikey && ev.timeStamp - lastDown.t < 400) {
+      if (lastPort.key === ikey && ev.timeStamp - lastPort.t < 400) {
         // double-click on an in-port labels the incoming wire, or a
         // '>port' null-input stub when nothing enters there
+        lastPort = { key: null, t: 0 };
         lastDown = { key: null, t: 0 };
         drag = null;
         const port = t.dataset.inport;
@@ -1348,7 +1521,7 @@ function render({ model, el }) {
         editWireLabel(link ? link[0] : '>' + port);
         return;
       }
-      lastDown = { key: ikey, t: ev.timeStamp };
+      lastPort = { key: ikey, t: ev.timeStamp };
       // fall through: a single press on an in-port drags the node
     }
     // a stage / diagram-group box label: double-click renames
@@ -1427,7 +1600,12 @@ function render({ model, el }) {
       const lkey = `link:${key}`;
       if (lastDown.key === lkey && ev.timeStamp - lastDown.t < 400) {
         lastDown = { key: null, t: 0 };
-        editWireLabel(graph().links[key][0]);
+        {
+          const [src, dst] = graph().links[key];
+          const arms = graph().links.filter((k) => k[0] === src).length;
+          editWireLabel(graph().particles[src] && arms === 2
+                        ? `${src}>${dst}` : src);
+        }
         return;
       }
       lastDown = { key: lkey, t: ev.timeStamp };
@@ -1467,8 +1645,8 @@ function render({ model, el }) {
       const g = graph();   // mutate the model's copy locally, commit on drop
       const coll = drag.kind === 'gate' ? g.gates : g.particles;
       const node = coll[drag.key];
-      node.x = Math.max(0, x - drag.dx);
-      node.y = Math.max(0, y - drag.dy);
+      node.x = x - drag.dx;
+      node.y = y - drag.dy;
       // snap: a connected wire within a few pixels of horizontal pulls
       // the node the rest of the way (smallest nudge wins)
       const ownerOf = (e) => e.includes('.') ? e.split('.')[0] : e;
@@ -1485,8 +1663,8 @@ function render({ model, el }) {
       }
       if (snap !== null) node.y += snap;
       for (const o of drag.others || []) {
-        coll[o.k].x = Math.max(0, node.x + o.ox);
-        coll[o.k].y = Math.max(0, node.y + o.oy);
+        coll[o.k].x = node.x + o.ox;
+        coll[o.k].y = node.y + o.oy;
       }
       drag.moved = true;
       redraw();
@@ -1534,7 +1712,7 @@ function render({ model, el }) {
       const t = ev.target;
       const g = graph();
       if (t.dataset.inport && !usedDst(g).has(t.dataset.inport) &&
-          !usedSrc(g).has(wire.src)) {
+          srcFree(g, wire.src)) {
         const copy = JSON.parse(JSON.stringify(g));
         copy.links.push([wire.src, t.dataset.inport]);
         wire = null;
