@@ -619,9 +619,11 @@ def _(
                     'g_merge': f'{theta_merge_sl.value:.0f}°',
                     'g_obs': '0°',
                     'g_sort': f'{theta_sort_sl.value:.0f}°', 'φ': 'φ(x)'})
-            # the grid rows size their own frames
+            # the grid rows size their own frames, and open with the
+            # whole circuit in view (fit) rather than at natural scale
             _g['frame_w'] = width
             _g['frame_h'] = 330
+            _g['fit'] = True
             return mo.ui.anywidget(DiagramWidget(geometry=_g))
         except Exception as exc:  # noqa: BLE001--show, don't crash the app
             return mo.md(f'_diagram failed: {exc}_')

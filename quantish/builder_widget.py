@@ -2086,9 +2086,16 @@ function render({ model, el }) {
     const ppu0 = S * ZOOM;
     const fitPpu = (w) => Math.max(ppu0 * MIN_FIT, (w - 2 * MARG) / W);
     const narrow = (w) => w < W * ppu0 + 2 * MARG;
+    // g.fit (the double-slit rows ask for it): the whole diagram is in
+    // view at first sight — scaled to fit the frame both ways, no
+    // floor, centered — instead of natural scale left-aligned
     const base = () => {
-      const w = root.getBoundingClientRect().width;
-      return w && narrow(w) ? Math.min(ppu0, fitPpu(w)) : ppu0;
+      const r = root.getBoundingClientRect();
+      if (!r.width) return ppu0;
+      if (g.fit && r.height)
+        return Math.min(ppu0, (r.width - 2 * MARG) / W,
+                        (r.height - 2 * MARG) / H);
+      return narrow(r.width) ? Math.min(ppu0, fitPpu(r.width)) : ppu0;
     };
     let ppu = ppu0, vx = 0, vy = 0;
     const apply = () => {
@@ -2117,8 +2124,10 @@ function render({ model, el }) {
       ppu = base() * (st.zoom || 1);
       fitHeight();
       const vh = root.getBoundingClientRect().height / ppu;
+      const vw = r.width / ppu;
       const marg = narrow(r.width) ? MARG : 28;
-      vx = g.x0 - marg / ppu;             // left-aligned, small margin
+      vx = g.fit && W <= vw ? g.x0 - (vw - W) / 2   // centered
+         : g.x0 - marg / ppu;             // left-aligned, small margin
       vy = H <= vh ? -(vh - H) / 2 : 0;   // center, or show the top
       apply();
       save();

@@ -594,7 +594,7 @@ def _(
                              f'{freq:.4f}', f'{pred.get(key, 0.0):.4f}'))
             sections.append(f'**{label}** — {note}; {n_done:,} trials, '
                             f'total variation distance {tvd / 2:.4f}\n\n' +
-                            md_table(['configuration-space point', 'count', 'freq', 'exact'],
+                            md_table(['configuration-space point', 'count', 'freq', 'expected'],
                                      rows))
         return mo.md('\n\n'.join(sections))
 
