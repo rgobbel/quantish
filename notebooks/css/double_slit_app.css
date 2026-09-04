@@ -99,3 +99,21 @@
         overflow-x: auto;
     }
 }
+
+/* Narrow screens: an accordion trigger's heading and its detail line
+   stack as ordinary blocks inside one flex item (the wrapper is
+   display: contents on wide screens), so the detail wraps beneath the
+   heading and the chevron keeps its place at the right. */
+@media (max-width: 640px) {
+    [data-state] > .markdown.contents:has(> .paragraph) {
+        display: block !important;
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+    [data-state]:has(> .markdown.contents > .paragraph) {
+        align-items: center !important;
+    }
+    [data-state] > .markdown.contents > .paragraph {
+        margin-left: 0;
+    }
+}

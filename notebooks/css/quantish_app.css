@@ -109,8 +109,10 @@ label:has(input:checked) {
    scroll inside their own box instead of pushing the page sideways,
    and the frame padding gives the content the width back. */
 /* Button labels stay on one line: a squeezed row wraps whole buttons
-   (wrap=True on the hstack) instead of breaking a label under its icon. */
-button { white-space: nowrap; }
+   (wrap=True on the hstack) instead of breaking a label under its icon.
+   Accordion triggers are buttons too (Radix, with a data-state) and
+   their headings must keep wrapping, so they are excluded. */
+button:not([data-state]) { white-space: nowrap; }
 
 @media (max-width: 640px) {
     .prose table, .markdown table {
@@ -124,5 +126,23 @@ button { white-space: nowrap; }
     }
     .output-area {
         overflow-x: auto;
+    }
+}
+
+/* Narrow screens: an accordion trigger's heading and its detail line
+   stack as ordinary blocks inside one flex item (the wrapper is
+   display: contents on wide screens), so the detail wraps beneath the
+   heading and the chevron keeps its place at the right. */
+@media (max-width: 640px) {
+    [data-state] > .markdown.contents:has(> .paragraph) {
+        display: block !important;
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+    [data-state]:has(> .markdown.contents > .paragraph) {
+        align-items: center !important;
+    }
+    [data-state] > .markdown.contents > .paragraph {
+        margin-left: 0;
     }
 }

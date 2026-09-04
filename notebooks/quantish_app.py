@@ -511,7 +511,7 @@ def _(
                 mo.md(md_table(['step', 'gate', 'port', 'input', 'output'], rows))
         })
 
-    mo.accordion({'## Detailed Results\n\n<span style="font-size:0.85em">Numerical simulation resuls</span>': mo.vstack([
+    mo.accordion({'## Detailed Results\n\n<span style="font-size:0.85em">Numerical simulation results</span>': mo.vstack([
         _evolution_table(),
         _final_points(),
         _marginals(),
