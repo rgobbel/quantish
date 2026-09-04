@@ -11,6 +11,33 @@ import math
 from xml.sax.saxutils import escape
 
 
+# Sub/superscript runs as tspans shifted with dy, mirroring the
+# widget's appendRuns: WebKit (Safari, every iPhone browser) ignores a
+# percentage baseline-shift and lands subscripts as superscripts, so
+# the shift is an explicit dy in user units, undone by the next run.
+SCRIPT_SIZE, SUB_DROP, SUP_RAISE = 0.64, 0.25, 0.38
+# Text sits on the default alphabetic baseline, this fraction of the
+# font size below its intended visual center — no dominant-baseline,
+# which iOS Safari mishandles (the widget's BASELINE_CENTER).
+BASELINE_CENTER = 0.3
+
+
+def script_spans(runs, font_size):
+    """tspan markup for [(frag, lvl), ...] (lvl -1/0/+1) inside a text
+    element of `font_size` user units."""
+    cur = 0.0
+    for frag, lvl in runs:
+        want = (SUB_DROP * font_size if lvl < 0
+                else -SUP_RAISE * font_size if lvl > 0 else 0.0)
+        attrs = ''
+        if want != cur:
+            attrs += f' dy="{want - cur:.4g}"'
+        if lvl:
+            attrs += f' font-size="{SCRIPT_SIZE:.0%}"'
+        yield f'<tspan{attrs}>{escape(frag)}</tspan>'
+        cur = want
+
+
 def _el(tag, /, text=None, **attrs):
     parts = ''.join(f' {k.replace("_", "-")}="{v}"'
                     for k, v in attrs.items())
@@ -67,19 +94,13 @@ def diagram_svg(g: dict) -> str:
     for tx in g.get('texts', []):
         for k, line in enumerate(tx['lines']):
             attrs = dict(x=f"{tx['x']:.4g}",
-                         y=f"{fy(tx['y'] - k * g['line_h']):.4g}",
+                         y=f"{fy(tx['y'] - k * g['line_h']) + BASELINE_CENTER * tx['size'] / S:.4g}",
                          text_anchor='middle',
-                         dominant_baseline='central',
                          font_size=f"{tx['size'] / S:.4g}",
                          font_weight=tx['weight'], fill=tx['color'])
             runs = (tx.get('runs') or [None] * len(tx['lines']))[k]
             if runs and any(lvl for _, lvl in runs):
-                spans = ''.join(
-                    escape(frag) if lvl == 0 else
-                    f'<tspan font-size="64%" baseline-shift='
-                    f'"{"-25%" if lvl < 0 else "38%"}">'
-                    f'{escape(frag)}</tspan>'
-                    for frag, lvl in runs)
+                spans = ''.join(script_spans(runs, tx['size'] / S))
                 parts = ''.join(f' {a.replace("_", "-")}="{v}"'
                                 for a, v in attrs.items())
                 out.append(f'<text{parts}>{spans}</text>')
@@ -177,8 +198,8 @@ def network_graph_svg(m: dict) -> str:
     for lb in m.get('labels', []):
         out.append(_el('text', text=lb['text'],
                        x=f"{px(lb['x'] - cell_w / 2 - 0.04):.2f}",
-                       y=f"{py(lb['y']):.2f}", text_anchor='end',
-                       dominant_baseline='central', font_size='11',
+                       y=f"{py(lb['y']) + BASELINE_CENTER * 11:.2f}",
+                       text_anchor='end', font_size='11',
                        fill='#404040'))
     for i, label in enumerate(m.get('col_labels', [])):
         out.append(_el('text', text=label, x=f'{px(i):.2f}',

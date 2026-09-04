@@ -104,3 +104,25 @@ label:has(input:checked) {
 [data-state] > .markdown.contents > h4 {
     margin-top: 0.4em !important;
 }
+
+/* Narrow screens (phones): wide results tables and display math
+   scroll inside their own box instead of pushing the page sideways,
+   and the frame padding gives the content the width back. */
+/* Button labels stay on one line: a squeezed row wraps whole buttons
+   (wrap=True on the hstack) instead of breaking a label under its icon. */
+button { white-space: nowrap; }
+
+@media (max-width: 640px) {
+    .prose table, .markdown table {
+        display: block;
+        max-width: 100%;
+        overflow-x: auto;
+    }
+    .katex-display {
+        overflow-x: auto;
+        overflow-y: hidden;
+    }
+    .output-area {
+        overflow-x: auto;
+    }
+}

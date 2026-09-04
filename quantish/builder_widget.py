@@ -39,6 +39,214 @@ Interactions:
 import anywidget
 import traitlets
 
+# JavaScript shared by every widget module (prepended to each ESM):
+# pointer-event gestures, tap tips, and sub/superscript text runs.
+#
+# Pointer-event gestures shared by the interactive SVG widgets. Mouse
+# and touch arrive through the same events, so drags work on phones
+# too (browsers synthesize mouse clicks from taps but never a mousemove
+# stream from a finger drag). One pointer drags; two pinch (zoom about
+# their midpoint, plus pan); a second tap within 350 ms and 25 px is a
+# double tap (the native dblclick is unreliable on touch screens).
+# Pointer capture keeps a drag alive when it leaves the svg.
+#
+# gestures(svg, {down, move, up, cancel, hover, pinchStart, pinch,
+#                pinchEnd, dbl}) — every callback optional. `down`,
+# `move`, `up`, `cancel`, `hover` and `dbl` get the pointer event;
+# `pinch` gets the current and previous {x, y, d} (midpoint in client
+# coordinates, finger distance). ev.gestureMoved on the `up` event
+# tells a tap from a drag.
+_SHARED_JS = r"""
+const TAP_SLOP = 6;      // px of motion that still counts as a tap
+function gestures(svg, on) {
+  const pts = new Map();   // active pointers: id -> {x, y}
+  let pinch = null;        // {x, y, d} of the last two-finger sample
+  let lastTap = null;      // {t, x, y} of the previous press
+  let press = null;        // {x, y, moved, swallow} of the single press
+  const two = () => {
+    const [a, b] = [...pts.values()];
+    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2,
+             d: Math.hypot(a.x - b.x, a.y - b.y) };
+  };
+  svg.addEventListener('pointerdown', (ev) => {
+    if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+    pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    try { svg.setPointerCapture(ev.pointerId); } catch (e) { /* */ }
+    if (pts.size === 1) {
+      const dbl = lastTap && ev.timeStamp - lastTap.t < 350 &&
+        Math.hypot(ev.clientX - lastTap.x, ev.clientY - lastTap.y) < 25;
+      lastTap = dbl ? null : { t: ev.timeStamp, x: ev.clientX,
+                                y: ev.clientY };
+      press = { x: ev.clientX, y: ev.clientY, moved: false,
+                swallow: !!(dbl && on.dbl) };
+      if (dbl && on.dbl) { on.dbl(ev); return; }
+      if (on.down) on.down(ev);
+    } else if (pts.size === 2) {
+      // a second finger turns the press into a pinch
+      if (press && !press.swallow && on.cancel) on.cancel(ev);
+      press = null;
+      pinch = two();
+      if (on.pinchStart) on.pinchStart(pinch);
+    }
+  });
+  svg.addEventListener('pointermove', (ev) => {
+    if (!pts.has(ev.pointerId)) { if (on.hover) on.hover(ev); return; }
+    pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (pinch) {
+      if (pts.size >= 2) {
+        const p = two();
+        if (on.pinch) on.pinch(p, pinch);
+        pinch = p;
+      }
+      return;
+    }
+    if (!press || press.swallow) return;
+    if (Math.hypot(ev.clientX - press.x, ev.clientY - press.y) > TAP_SLOP)
+      press.moved = true;
+    if (on.move) on.move(ev);
+  });
+  const end = (ev) => {
+    if (!pts.has(ev.pointerId)) return;
+    pts.delete(ev.pointerId);
+    if (pinch) {
+      if (pts.size < 2) {
+        pinch = null;
+        if (on.pinchEnd) on.pinchEnd(ev);
+      }
+      return;
+    }
+    if (!press) return;
+    const p = press;
+    press = null;
+    if (p.swallow) return;
+    ev.gestureMoved = p.moved;
+    if (ev.type === 'pointercancel') { if (on.cancel) on.cancel(ev); }
+    else if (on.up) on.up(ev);
+  };
+  svg.addEventListener('pointerup', end);
+  svg.addEventListener('pointercancel', end);
+  // Safari's own two-finger page zoom would otherwise win the pinch
+  const swallow = (ev) => ev.preventDefault();
+  svg.addEventListener('gesturestart', swallow);
+  svg.addEventListener('gesturechange', swallow);
+  svg.addEventListener('touchmove', (ev) => {
+    if (ev.touches.length > 1) ev.preventDefault();
+  }, { passive: false });
+}
+
+// the element under a pointer event — with touch, pointer capture
+// makes ev.target the element first touched, not the one under the
+// finger now (needed for drop targets). The lookup starts from the
+// widget's own root and walks into nested shadow roots: the document
+// level would stop at the shadow host marimo renders the widget in.
+function elementUnder(ev, ref) {
+  let el = (ref ? ref.getRootNode() : document)
+    .elementFromPoint(ev.clientX, ev.clientY);
+  while (el && el.shadowRoot) {
+    const inner = el.shadowRoot.elementFromPoint(ev.clientX, ev.clientY);
+    if (!inner || inner === el) break;
+    el = inner;
+  }
+  return el || ev.target;
+}
+
+// a small tip box inside `root` (positioned relative) beside a point,
+// for touch screens where hover titles never show
+function showTip(root, text, x, y) {
+  hideTip(root);
+  if (!text) return;
+  const tip = document.createElement('div');
+  tip.className = 'q-tip';
+  tip.textContent = text;
+  root.appendChild(tip);
+  const r = root.getBoundingClientRect();
+  const left = Math.max(4, Math.min(x - r.left + 10,
+                                    r.width - tip.offsetWidth - 4));
+  const top = Math.max(4, Math.min(y - r.top - tip.offsetHeight - 10,
+                                   r.height - tip.offsetHeight - 4));
+  tip.style.left = `${left}px`;
+  tip.style.top = `${top}px`;
+}
+function hideTip(root) {
+  for (const t of root.querySelectorAll('.q-tip')) t.remove();
+}
+// a pointer that cannot hover (finger, pen): hover titles never show
+// for it, so a tap stands in
+function noHover(ev) {
+  return ev.pointerType ? ev.pointerType !== 'mouse'
+                        : matchMedia('(hover: none)').matches;
+}
+
+// Vertical centering without dominant-baseline: iOS Safari drops a
+// bare text node with dominant-baseline: central about a line too
+// low (desktop WebKit and Chromium honor it), so text is placed on
+// the default alphabetic baseline instead, this fraction of the font
+// size below the intended visual center (the em-box center sits
+// ~0.27em above the baseline for sans-serif fonts).
+// (svg_export.BASELINE_CENTER is the Python twin.)
+const BASELINE_CENTER = 0.3;
+
+// Sub/superscript runs appended to a text element as tspans shifted
+// with dy. WebKit (Safari, and every browser on an iPhone) ignores a
+// percentage baseline-shift and lands subscripts as superscripts, so
+// the shift is an explicit dy in the text's user units, undone by
+// the next run. `runs` is [[fragment, level], ...] with level -1
+// (sub), 0 (plain) or +1 (super); fs is the element's font size.
+// (svg_export.script_spans is the Python twin.)
+const SCRIPT_SIZE = 0.64, SUB_DROP = 0.25, SUP_RAISE = 0.38;
+function appendRuns(el, runs, fs) {
+  let cur = 0;
+  for (const [frag, lvl] of runs) {
+    const want = lvl < 0 ? SUB_DROP * fs : lvl > 0 ? -SUP_RAISE * fs : 0;
+    const attrs = {};
+    if (want !== cur) attrs.dy = want - cur;
+    if (lvl) attrs['font-size'] = `${SCRIPT_SIZE * 100}%`;
+    el.appendChild(h('tspan', attrs, frag));
+    cur = want;
+  }
+}
+// the `_{}`/`^{}` grammar of a $...$ math segment (\mathrm/\text
+// unwrapped, \name commands via MATHCMD when the module defines it)
+// as runs
+function mathRuns(seg) {
+  seg = seg.replace(/\\(?:mathrm|text)\{([^{}]*)\}/g, '$1')
+    .replace(/\\([a-zA-Z]+)/g,
+             (c, w) => (typeof MATHCMD !== 'undefined' && MATHCMD[w]) ?? c);
+  const runs = [];
+  let j = 0;
+  while (j < seg.length) {
+    const ch = seg[j];
+    if (ch === '_' || ch === '^') {
+      let frag;
+      if (seg[j + 1] === '{') {
+        const end = seg.indexOf('}', j + 2);
+        frag = seg.slice(j + 2, end < 0 ? seg.length : end);
+        j = (end < 0 ? seg.length : end) + 1;
+      } else {
+        frag = seg.slice(j + 1, j + 2);
+        j += 2;
+      }
+      runs.push([frag, ch === '^' ? 1 : -1]);
+    } else {
+      const last = runs[runs.length - 1];
+      if (last && last[1] === 0) last[0] += ch;
+      else runs.push([ch, 0]);
+      j += 1;
+    }
+  }
+  return runs;
+}
+"""
+
+_TIP_CSS = """
+.q-tip { position: absolute; z-index: 5; pointer-events: none;
+         background: #fffbe6; border: 1px solid #b8a960;
+         border-radius: 5px; padding: 4px 7px; font-size: 12px;
+         color: #000; white-space: pre; box-shadow: 0 2px 6px
+         rgba(20, 30, 50, 0.18); font-family: -apple-system,
+         'Segoe UI', Helvetica, sans-serif; }
+"""
+
 _CSS = """
 .qb-root { font-family: -apple-system, 'Segoe UI', Helvetica, sans-serif; }
 .qb-toolbar { display: flex; gap: 8px; align-items: center;
@@ -67,13 +275,29 @@ _CSS = """
 .qb-pal-sep { border-top: 3px double #8b93a0; margin: 0; }
 .qb-svg { border: 1px solid #ddd; border-radius: 8px; background: #fff;
           display: block; flex: 1; min-width: 0;
-          user-select: none; -webkit-user-select: none; }
+          user-select: none; -webkit-user-select: none;
+          touch-action: none; }
+.qb-palette button { touch-action: none; }
+/* narrow screens: the palette becomes a row above a shorter canvas */
+@media (max-width: 640px) {
+  .qb-body { flex-direction: column; }
+  .qb-palette { flex-direction: row; width: auto; overflow-x: auto; }
+  .qb-palette button { width: auto; flex: 1 0 auto;
+                       border-bottom: none;
+                       border-right: 1px solid #e2e2e8; }
+  .qb-palette button:last-child { border-right: none; }
+  .qb-pal-sep { border-top: none; border-left: 3px double #8b93a0; }
+  .qb-svg { flex: none; width: 100%; height: 60vh;
+            box-sizing: border-box; }
+}
 .qb-dialog { position: absolute; top: 60px; left: 50%;
              transform: translateX(-50%); z-index: 10;
              background: #fff; border: 1px solid #8b93a0;
              border-radius: 8px; padding: 12px 14px;
              box-shadow: 0 4px 16px rgba(20, 30, 50, 0.18);
-             min-width: 340px; max-width: 480px;
+             min-width: min(340px, calc(100vw - 24px));
+             max-width: min(480px, calc(100vw - 24px));
+             box-sizing: border-box;
              font-size: 13px; color: #000; }
 .qb-dialog .qb-dlg-title { font-weight: 600; margin-bottom: 8px; }
 .qb-dialog .qb-dlg-grid { display: grid; grid-template-columns: auto 1fr;
@@ -94,7 +318,7 @@ _CSS = """
 .qb-dialog button.qb-dlg-ok:hover { background: #dfe5ff; }
 """
 
-_ESM = r"""
+_ESM = _SHARED_JS + r"""
 const GW = 132, GH = 110;                      // gate box size
 const PW = 46, PH = 46;                        // phase-plate box size
 const DW = 40, DH = 40;                        // delay-gate box size
@@ -163,48 +387,24 @@ const subName = (s) => String(s)
 // letters. hSub is the h('text', ...) counterpart returning the
 // filled element.
 const fillRuns = (el, s) => {
-  const script = (frag, sup) => el.appendChild(h('tspan', {
-    'font-size': '64%', 'baseline-shift': sup ? '38%' : '-25%',
-  }, frag));
+  const runs = [];
   const plain = (txt) => {
     let last = 0;
     const re = /(?<=[^\W\d_])(\d+)/gu;
     let m;
     while ((m = re.exec(txt)) !== null) {
-      if (m.index > last)
-        el.appendChild(document.createTextNode(txt.slice(last, m.index)));
-      script(m[1], false);
+      if (m.index > last) runs.push([txt.slice(last, m.index), 0]);
+      runs.push([m[1], -1]);
       last = m.index + m[1].length;
     }
-    if (last < txt.length)
-      el.appendChild(document.createTextNode(txt.slice(last)));
+    if (last < txt.length) runs.push([txt.slice(last), 0]);
   };
   String(s).split(/\$([^$]*)\$/).forEach((seg, i) => {
     if (i % 2 === 0) {
       if (seg) plain(seg);
-      return;
-    }
-    seg = seg.replace(/\\(?:mathrm|text)\{([^{}]*)\}/g, '$1').replace(/\\([a-zA-Z]+)/g, (c, w) => MATHCMD[w] ?? c);
-    let j = 0;
-    while (j < seg.length) {
-      const ch = seg[j];
-      if (ch === '_' || ch === '^') {
-        let frag;
-        if (seg[j + 1] === '{') {
-          const end = seg.indexOf('}', j + 2);
-          frag = seg.slice(j + 2, end < 0 ? seg.length : end);
-          j = (end < 0 ? seg.length : end) + 1;
-        } else {
-          frag = seg.slice(j + 1, j + 2);
-          j += 2;
-        }
-        script(frag, ch === '^');
-      } else {
-        el.appendChild(document.createTextNode(ch));
-        j += 1;
-      }
-    }
+    } else runs.push(...mathRuns(seg));
   });
+  appendRuns(el, runs, parseFloat(el.getAttribute('font-size')) || 13);
   return el;
 };
 const hSub = (attrs, s) => fillRuns(h('text', attrs), s);
@@ -313,9 +513,10 @@ function render({ model, el }) {
   const redoBtn = mkBtn('↪', 'redo (⇧⌘Z)');
   const hint = document.createElement('div');
   hint.className = 'qb-hint';
-  hint.textContent = 'drag output → input to wire · double-click an ' +
-    'object to edit, a name to rename · shift-click or shift-drag to ' +
-    'select · scroll/pinch zooms, drag on empty space pans';
+  hint.textContent = 'drag output → input to wire · double-click (or ' +
+    'double-tap) an object to edit, a name to rename · shift-click or ' +
+    'shift-drag to select · scroll or pinch zooms, drag on empty ' +
+    'space pans';
   bar.append(delBtn, clearBtn, undoBtn, redoBtn, hint);
   const svg = h('svg', { class: 'qb-svg', height: 560 });
   const body = document.createElement('div');
@@ -647,37 +848,13 @@ function render({ model, el }) {
       });
       // $...$ math as real sub/superscript tspans (unicode lacks
       // subscript forms for most letters, e.g. the book's w1b)
-      const parts = String(label).split(/\$([^$]*)\$/);
-      parts.forEach((seg, i) => {
+      const runs = [];
+      String(label).split(/\$([^$]*)\$/).forEach((seg, i) => {
         if (i % 2 === 0) {
-          if (seg) el.appendChild(document.createTextNode(seg));
-          return;
-        }
-        seg = seg.replace(/\\(?:mathrm|text)\{([^{}]*)\}/g, '$1').replace(/\\([a-zA-Z]+)/g,
-                          (c, w) => MATHCMD[w] ?? c);
-        let j = 0;
-        while (j < seg.length) {
-          const ch = seg[j];
-          if (ch === '_' || ch === '^') {
-            let frag;
-            if (seg[j + 1] === '{') {
-              const end = seg.indexOf('}', j + 2);
-              frag = seg.slice(j + 2, end < 0 ? seg.length : end);
-              j = (end < 0 ? seg.length : end) + 1;
-            } else {
-              frag = seg.slice(j + 1, j + 2);
-              j += 2;
-            }
-            el.appendChild(h('tspan', {
-              'font-size': '64%',
-              'baseline-shift': ch === '_' ? '-25%' : '38%',
-            }, frag));
-          } else {
-            el.appendChild(document.createTextNode(ch));
-            j += 1;
-          }
-        }
+          if (seg) runs.push([seg, 0]);
+        } else runs.push(...mathRuns(seg));
       });
+      appendRuns(el, runs, 11);
       layer.appendChild(el);
     };
     // a branching particle's arms are labeled by where they go
@@ -967,7 +1144,8 @@ function render({ model, el }) {
                              [addPartBtn, 'particle'],
                              [addPlateBtn, 'phase'],
                              [addDelayBtn, 'delay']])
-    btn.addEventListener('mousedown', (ev) => {
+    btn.addEventListener('pointerdown', (ev) => {
+      if (ev.pointerType === 'mouse' && ev.button !== 0) return;
       ev.preventDefault();
       palDrag = kind;
       document.body.style.cursor = 'copy';
@@ -987,7 +1165,12 @@ function render({ model, el }) {
       // released back over the palette: a plain click, default slot
       addObject(kind, null);
   };
-  document.addEventListener('mouseup', _palUp);
+  const _palCancel = () => {
+    palDrag = null;
+    document.body.style.cursor = '';
+  };
+  document.addEventListener('pointerup', _palUp);
+  document.addEventListener('pointercancel', _palCancel);
 
   // stage… / diagram group… name the multi-selection (or the single
   // selected gate); an empty name clears the assignment
@@ -1489,7 +1672,7 @@ function render({ model, el }) {
     commit(copy);
   }
 
-  svg.addEventListener('mousedown', (ev) => {
+  const onDown = (ev) => {
     const t = ev.target;
     const [x, y] = svgPoint(ev);
     if (t.dataset.outport) {
@@ -1618,9 +1801,9 @@ function render({ model, el }) {
     // selection on mouseup (marquee keeps its modifier key)
     panning = { x: ev.clientX, y: ev.clientY,
                 ox: pan.x, oy: pan.y, moved: false };
-  });
+  };
 
-  svg.addEventListener('mousemove', (ev) => {
+  const onMove = (ev) => {
     if (panning) {
       pan.x = panning.ox + ev.clientX - panning.x;
       pan.y = panning.oy + ev.clientY - panning.y;
@@ -1669,9 +1852,9 @@ function render({ model, el }) {
       drag.moved = true;
       redraw();
     }
-  });
+  };
 
-  svg.addEventListener('mouseup', (ev) => {
+  const onUp = (ev) => {
     if (panning) {
       if (!panning.moved) {
         clearMulti();
@@ -1709,7 +1892,7 @@ function render({ model, el }) {
       return;
     }
     if (wire) {
-      const t = ev.target;
+      const t = elementUnder(ev, svg);
       const g = graph();
       if (t.dataset.inport && !usedDst(g).has(t.dataset.inport) &&
           srcFree(g, wire.src)) {
@@ -1727,8 +1910,10 @@ function render({ model, el }) {
       if (drag.moved) commit(graph(), drag.before);
       drag = null;
     }
-  });
-  svg.addEventListener('mouseleave', () => {
+  };
+  // a lost pointer (a second finger, a browser scroll taking over)
+  // abandons whatever gesture was underway
+  const onCancel = () => {
     if (wire || drag || marquee || panning) {
       wire = null;
       drag = null;
@@ -1736,29 +1921,56 @@ function render({ model, el }) {
       panning = null;
       redraw();
     }
-  });
+  };
+  // two fingers zoom about their midpoint and pan with it (the same
+  // feel as the wheel handler; the builder's own timestamp-based
+  // double-click detection needs every press, so no `dbl` here)
+  const onPinch = (p, prev) => {
+    const r = svg.getBoundingClientRect();
+    pan.x += p.x - prev.x;
+    pan.y += p.y - prev.y;
+    const sx = p.x - r.left, sy = p.y - r.top;
+    const z = Math.min(4, Math.max(0.3, zoom * (prev.d ? p.d / prev.d : 1)));
+    pan.x = sx - (sx - pan.x) * (z / zoom);
+    pan.y = sy - (sy - pan.y) * (z / zoom);
+    zoom = z;
+    redraw();
+  };
+  gestures(svg, { down: onDown, move: onMove, hover: onMove, up: onUp,
+                  cancel: onCancel, pinch: onPinch });
 
   model.on('change:graph', redraw);
   model.on('change:angle_labels', redraw);
   redraw();
-  return () => document.removeEventListener('mouseup', _palUp);
+  return () => {
+    document.removeEventListener('pointerup', _palUp);
+    document.removeEventListener('pointercancel', _palCancel);
+  };
 }
 
 export default { render };
 """
 
 
+# The frames' max-width has a viewport term as well as 100%: inside a
+# wrapping row (mo.hstack) the flex item takes its width from the
+# frame's own fixed width, so 100% alone would never shrink it. 36px
+# is the app page's side padding.
 _DIAGRAM_CSS = """
 .qd-root { background: #fff; border: 1px solid #ddd;
            border-radius: 8px; height: 480px;
-           resize: vertical; overflow: hidden; }
+           box-sizing: border-box; position: relative;
+           resize: vertical; overflow: hidden;
+           max-width: min(100%, calc(100vw - 36px)); }
+/* one finger scrolls the page vertically as usual; a sideways drag
+   pans, two fingers pinch-zoom (never the browser's page zoom) */
 .qd-root svg { display: block; width: 100%; height: 100%;
                cursor: grab; user-select: none;
-               -webkit-user-select: none; }
+               -webkit-user-select: none; touch-action: pan-y; }
 .qd-root svg.panning { cursor: grabbing; }
-"""
+""" + _TIP_CSS
 
-_DIAGRAM_ESM = r"""
+_DIAGRAM_ESM = _SHARED_JS + r"""
 function h(tag, attrs = {}, ...children) {
   const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
   for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
@@ -1823,8 +2035,9 @@ function render({ model, el }) {
     for (const tx of g.texts || [])
       tx.lines.forEach((line, k) => {
         const el = h('text', {
-          x: tx.x, y: fy(tx.y - k * g.line_h),
-          'text-anchor': 'middle', 'dominant-baseline': 'central',
+          x: tx.x,
+          y: fy(tx.y - k * g.line_h) + BASELINE_CENTER * tx.size / S,
+          'text-anchor': 'middle',
           'font-size': tx.size / S, 'font-weight': tx.weight,
           fill: tx.color,
           'font-family': 'sans-serif', 'pointer-events': 'none',
@@ -1832,16 +2045,7 @@ function render({ model, el }) {
         const runs = (tx.runs || [])[k];
         if (runs && runs.some((r) => r[1])) {
           // real sub/superscripts (unicode lacks most letters)
-          for (const [frag, lvl] of runs) {
-            if (!lvl) {
-              el.appendChild(document.createTextNode(frag));
-            } else {
-              el.appendChild(h('tspan', {
-                'font-size': '64%',
-                'baseline-shift': lvl < 0 ? '-25%' : '38%',
-              }, frag));
-            }
-          }
+          appendRuns(el, runs, tx.size / S);
         } else {
           el.appendChild(document.createTextNode(line));
         }
@@ -1861,6 +2065,14 @@ function render({ model, el }) {
     // comes back too when the geometry is the same one it was saved
     // for; a different geometry re-places at the kept zoom.
     // Double-click resets zoom and pan (never the box height).
+    //
+    // Narrow frames (phones, or a grid cell squeezed by a small
+    // window) fit the diagram to the frame's width instead — scaled
+    // down to at most MIN_FIT of natural size, beyond which it
+    // overflows and pans — and the frame shrinks to the diagram's
+    // height, since the resize grip is out of reach on a touch
+    // screen. Fitting is a default, not a zoom: the zoom stash holds
+    // the user's factor over whatever the default is here.
     const st = window.__qdState = window.__qdState || {};
     const sig = `${g.x0},${g.x1},${g.y1},${S},${g.boxes.length}`;
     // an explicit frame size in the geometry overrides the default CSS
@@ -1869,8 +2081,16 @@ function render({ model, el }) {
     if (g.frame_h) root.style.height = `${g.frame_h}px`;
     else if (st.boxH) root.style.height = `${st.boxH}px`;
     const ZOOM = 1.2;                 // natural-scale boost
+    const MIN_FIT = 0.4;              // fit-to-width floor
+    const MARG = 16;                  // px around a fitted diagram
     const ppu0 = S * ZOOM;
-    let ppu = st.ppu || ppu0, vx = 0, vy = 0;
+    const fitPpu = (w) => Math.max(ppu0 * MIN_FIT, (w - 2 * MARG) / W);
+    const narrow = (w) => w < W * ppu0 + 2 * MARG;
+    const base = () => {
+      const w = root.getBoundingClientRect().width;
+      return w && narrow(w) ? Math.min(ppu0, fitPpu(w)) : ppu0;
+    };
+    let ppu = ppu0, vx = 0, vy = 0;
     const apply = () => {
       const r = root.getBoundingClientRect();
       if (!r.width || !r.height) return;
@@ -1878,75 +2098,123 @@ function render({ model, el }) {
         `${vx} ${vy} ${r.width / ppu} ${r.height / ppu}`);
     };
     const save = () => {
-      st.ppu = ppu;
+      st.zoom = ppu / base();
       st.sig = sig;
       st.vx = vx;
       st.vy = vy;
     };
+    const fitHeight = () => {
+      const r = root.getBoundingClientRect();
+      if (!r.width || !narrow(r.width)) return;
+      root.style.height = `${Math.round(H * ppu + 2 * MARG)}px`;
+    };
+    let placed = false, lastW = 0;
     const place = () => {
       const r = root.getBoundingClientRect();
       if (!r.width || !r.height) return;
-      const vh = r.height / ppu;
-      vx = g.x0 - 28 / ppu;               // left-aligned, small margin
+      placed = true;
+      lastW = r.width;
+      ppu = base() * (st.zoom || 1);
+      fitHeight();
+      const vh = root.getBoundingClientRect().height / ppu;
+      const marg = narrow(r.width) ? MARG : 28;
+      vx = g.x0 - marg / ppu;             // left-aligned, small margin
       vy = H <= vh ? -(vh - H) / 2 : 0;   // center, or show the top
       apply();
-    };
-    if (st.sig === sig && st.vx !== undefined) {
-      vx = st.vx;
-      vy = st.vy;
-      apply();
-    } else {
-      place();
       save();
-    }
-    svg.addEventListener('wheel', (ev) => {
-      ev.preventDefault();
+    };
+    // first layout: the stashed view when it was saved for this same
+    // geometry, else a fresh placement (deferred while the frame is
+    // hidden inside a folded section — the observer below retries)
+    const settle = () => {
+      const r = root.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      if (st.sig === sig && st.vx !== undefined) {
+        placed = true;
+        lastW = r.width;
+        ppu = base() * (st.zoom || 1);
+        fitHeight();
+        vx = st.vx;
+        vy = st.vy;
+        apply();
+      } else place();
+    };
+    settle();
+    // zoom by a factor k about the client point (cx, cy)
+    const zoomAt = (k, cx, cy) => {
       const r = svg.getBoundingClientRect();
-      const mx = vx + (ev.clientX - r.left) / ppu;
-      const my = vy + (ev.clientY - r.top) / ppu;
-      const f = Math.exp(-ev.deltaY * (ev.ctrlKey ? 0.01 : 0.002));
-      const k = Math.min(ppu0 * 40, Math.max(ppu0 / 40, ppu * f)) / ppu;
+      const mx = vx + (cx - r.left) / ppu;
+      const my = vy + (cy - r.top) / ppu;
+      k = Math.min(ppu0 * 40, Math.max(ppu0 / 40, ppu * k)) / ppu;
       ppu *= k;
       vx = mx - (mx - vx) / k;
       vy = my - (my - vy) / k;
       save();
       apply();
+    };
+    svg.addEventListener('wheel', (ev) => {
+      ev.preventDefault();
+      zoomAt(Math.exp(-ev.deltaY * (ev.ctrlKey ? 0.01 : 0.002)),
+             ev.clientX, ev.clientY);
     }, { passive: false });
     let pan = null;
-    svg.addEventListener('mousedown', (ev) => {
-      pan = { x: ev.clientX, y: ev.clientY, vx, vy };
-      svg.classList.add('panning');
+    const valueTip = (t) => {
+      const rect = t && t.closest && t.closest('rect');
+      const title = rect && rect.querySelector('title');
+      return title ? title.textContent : '';
+    };
+    gestures(svg, {
+      down: (ev) => {
+        pan = { x: ev.clientX, y: ev.clientY, vx, vy, target: ev.target };
+        svg.classList.add('panning');
+      },
+      move: (ev) => {
+        if (!pan) return;
+        vx = pan.vx - (ev.clientX - pan.x) / ppu;
+        vy = pan.vy - (ev.clientY - pan.y) / ppu;
+        save();
+        apply();
+      },
+      up: (ev) => {
+        // a tap on a value box shows its values (hover shows them on
+        // desktop; a phone has no hover); a tap elsewhere clears
+        if (pan && !ev.gestureMoved && noHover(ev))
+          showTip(root, valueTip(pan.target), ev.clientX, ev.clientY);
+        else if (pan && ev.gestureMoved) hideTip(root);
+        pan = null;
+        svg.classList.remove('panning');
+      },
+      cancel: () => {
+        pan = null;
+        svg.classList.remove('panning');
+      },
+      pinch: (p, prev) => {
+        hideTip(root);
+        vx -= (p.x - prev.x) / ppu;
+        vy -= (p.y - prev.y) / ppu;
+        zoomAt(prev.d ? p.d / prev.d : 1, p.x, p.y);
+      },
+      dbl: () => {
+        hideTip(root);
+        st.zoom = 1;
+        place();
+      },
     });
-    const _move = (ev) => {
-      if (!pan) return;
-      vx = pan.vx - (ev.clientX - pan.x) / ppu;
-      vy = pan.vy - (ev.clientY - pan.y) / ppu;
-      save();
-      apply();
-    };
-    const _up = () => {
-      pan = null;
-      svg.classList.remove('panning');
-    };
-    window.addEventListener('mousemove', _move);
-    window.addEventListener('mouseup', _up);
-    // stretching the frame extends the view; the scale stays put
+    // stretching the frame (the resize grip) extends the view at the
+    // same scale; a width change (window resize, phone rotation, a
+    // section unfolding) re-fits
     const ro = new ResizeObserver(() => {
       const r = root.getBoundingClientRect();
-      if (r.height) st.boxH = Math.round(r.height);
-      apply();
+      if (!r.width) return;
+      if (!placed) settle();
+      else if (Math.abs(r.width - lastW) > 1) place();
+      else {
+        if (r.height && !narrow(r.width)) st.boxH = Math.round(r.height);
+        apply();
+      }
     });
     ro.observe(root);
-    root._cleanup = () => {
-      window.removeEventListener('mousemove', _move);
-      window.removeEventListener('mouseup', _up);
-      ro.disconnect();
-    };
-    svg.addEventListener('dblclick', () => {
-      ppu = ppu0;
-      place();
-      save();
-    });
+    root._cleanup = () => ro.disconnect();
   }
 
   model.on('change:geometry', draw);
@@ -1970,12 +2238,14 @@ class DiagramWidget(anywidget.AnyWidget):
 
 _WSPLIT_CSS = """
 .qw-root { background: #fff; border: 1px solid #ddd;
-           border-radius: 8px; resize: both; overflow: hidden; }
+           border-radius: 8px; resize: both; overflow: hidden;
+           box-sizing: border-box; touch-action: pan-y;
+           max-width: min(100%, calc(100vw - 36px)); }
 .qw-root svg { display: block; user-select: none;
                -webkit-user-select: none; }
 """
 
-_WSPLIT_ESM = r"""
+_WSPLIT_ESM = _SHARED_JS + r"""
 // the tableau10 categorical palette
 const CAT10 = ['#4c78a8', '#f58518', '#e45756', '#72b7b2',
                '#54a24b', '#eeca3b', '#b279a2', '#ff9da6'];
@@ -2030,6 +2300,7 @@ function render({ model, el }) {
     if (!dom) dom = { x0: HOME[0], x1: HOME[1], y0: HOME[0], y1: HOME[1] };
     const size = curSize || d.size || 420;
     const W = M.l + size + M.r + LEG, H = M.t + size + M.b;
+    st.size0 = d.size || 420;             // the natural (unsqueezed) size
     if (!sized) {
       sized = true;
       curSize = size;
@@ -2113,8 +2384,8 @@ function render({ model, el }) {
         'data-item': name, style: 'cursor: pointer',
       }));
       plot.appendChild(h('text', {
-        x: sx(re) + 7, y: sy(im), 'text-anchor': 'start',
-        'dominant-baseline': 'central', 'font-size': 11,
+        x: sx(re) + 7, y: sy(im) + BASELINE_CENTER * 11,
+        'text-anchor': 'start', 'font-size': 11,
         fill: color(name), opacity: dim(name) ? 0.35 : 1,
         'font-family': 'sans-serif', 'data-item': name,
         style: 'cursor: pointer',
@@ -2132,16 +2403,68 @@ function render({ model, el }) {
                          style: 'cursor: pointer' });
       g.appendChild(h('circle', { cx: lx + 5, cy: y - 2, r: 5,
         fill: color(name), opacity: dim(name) ? 0.35 : 1 }));
-      g.appendChild(h('text', { x: lx + 15, y, 'font-size': 10.5,
+      g.appendChild(h('text', { x: lx + 15,
+        y: y + BASELINE_CENTER * 10.5, 'font-size': 10.5,
         fill: '#000', 'font-family': 'sans-serif',
-        'dominant-baseline': 'central',
         opacity: dim(name) ? 0.35 : 1 }, name));
       svg.appendChild(g);
     });
 
-    // Finder-style selection: click picks, modifier-click toggles,
-    // empty plot space clears
-    svg.addEventListener('mousedown', (ev) => {
+  }
+
+  // Interaction hangs off the persistent frame, not the svg: every
+  // redraw (each pan step) rebuilds the svg, which would drop a
+  // pointer capture held on it.
+  //
+  // client point -> plot px (viewBox units), or null while hidden
+  const plotPt = (cx, cy) => {
+    const svg = root.querySelector('svg');
+    if (!svg) return null;
+    const r = svg.getBoundingClientRect();
+    if (!r.width || !r.height) return null;   // hidden (folded section)
+    const vb = svg.viewBox.baseVal;
+    return { px: (cx - r.left) / r.width * vb.width,
+             py: (cy - r.top) / r.height * vb.height,
+             k: vb.width / r.width };
+  };
+  // zoom the domain by f (> 1 zooms out) about a client point
+  const zoomAt = (f, cx, cy) => {
+    const p = plotPt(cx, cy);
+    if (!p || !dom) return;
+    const size = curSize || 420;
+    const x = dom.x0 + (p.px - M.l) / size * (dom.x1 - dom.x0);
+    const y = dom.y1 - (p.py - M.t) / size * (dom.y1 - dom.y0);
+    const w = Math.min(40, Math.max(0.05, (dom.x1 - dom.x0) * f));
+    const k = w / (dom.x1 - dom.x0);
+    dom = { x0: x - (x - dom.x0) * k, x1: x + (dom.x1 - x) * k,
+            y0: y - (y - dom.y0) * k, y1: y + (dom.y1 - y) * k };
+    st.dom = { ...dom };
+    draw();
+  };
+  // shift the domain by a client-pixel delta from a base domain
+  const panBy = (dx, dy, d0) => {
+    const p = plotPt(0, 0);
+    if (!p || !d0) return;
+    const scale = (d0.x1 - d0.x0) / (curSize || 420) * p.k;
+    dom = { x0: d0.x0 - dx * scale, x1: d0.x1 - dx * scale,
+            y0: d0.y0 + dy * scale, y1: d0.y1 + dy * scale };
+    st.dom = { ...dom };
+    draw();
+  };
+  // wheel (or trackpad pinch, which arrives as ctrl+wheel) zooms
+  // around the cursor
+  root.addEventListener('wheel', (ev) => {
+    ev.preventDefault();
+    zoomAt(Math.exp(ev.deltaY * (ev.ctrlKey ? 0.01 : 0.002)),
+           ev.clientX, ev.clientY);
+  }, { passive: false });
+
+  // Finder-style selection: a press picks, modifier-press toggles;
+  // a drag on the plot pans, a motionless press there clears; two
+  // fingers pinch-zoom; a double tap or double-click resets the view
+  let pan = null;
+  gestures(root, {
+    down: (ev) => {
       const item = ev.target.closest && ev.target.closest('[data-item]');
       const mods = ev.shiftKey || ev.metaKey || ev.ctrlKey;
       let sel = [...(model.get('selected') || [])];
@@ -2152,88 +2475,59 @@ function render({ model, el }) {
                                    : [...sel, name];
         else sel = [name];
       } else if (!mods) {
-        const r = svg.getBoundingClientRect();
-        const px = (ev.clientX - r.left) / r.width * W;
-        const py = (ev.clientY - r.top) / r.height * H;
-        const inPlot = px >= M.l && px <= M.l + size &&
-                       py >= M.t && py <= M.t + size;
+        const p = plotPt(ev.clientX, ev.clientY);
+        const size = curSize || 420;
+        const inPlot = p && p.px >= M.l && p.px <= M.l + size &&
+                       p.py >= M.t && p.py <= M.t + size;
         if (!inPlot) return;
-        pan = { x: ev.clientX, y: ev.clientY, moved: false,
-                d: { ...dom } };
+        pan = { x: ev.clientX, y: ev.clientY, d: { ...dom } };
         return;
       } else return;
       model.set('selected', sel);
       model.save_changes();
       draw();
-    });
-
-    // wheel zooms the domain around the cursor; drag pans;
-    // double-click resets
-    svg.addEventListener('wheel', (ev) => {
-      ev.preventDefault();
-      const r = svg.getBoundingClientRect();
-      if (!r.width || !r.height) return;   // hidden (collapsed section)
-      const px = (ev.clientX - r.left) / r.width * W;
-      const py = (ev.clientY - r.top) / r.height * H;
-      const cx = dom.x0 + (px - M.l) / size * (dom.x1 - dom.x0);
-      const cy = dom.y1 - (py - M.t) / size * (dom.y1 - dom.y0);
-      const f = Math.exp(ev.deltaY * (ev.ctrlKey ? 0.01 : 0.002));
-      const w = Math.min(40, Math.max(0.05, (dom.x1 - dom.x0) * f));
-      const k = w / (dom.x1 - dom.x0);
-      dom = { x0: cx - (cx - dom.x0) * k, x1: cx + (dom.x1 - cx) * k,
-              y0: cy - (cy - dom.y0) * k, y1: cy + (dom.y1 - cy) * k };
-      st.dom = { ...dom };
-      draw();
-    }, { passive: false });
-    svg.addEventListener('dblclick', () => {
+    },
+    move: (ev) => {
+      if (pan) panBy(ev.clientX - pan.x, ev.clientY - pan.y, pan.d);
+    },
+    up: (ev) => {
+      if (pan && !ev.gestureMoved) {
+        model.set('selected', []);
+        model.save_changes();
+        draw();
+      }
+      pan = null;
+    },
+    cancel: () => { pan = null; },
+    pinch: (p, prev) => {
+      panBy(p.x - prev.x, p.y - prev.y, dom);
+      zoomAt(p.d ? prev.d / p.d : 1, p.x, p.y);
+    },
+    dbl: () => {
       dom = null;
       delete st.dom;
       draw();
-    });
-  }
+    },
+  });
 
-  let pan = null;
-  const _wsMove = (ev) => {
-    if (!pan) return;
-    pan.moved = true;
-    const size = curSize || 420;
-    const svg = root.querySelector('svg');
-    if (!svg) return;
-    const r = svg.getBoundingClientRect();
-    if (!r.width) return;                  // hidden (collapsed section)
-    const scale = (pan.d.x1 - pan.d.x0) / size *
-      (svg.viewBox.baseVal.width / r.width);
-    dom = {
-      x0: pan.d.x0 - (ev.clientX - pan.x) * scale,
-      x1: pan.d.x1 - (ev.clientX - pan.x) * scale,
-      y0: pan.d.y0 + (ev.clientY - pan.y) * scale,
-      y1: pan.d.y1 + (ev.clientY - pan.y) * scale,
-    };
-    st.dom = { ...dom };
-    draw();
-  };
-  const _wsUp = () => {
-    if (pan && !pan.moved) {
-      // a motionless press on empty plot space clears the selection
-      model.set('selected', []);
-      model.save_changes();
-      draw();
-    }
-    pan = null;
-  };
-  window.addEventListener('mousemove', _wsMove);
-  window.addEventListener('mouseup', _wsUp);
-
-  // frame resize (the CSS resize grip) → refit the square plot
+  // frame resize (the CSS resize grip) → refit the square plot. A
+  // frame held below its natural width (a phone, or a squeezed
+  // column) also gives up the height the smaller plot no longer
+  // needs; a frame merely stretched taller by the grip keeps it.
   const ro = new ResizeObserver(() => {
     if (curSize == null) return;
     const r = root.getBoundingClientRect();
-    const s = Math.round(Math.min(r.width - (M.l + M.r + LEG),
-                                  r.height - (M.t + M.b)));
+    const byWidth = r.width - (M.l + M.r + LEG);
+    const s = Math.round(Math.min(byWidth, r.height - (M.t + M.b)));
     if (s >= 120 && Math.abs(s - curSize) > 1) {
       curSize = s;
       st.size = s;
       draw();
+      const natural = M.l + (st.size0 || 420) + M.r + LEG;
+      const hFit = M.t + s + M.b;
+      if (byWidth < r.height - (M.t + M.b) && r.width < natural - 1 &&
+          r.height > hFit + 2)
+        root.style.height = `${hFit}px`;
     }
   });
   ro.observe(root);
@@ -2241,11 +2535,7 @@ function render({ model, el }) {
   model.on('change:data', () => draw());
   model.on('change:selected', () => draw());
   draw();
-  return () => {
-    window.removeEventListener('mousemove', _wsMove);
-    window.removeEventListener('mouseup', _wsUp);
-    ro.disconnect();
-  };
+  return () => ro.disconnect();
 }
 
 export default { render };
@@ -2265,13 +2555,15 @@ class WeightSplitWidget(anywidget.AnyWidget):
 
 _NETGRAPH_CSS = """
 .qn-root { background: #fff; border: 1px solid #ddd;
-           border-radius: 8px; resize: both; overflow: hidden; }
+           border-radius: 8px; resize: both; overflow: hidden;
+           box-sizing: border-box; position: relative;
+           max-width: min(100%, calc(100vw - 36px)); }
 .qn-root svg { display: block; width: 100%; height: 100%;
                cursor: default; user-select: none;
-               -webkit-user-select: none; }
-"""
+               -webkit-user-select: none; touch-action: pan-y; }
+""" + _TIP_CSS
 
-_NETGRAPH_ESM = r"""
+_NETGRAPH_ESM = _SHARED_JS + r"""
 function h(tag, attrs = {}, ...children) {
   const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
   for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
@@ -2320,8 +2612,11 @@ function render({ model, el }) {
     const px = (x) => (x - xLo) * pxX;
     const py = (y) => T + (yHi - y) * pxY;
     const svg = h('svg', { viewBox: `0 0 ${W} ${T + H}` });
+    // the frame keeps the drawing's proportions when a narrow screen
+    // squeezes it below its natural width (max-width: 100%)
     root.style.width = `${W + 2}px`;
-    root.style.height = `${T + H + 2}px`;
+    root.style.height = 'auto';
+    root.style.aspectRatio = `${W + 2} / ${T + H + 2}`;
     root.appendChild(svg);
     titleLines.forEach((ln, i) => svg.appendChild(h('text', {
       x: W / 2, y: 16 + 18 * i, 'text-anchor': 'middle',
@@ -2392,8 +2687,9 @@ function render({ model, el }) {
 
     for (const l of m.labels || [])
       svg.appendChild(h('text', {
-        x: px(l.x - cellW / 2 - 0.04), y: py(l.y),
-        'text-anchor': 'end', 'dominant-baseline': 'central',
+        x: px(l.x - cellW / 2 - 0.04),
+        y: py(l.y) + BASELINE_CENTER * 11,
+        'text-anchor': 'end',
         'font-size': 11, fill: '#404040',
         'font-family': 'sans-serif' }, l.text));
     (m.col_labels || []).forEach((label, i) =>
@@ -2447,16 +2743,89 @@ function render({ model, el }) {
         svg.appendChild(outline);
       }
     };
-    svg.addEventListener('mousedown', (ev) => {
-      const cell = ev.target.closest && ev.target.closest('[data-node]');
+    // a motionless press (click or tap) selects; a tap also shows
+    // the cell's values, which hover shows on a desktop
+    const select = (target, ev) => {
+      const cell = target.closest && target.closest('[data-node]');
       const node = cell ? cell.getAttribute('data-node') : null;
       const mode = !!ev.shiftKey;
+      const title = cell && cell.querySelector('title');
+      if (noHover(ev) && title && node !== selected)
+        showTip(root, title.textContent, ev.clientX, ev.clientY);
+      else hideTip(root);
       // re-click with the other mode switches depth; same mode clears
       selected = (node === null ||
                   (node === selected && mode === singleLevel))
         ? null : node;
       singleLevel = mode;
       applySel();
+    };
+
+    // the view: wheel or pinch zooms about the pointer, a drag pans,
+    // a double click/tap resets — the same feel as the circuit
+    // diagram. Client points map through the svg's own screen matrix,
+    // so a frame stretched off the drawing's proportions still maps
+    // exactly.
+    const VW = W, VH = T + H;
+    let z = 1, vx = 0, vy = 0;
+    const apply = () =>
+      svg.setAttribute('viewBox', `${vx} ${vy} ${VW / z} ${VH / z}`);
+    const toUser = (cx, cy) => {
+      const m = svg.getScreenCTM();
+      if (!m) return null;
+      const pt = new DOMPoint(cx, cy).matrixTransform(m.inverse());
+      return [pt.x, pt.y, m];
+    };
+    const zoomAt = (k, cx, cy) => {
+      const u = toUser(cx, cy);
+      if (!u) return;
+      const [ux, uy] = u;
+      const z2 = Math.min(20, Math.max(0.5, z * k));
+      vx = ux - (ux - vx) * z / z2;
+      vy = uy - (uy - vy) * z / z2;
+      z = z2;
+      apply();
+    };
+    const panBy = (dx, dy) => {              // client px
+      const m = svg.getScreenCTM();
+      if (!m) return;
+      vx -= dx / m.a;
+      vy -= dy / m.d;
+      apply();
+    };
+    svg.addEventListener('wheel', (ev) => {
+      ev.preventDefault();
+      zoomAt(Math.exp(-ev.deltaY * (ev.ctrlKey ? 0.01 : 0.002)),
+             ev.clientX, ev.clientY);
+    }, { passive: false });
+    let pan = null;
+    gestures(svg, {
+      down: (ev) => {
+        pan = { x: ev.clientX, y: ev.clientY, target: ev.target };
+      },
+      move: (ev) => {
+        if (!pan) return;
+        panBy(ev.clientX - pan.x, ev.clientY - pan.y);
+        pan.x = ev.clientX;
+        pan.y = ev.clientY;
+      },
+      up: (ev) => {
+        const p = pan;
+        pan = null;
+        if (p && !ev.gestureMoved) select(p.target, ev);
+      },
+      cancel: () => { pan = null; },
+      pinch: (p, prev) => {
+        hideTip(root);
+        panBy(p.x - prev.x, p.y - prev.y);
+        zoomAt(prev.d ? p.d / prev.d : 1, p.x, p.y);
+      },
+      dbl: () => {
+        hideTip(root);
+        z = 1;
+        vx = vy = 0;
+        apply();
+      },
     });
   }
 
@@ -2480,9 +2849,12 @@ class NetworkGraphWidget(anywidget.AnyWidget):
 
 
 _PLOT_CSS = """
-.qp-root { background: #fff; }
+.qp-root { background: #fff; max-width: 100%; min-width: 0; }
+/* a plot wider than its column scales down whole (the viewBox keeps
+   the proportions) rather than pushing the page sideways */
 .qp-root svg { display: block; user-select: none;
-               -webkit-user-select: none; }
+               -webkit-user-select: none; max-width: 100%;
+               height: auto; }
 """
 
 _PLOT_HELPERS = r"""
@@ -2682,13 +3054,26 @@ function render({ model, el }) {
   root.className = 'qp-root';
   el.appendChild(root);
 
+  // the plot takes the narrower of its requested width and the
+  // column it sits in, so labels keep their size on a phone instead
+  // of shrinking with a scaled-down picture
+  let drawnPw = null;
+  const M = { l: 46, r: 10, t: 8, b: 40 };
+  const fitPw = (d) => {
+    const avail = root.clientWidth;
+    return avail ? Math.min(d.width || 900,
+                            Math.max(200, avail - M.l - M.r))
+                 : d.width || 900;
+  };
+
   function draw() {
     const d = model.get('data') || {};
     root.innerHTML = '';
     if (!d.series) return;
     const legendH = d.series.some((s) => s.name) ? 20 : 0;
     const M = { l: 46, r: 10, t: 8 + legendH, b: 40 };
-    const pw = d.width || 900, ph = d.height || 180;
+    const pw = fitPw(d), ph = d.height || 180;
+    drawnPw = pw;
     const W = M.l + pw + M.r, H = M.t + ph + M.b;
     const svg = h('svg', { viewBox: `0 0 ${W} ${H}`,
                            width: W, height: H });
@@ -2717,8 +3102,14 @@ function render({ model, el }) {
       svg.appendChild(polyline(s.x, s.y, sx, sy, s.color, s.dash));
   }
 
+  const ro = new ResizeObserver(() => {
+    const d = model.get('data') || {};
+    if (d.series && fitPw(d) !== drawnPw) draw();
+  });
+  ro.observe(root);
   model.on('change:data', draw);
   draw();
+  return () => ro.disconnect();
 }
 
 export default { render };

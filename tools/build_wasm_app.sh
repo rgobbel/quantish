@@ -6,6 +6,21 @@ REPO=${1:?repo dir}
 OUT=${2:?output dir}
 cd "$REPO"
 
+# 0) the build stamp: commit (plus '+wip' when the tree has uncommitted
+#    changes) and UTC time. It lands on the landing page, under each
+#    app's title (public/version.json), and in version.json at the site
+#    root, so a visitor can tell which build they are looking at.
+COMMIT=$(git rev-parse --short HEAD)
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+  BUILD="$COMMIT+wip"
+else
+  BUILD="$COMMIT"
+fi
+BUILT_AT=$(date -u +'%Y-%m-%d %H:%M UTC')
+VERSION_JSON=$(printf '{"build": "%s", "commit": "%s", "built_at": "%s"}' \
+               "$BUILD" "$COMMIT" "$BUILT_AT")
+echo "build $BUILD ($BUILT_AT)"
+
 # 1) fresh wheel of the quantish package
 uv build --wheel -q
 WHEEL=$(ls -t dist/quantish-*.whl | head -1)
@@ -51,6 +66,21 @@ for W in "$OUT"/quantish_app/public/wheels "$OUT"/double_slit_app/public/wheels 
   fi
 done
 
+# 3b) the build stamp beside each app, and at the site root
+for D in "$OUT"/quantish_app "$OUT"/quantish_app_edit "$OUT"/double_slit_app \
+         "$OUT"/double_slit_app_edit "$OUT"/builder_app "$OUT"/builder_app_edit; do
+  echo "$VERSION_JSON" > "$D/public/version.json"
+done
+echo "$VERSION_JSON" > "$OUT/version.json"
+
+# 3c) Cloudflare Pages headers: every file revalidates on each visit
+#     (ETag round trips, not re-downloads), so a fresh deploy is never
+#     hidden behind a phone's cached copy of the previous one
+cat > "$OUT/_headers" <<'HDR'
+/*
+  Cache-Control: no-cache
+HDR
+
 # 4) bundle the model library as a single JSON manifest
 python3 - "$OUT" <<'PYEOF'
 import json
@@ -95,6 +125,7 @@ cat > "$OUT/index.html" <<'HTML'
             color: #000; }
     a.app:hover { border-color: #5c64d1; background: #f6f7ff; }
     a.app b { color: #2b3aa0; }
+    p.build { font-size: 0.85em; color: #444; margin-top: 2.5em; }
   </style>
 </head>
 <body>
@@ -129,9 +160,11 @@ cat > "$OUT/index.html" <<'HTML'
   <p><a href="quantish_app_edit/">Quantish app (editable)</a> &middot;
      <a href="double_slit_app_edit/">Double-slit app (editable)</a> &middot;
      <a href="builder_app_edit/">Network builder (editable)</a></p>
+  <p class="build">Build @BUILD@ &middot; @BUILT_AT@</p>
 </body>
 </html>
 HTML
+sed -i '' -e "s/@BUILD@/$BUILD/" -e "s/@BUILT_AT@/$BUILT_AT/" "$OUT/index.html"
 
 cat > "$OUT/serve.sh" <<'SH'
 #!/bin/bash

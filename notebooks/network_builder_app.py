@@ -203,6 +203,26 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
+async def build_stamp(mo, sys):
+    # Which build is this? The site build (tools/build_wasm_app.sh)
+    # writes public/version.json beside the page; a development copy
+    # says so instead.
+    _stamp = 'development copy'
+    if sys.platform == 'emscripten':
+        try:
+            import json as _json
+            from pyodide.http import pyfetch as _pyfetch
+            _v = _json.loads(await (await _pyfetch(
+                f'{mo.notebook_location()}/public/version.json')).string())
+            _stamp = f"build {_v['build']} · {_v['built_at']}"
+        except Exception:  # noqa: BLE001 — an unstamped site shows nothing
+            _stamp = ''
+    mo.md(f'<span style="font-size: 0.8em; color: #444">{_stamp}</span>') \
+        if _stamp else None
+    return
+
+
+@app.cell(hide_code=True)
 def _(mo):
     # the last model loaded into the builder: {'graph', 'title', 'notes'}
     get_loaded, set_loaded = mo.state(None)
@@ -257,7 +277,7 @@ def _(WASM_MODE, builder_config, config_to_yaml, file_name, mo, model_paths):
         else mo.ui.run_button(label='⬇ download', disabled=True))
     mo.hstack([mo.md('**File:**'), new_btn, open_btn, upload_btn]
               + ([] if WASM_MODE else [save_btn])
-              + [_download], justify='start', gap=0.75)
+              + [_download], justify='start', gap=0.75, wrap=True)
     return new_btn, open_btn, save_btn, upload_btn
 
 
@@ -290,10 +310,10 @@ def _(collection_pick, get_file_mode, mo, model_paths, model_upload):
     _row = None
     if _mode == 'open':
         _row = mo.hstack([collection_pick, model_pick, open_go_btn],
-                         justify='start', gap=0.75)
+                         justify='start', gap=0.75, wrap=True)
     elif _mode == 'upload':
         _row = mo.hstack([model_upload, upload_go_btn],
-                         justify='start', gap=0.75)
+                         justify='start', gap=0.75, wrap=True)
     _row
     return model_pick, open_go_btn, upload_go_btn
 
@@ -390,7 +410,7 @@ def _(builder, get_pending, mo, set_loaded, set_pending):
                   f"particle(s) — really replace it with "
                   f"**{_p['source']}**?"),
             mo.hstack([confirm_load_btn, keep_canvas_btn],
-                      justify='start', gap=1),
+                      justify='start', gap=1, wrap=True),
         ], align='start')
 
     _()
@@ -484,7 +504,7 @@ def _(get_loaded, mo):
         ([_report] if _report is not None else [])
         + [mo.vstack([file_name,
                       mo.hstack([model_title, mode_pick, unit_pick],
-                                justify='start', gap=0.75)])],
+                                justify='start', gap=0.75, wrap=True)])],
         align='stretch')
     return (
         caption_input,
@@ -677,8 +697,9 @@ def _(DiagramWidget, diagram_geometry, mo, sim_built):
         try:
             return mo.vstack([
                 mo.md('<span style="font-size: 0.85em">scroll/pinch '
-                      'to zoom · drag to pan · double-click to reset '
-                      '· hover over a port for its values</span>'),
+                      'to zoom · drag to pan · double-click or double-tap '
+                      'to reset · hover over or tap a port for its '
+                      'values</span>'),
                 mo.ui.anywidget(DiagramWidget(
                     geometry=diagram_geometry(sim_built, has_run=True))),
             ], gap=0)

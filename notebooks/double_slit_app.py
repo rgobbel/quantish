@@ -142,6 +142,26 @@ def _(mo):
     return
 
 
+@app.cell(hide_code=True)
+async def build_stamp(mo, sys):
+    # Which build is this? The site build (tools/build_wasm_app.sh)
+    # writes public/version.json beside the page; a development copy
+    # says so instead.
+    _stamp = 'development copy'
+    if sys.platform == 'emscripten':
+        try:
+            import json as _json
+            from pyodide.http import pyfetch as _pyfetch
+            _v = _json.loads(await (await _pyfetch(
+                f'{mo.notebook_location()}/public/version.json')).string())
+            _stamp = f"build {_v['build']} · {_v['built_at']}"
+        except Exception:  # noqa: BLE001 — an unstamped site shows nothing
+            _stamp = ''
+    mo.md(f'<span style="font-size: 0.8em; color: #444">{_stamp}</span>') \
+        if _stamp else None
+    return
+
+
 @app.cell
 def _(mo):
     mo.md(r"""

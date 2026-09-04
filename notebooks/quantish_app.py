@@ -40,6 +40,26 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
+async def build_stamp(mo, sys):
+    # Which build is this? The site build (tools/build_wasm_app.sh)
+    # writes public/version.json beside the page; a development copy
+    # says so instead.
+    _stamp = 'development copy'
+    if sys.platform == 'emscripten':
+        try:
+            import json as _json
+            from pyodide.http import pyfetch as _pyfetch
+            _v = _json.loads(await (await _pyfetch(
+                f'{mo.notebook_location()}/public/version.json')).string())
+            _stamp = f"build {_v['build']} · {_v['built_at']}"
+        except Exception:  # noqa: BLE001 — an unstamped site shows nothing
+            _stamp = ''
+    mo.md(f'<span style="font-size: 0.8em; color: #444">{_stamp}</span>') \
+        if _stamp else None
+    return
+
+
+@app.cell(hide_code=True)
 def _(WASM_MODE, mo):
     _closing = (
         "**Note:** this copy runs entirely in your browser (via "
@@ -101,7 +121,7 @@ def _(
     mo.hstack([collection_pick, model_pick]
               + ([] if WASM_MODE else [model_rescan])
               + [model_upload],
-              justify='start', gap=1)
+              justify='start', gap=1, wrap=True)
     return (model_pick,)
 
 
@@ -158,10 +178,10 @@ def _(
         [
             mo.md(f'**{_s0.title}**' + (f' — {_cap}' if _cap else '')),
             _native(),
-            mo.md('_Scroll/pinch to zoom, drag to pan, double-click to '
-                  'reset; drag the frame\'s bottom-right corner to make '
-                  'room; after a run, hover over a port for its '
-                  'values._'),
+            mo.md('_Scroll or pinch to zoom, drag to pan, double-click '
+                  '(double-tap) to reset; drag the frame\'s bottom-right '
+                  'corner to make room; after a run, hover over or tap '
+                  'a port for its values._'),
         ] +
         ([mo.hstack([show_values], justify='start')]
          if sim is not None else []), align='stretch')
@@ -233,8 +253,10 @@ def _(NetworkGraph, NetworkGraphWidget, mo, sim):
             _model = NetworkGraph(sim.all_points, sim).build_model()
             return mo.vstack([
                 mo.ui.anywidget(NetworkGraphWidget(model=_model)),
-                mo.md('_Hover over a cell for its values; click a '
-                      'configuration-space point to highlight its '
+                mo.md('_Scroll or pinch to zoom, drag to pan, '
+                      'double-click (double-tap) to reset. '
+                      'Hover over (or tap) a cell for its values; '
+                      'click a configuration-space point to highlight its '
                       'full ancestry and descendancy (shift-click for '
                       'immediate neighbors only), click again to '
                       'clear._'),
@@ -271,7 +293,7 @@ def _(
 
     def _():
         rows = [mo.hstack([angle_slider_elems[g], angle_text_elems[g]],
-                          widths=[5, 1], align='center')
+                          widths=[5, 1], align='center', wrap=True)
                 for g in gate_names]
         # the model's caption (typically the book figure's) is Markdown
         # and passes through verbatim — no added styling
@@ -526,12 +548,13 @@ def _(
         pct = 100 * _job['progress'] / max(1, _job['total'])
         return mo.hstack([
             mo.Html(f'<progress value="{_job["progress"]}" '
-                    f'max="{_job["total"]}" style="width: 24em">'
+                    f'max="{_job["total"]}" '
+                    'style="width: 24em; max-width: 100%">'
                     '</progress>'),
             mo.md(f'{pct:.0f}% — {_job["progress"]:,} of '
                   f'{_job["total"]:,} draws'),
             mc_cancel,
-        ], justify='start', gap=1, align='center')
+        ], justify='start', gap=1, align='center', wrap=True)
 
     def _results(_job):
         if _job['error'] is not None:
@@ -699,8 +722,8 @@ def _(
     """),
         mo.hstack([epr_angle_elems['qa'], epr_angle_elems['qb'],
                    epr_angle_elems['qc']],
-                  justify='start', gap=2),
-        mo.hstack([epr_trials, epr_button], justify='start'),
+                  justify='start', gap=2, wrap=True),
+        mo.hstack([epr_trials, epr_button], justify='start', wrap=True),
         epr_view,
     ])
 
@@ -1555,7 +1578,7 @@ def _(
                   'size': 500},
             selected=[c for c in ws_sel_get() if c in sel]))
         view = mo.hstack([native, mo.md(latex)],
-                         align='center', justify='start')
+                         align='center', justify='start', wrap=True)
         return native, view
 
     ws_native, ws_view = _()

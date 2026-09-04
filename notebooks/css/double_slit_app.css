@@ -81,3 +81,21 @@
     margin-left: 0.5em;
     margin-right: auto;
 }
+
+/* Narrow screens (phones): wide results tables and display math
+   scroll inside their own box instead of pushing the page sideways,
+   and the frame padding gives the content the width back. */
+@media (max-width: 640px) {
+    .prose table, .markdown table {
+        display: block;
+        max-width: 100%;
+        overflow-x: auto;
+    }
+    .katex-display {
+        overflow-x: auto;
+        overflow-y: hidden;
+    }
+    .output-area {
+        overflow-x: auto;
+    }
+}
