@@ -425,7 +425,13 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
     # their port-name headers) back into that view.
     BLOBS_WITH_VALUES_ONLY = True
     _wire_labels = getattr(sim, 'wire_labels', {})
-    if has_run and (show_values or not BLOBS_WITH_VALUES_ONLY):
+    show_blobs = show_values or not BLOBS_WITH_VALUES_ONLY
+    # The blobs' room is reserved whether or not they are drawn: the
+    # drawing's extent — and with it the widget's scale and placement —
+    # must be the same with the values hidden and shown, so that Run
+    # and the show-values toggle only make the numbers appear.
+    reserved = []
+    if has_run:
         last_col = max(L.col_of.values(), default=0)
         for gname, (gx, gy) in L.gate_xy.items():
             if L.col_of.get(gname) != last_col:
@@ -443,9 +449,13 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
                 stub_end = fx(gx + GATE_WIDTH + WIRE_STUB_LEN)
                 cy = gy * KY + PORT_DY[wname] * KY
                 blob_left = stub_end + 0.1
-                stadiums.append(dict(x=blob_left, x2=blob_left + w,
-                                     y=cy - h / 2, y2=cy + h / 2,
-                                     corner=int(h * scale / 2)))
+                blob = dict(x=blob_left, x2=blob_left + w,
+                            y=cy - h / 2, y2=cy + h / 2,
+                            corner=int(h * scale / 2))
+                reserved.append(blob)
+                if not show_blobs:
+                    continue
+                stadiums.append(blob)
                 # the wire reaches the blob: a labeled stub extends to
                 # it via the clip map; an unlabeled dangling output gets
                 # its own connector
@@ -639,7 +649,7 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
     x1 = fx(x1)
     y0 *= KY
     y1 *= KY
-    for row in boxes + stadiums:
+    for row in boxes + reserved:      # reserved ⊇ stadiums
         x0, x1 = min(x0, row['x']), max(x1, row['x2'])
         y0, y1 = min(y0, row['y']), max(y1, row['y2'])
     for p in (p for seg in wires for p in seg):

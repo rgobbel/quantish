@@ -106,7 +106,8 @@ for app_dir in ('quantish_app', 'quantish_app_edit', 'builder_app',
 print(f'bundled {len(models)} model files')
 PYEOF
 
-# 5) the site root: a landing page linking to both apps, a serve
+# 5) the site root: a landing page linking to the apps (the double-slit
+#    demo first, as the introductory example), a serve
 #    script, and a short readme
 cat > "$OUT/index.html" <<'HTML'
 <!DOCTYPE html>
@@ -131,34 +132,38 @@ cat > "$OUT/index.html" <<'HTML'
 <body>
   <h1>Quantish Physics</h1>
   <p>Simulations of the &ldquo;quantish&rdquo; universe from Chapter 4
-     of <i>Good and Real</i> (Gary L. Drescher). Everything runs in
-     your browser &mdash; the first visit downloads the Python runtime
-     and may take a minute or two; later visits start in seconds.</p>
+     of <i>Good and Real</i> (Gary L. Drescher). These apps use Web Assembly (WASM) to
+     run everything in
+     your browser. The first visit downloads the Python runtime
+     and may take a minute or two. Subsequent visits should start much more quickly.</p>
+  <a class="app" href="double_slit_app/">
+    <b>The double-slit experiment</b><br>
+    The classic double-slit experiment, demonstrating interference between streams of
+    photons, electrons, or other particles, implemented in
+    the quantish framework. Fire particles, watch fringes build up
+    dot by dot, and see the circuit for each condition.
+  </a>
   <a class="app" href="quantish_app/">
     <b>Quantish app</b><br>
-    Load any figure from the chapter as a live circuit, run it, and
-    explore exact weights, probabilities, Monte&nbsp;Carlo sampling,
-    and the EPR/Bell experiment.
-  </a>
-  <a class="app" href="double_slit_app/">
-    <b>Double-slit app</b><br>
-    The classic double-slit experiment in the quantish framework:
-    fire particles, watch fringes build up dot by dot, and see the
-    circuits behind each condition.
+    An exposition of the quantish framework. In this app you can load any figure
+    from the chapter as a live circuit, run it, and explore the results.
+    This app includes, in addition to other tools, a simulation of the
+    Einstein-Podolsky-Rosen (EPR) / Bell experiment.
   </a>
   <a class="app" href="builder_app/">
     <b>Network builder</b><br>
-    Build your own quantish circuit on a canvas: place gates and
-    particles, wire them up, run the result, and download it as a
-    model file the quantish app can load.
+    A GUI for building a quantish circuit from scratch, or modifying any of the predefined models.
+    Place gates and particles on a canvas, wire them together, and run the result.
+    Models created in this app can be downloaded as YAML
+    model files that the quantish app can load.
   </a>
-  <p>Every app also comes as an editable notebook: the same code in
+  <p>Every app also comes as an editable notebook, with the same code in
      the full marimo editor, where you can read it, change it, and
      re-run cells. Edits run entirely in your browser and affect
-     only your copy. Reload to start fresh or use the editor's
+     only your copy. Reload to start fresh, or use the editor's
      download button to keep your changes.</p>
-  <p><a href="quantish_app_edit/">Quantish app (editable)</a> &middot;
-     <a href="double_slit_app_edit/">Double-slit app (editable)</a> &middot;
+  <p><a href="double_slit_app_edit/">Double-slit app (editable)</a> &middot;
+     <a href="quantish_app_edit/">Quantish app (editable)</a> &middot;
      <a href="builder_app_edit/">Network builder (editable)</a></p>
   <p class="build">Build @BUILD@ &middot; @BUILT_AT@</p>
 </body>

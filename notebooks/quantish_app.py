@@ -530,7 +530,6 @@ def _(
     mc_tick_get,
     mc_trials,
     mc_trials_text,
-    md_table,
     mo,
     sim,
 ):
@@ -589,14 +588,24 @@ def _(
                 tvd += abs(freq - pred.get(key, 0.0))
                 bare = key.split(':')[0]
                 label_str = short.get(bare, bare[:60].replace('|', ' '))
-                rows.append((f'`{label_str}`',
+                rows.append((f'<code>{_esc(label_str)}</code>',
                              tally.get(key, 0),
                              f'{freq:.4f}', f'{pred.get(key, 0.0):.4f}'))
+            # an HTML table (markdown tables cannot span columns): the
+            # two frequency columns share a group heading
+            head = ('<thead><tr><th></th><th></th>'
+                    '<th colspan="2" style="text-align: center">'
+                    'frequencies</th></tr>'
+                    '<tr><th>point</th><th>count</th><th>observed</th>'
+                    '<th>analytical</th></tr></thead>')
+            body = ''.join('<tr>' + ''.join(f'<td>{c}</td>' for c in r)
+                           + '</tr>' for r in rows)
             sections.append(f'**{label}** — {note}; {n_done:,} trials, '
-                            f'total variation distance {tvd / 2:.4f}\n\n' +
-                            md_table(['configuration-space point', 'count', 'freq', 'expected'],
-                                     rows))
+                            f'total variation distance {tvd / 2:.4f}\n\n'
+                            f'<table>{head}<tbody>{body}</tbody></table>')
         return mo.md('\n\n'.join(sections))
+
+    from html import escape as _esc
 
     def _results_area():
         if sim is None:
@@ -614,6 +623,113 @@ def _(
                        mc_button], wrap=True),
             _results_area(),
         ])})
+    return
+
+
+@app.cell(hide_code=True)
+def _(
+    mc_button,
+    mc_job_slot,
+    mc_seed,
+    mc_tick_set,
+    mc_trials,
+    mc_trials_text,
+    mo,
+    sim,
+):
+    # Pressing Run starts the sampling in a background thread, chunk by
+    # chunk, so the app stays responsive, progress is visible, and
+    # Cancel can stop it between chunks (keeping the partial tallies).
+    # Under Pyodide (the WASM export) threads cannot start, so the same
+    # chunked run happens synchronously with marimo's progress bar
+    # instead (no Cancel — closing the tab is the escape hatch). This
+    # cell sits right after the Monte Carlo display cell so that bar
+    # appears under the sampling section, not at the foot of the page.
+    mo.stop(sim is None)
+    if mc_button.value:
+        import sys as _sys
+        import threading
+        import time as _time
+
+        _prev = mc_job_slot.get('job')
+        if _prev is not None and not _prev['done']:
+            _prev['cancel'].set()
+
+        try:  # the text entry, when it parses, overrides the slider
+            _n = max(1, int(mc_trials_text.value.strip()))
+        except ValueError:
+            _n = int(mc_trials.value)
+        _modes = ['terminal']
+        _job = {'cancel': threading.Event(), 'done': False,
+                'progress': 0, 'total': _n * len(_modes),
+                'n_trials': _n, 'modes': _modes, 'sim': sim,
+                'results': None, 'n_done': {}, 'error': None}
+        mc_job_slot['job'] = _job
+
+        # Everything the worker touches is bound through parameter
+        # defaults: cell-local names are module globals under marimo's
+        # per-cell mangling, and a rerun of this cell (any control
+        # change) deletes them — a thread still holding them by name
+        # would die with NameError mid-run.
+        def _worker(tick=None, job=_job, job_n=_n, job_sim=sim,
+                    seed=int(mc_seed.value), bump=mc_tick_set,
+                    clock=_time.monotonic):
+            import random
+            from collections import Counter
+            from quantish.montecarlo import (predicted_distribution,
+                                             sample_paths, sample_terminal)
+            last_bump = 0.0
+            try:
+                rng = random.Random(seed)
+                res = {'predicted':
+                       predicted_distribution(job_sim.result_space)}
+                chunk_size = 2000
+                done = 0
+                for m in job['modes']:
+                    tally = Counter()
+                    dead = 0
+                    remaining = job_n
+                    while remaining and not job['cancel'].is_set():
+                        k = min(chunk_size, remaining)
+                        if m == 'terminal':
+                            tally += sample_terminal(job_sim.result_space,
+                                                     k, rng)
+                        else:
+                            t, d = sample_paths(job_sim.initial_points,
+                                                len(job_sim.run_stages),
+                                                k, rng)
+                            tally += t
+                            dead += d
+                        remaining -= k
+                        done += k
+                        job['progress'] = done
+                        if tick is not None:
+                            tick(k)
+                        elif clock() - last_bump > 0.25:
+                            last_bump = clock()
+                            bump(lambda v: v + 1)
+                    res[m] = tally
+                    if m == 'path':
+                        res['path_dead_ends'] = dead
+                    job['n_done'][m] = job_n - remaining
+                job['results'] = res
+            except Exception as exc:  # noqa: BLE001 — surface in the display
+                job['error'] = repr(exc)
+            finally:
+                job['done'] = True
+                if tick is None:
+                    bump(lambda v: v + 1)  # final render, full results
+
+        if _sys.platform == 'emscripten':
+            with mo.status.progress_bar(total=_job['total'],
+                                        title='sampling…') as _bar:
+                _worker(tick=_bar.update)
+            # the bar was this cell's output; the results cell renders
+            # the tallies once the counter moves
+            mo.output.clear()
+            mc_tick_set(lambda v: v + 1)
+        else:
+            mo.Thread(target=_worker, daemon=True).start()
     return
 
 
@@ -1277,107 +1393,6 @@ def _(mo):
     mc_job_slot = {}
     mc_tick_get, mc_tick_set = mo.state(0)
     return mc_job_slot, mc_tick_get, mc_tick_set
-
-
-@app.cell(hide_code=True)
-def _(
-    mc_button,
-    mc_job_slot,
-    mc_seed,
-    mc_tick_set,
-    mc_trials,
-    mc_trials_text,
-    mo,
-    sim,
-):
-    # Pressing Run starts the sampling in a background thread, chunk by
-    # chunk, so the app stays responsive, progress is visible, and
-    # Cancel can stop it between chunks (keeping the partial tallies).
-    # Under Pyodide (the WASM export) threads cannot start, so the same
-    # chunked run happens synchronously with marimo's progress bar
-    # instead (no Cancel — closing the tab is the escape hatch).
-    mo.stop(sim is None)
-    if mc_button.value:
-        import sys as _sys
-        import threading
-        import time as _time
-
-        _prev = mc_job_slot.get('job')
-        if _prev is not None and not _prev['done']:
-            _prev['cancel'].set()
-
-        try:  # the text entry, when it parses, overrides the slider
-            _n = max(1, int(mc_trials_text.value.strip()))
-        except ValueError:
-            _n = int(mc_trials.value)
-        _modes = ['terminal']
-        _job = {'cancel': threading.Event(), 'done': False,
-                'progress': 0, 'total': _n * len(_modes),
-                'n_trials': _n, 'modes': _modes, 'sim': sim,
-                'results': None, 'n_done': {}, 'error': None}
-        mc_job_slot['job'] = _job
-
-        # Everything the worker touches is bound through parameter
-        # defaults: cell-local names are module globals under marimo's
-        # per-cell mangling, and a rerun of this cell (any control
-        # change) deletes them — a thread still holding them by name
-        # would die with NameError mid-run.
-        def _worker(tick=None, job=_job, job_n=_n, job_sim=sim,
-                    seed=int(mc_seed.value), bump=mc_tick_set,
-                    clock=_time.monotonic):
-            import random
-            from collections import Counter
-            from quantish.montecarlo import (predicted_distribution,
-                                             sample_paths, sample_terminal)
-            last_bump = 0.0
-            try:
-                rng = random.Random(seed)
-                res = {'predicted':
-                       predicted_distribution(job_sim.result_space)}
-                chunk_size = 2000
-                done = 0
-                for m in job['modes']:
-                    tally = Counter()
-                    dead = 0
-                    remaining = job_n
-                    while remaining and not job['cancel'].is_set():
-                        k = min(chunk_size, remaining)
-                        if m == 'terminal':
-                            tally += sample_terminal(job_sim.result_space,
-                                                     k, rng)
-                        else:
-                            t, d = sample_paths(job_sim.initial_points,
-                                                len(job_sim.run_stages),
-                                                k, rng)
-                            tally += t
-                            dead += d
-                        remaining -= k
-                        done += k
-                        job['progress'] = done
-                        if tick is not None:
-                            tick(k)
-                        elif clock() - last_bump > 0.25:
-                            last_bump = clock()
-                            bump(lambda v: v + 1)
-                    res[m] = tally
-                    if m == 'path':
-                        res['path_dead_ends'] = dead
-                    job['n_done'][m] = job_n - remaining
-                job['results'] = res
-            except Exception as exc:  # noqa: BLE001 — surface in the display
-                job['error'] = repr(exc)
-            finally:
-                job['done'] = True
-                if tick is None:
-                    bump(lambda v: v + 1)  # final render, full results
-
-        if _sys.platform == 'emscripten':
-            with mo.status.progress_bar(total=_job['total'],
-                                        title='sampling…') as _bar:
-                _worker(tick=_bar.update)
-        else:
-            mo.Thread(target=_worker, daemon=True).start()
-    return
 
 
 @app.cell(hide_code=True)

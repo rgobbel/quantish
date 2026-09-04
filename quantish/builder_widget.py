@@ -2106,6 +2106,7 @@ function render({ model, el }) {
     };
     const save = () => {
       st.zoom = ppu / base();
+      st.ppu = ppu;
       st.sig = sig;
       st.vx = vx;
       st.vy = vy;
@@ -2139,10 +2140,12 @@ function render({ model, el }) {
       const r = root.getBoundingClientRect();
       if (!r.width || !r.height) return;
       if (st.sig === sig && st.vx !== undefined) {
+        // the same diagram again (a run, the show-values toggle):
+        // the exact scale and pan come back, never a re-fit
         placed = true;
         lastW = r.width;
-        ppu = base() * (st.zoom || 1);
-        fitHeight();
+        ppu = st.ppu || base() * (st.zoom || 1);
+        fitHeight();   // the same fitted frame height, from that scale
         vx = st.vx;
         vy = st.vy;
         apply();

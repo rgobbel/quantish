@@ -98,6 +98,16 @@ label:has(input:checked) {
     padding-left: 1.625em;
 }
 
+/* Accordion labels carry no heading top margin: the trigger's own
+   padding and the cell margins already separate them from what is
+   above (marimo names the label wrapper .contents or .content
+   depending on layout, so match on .markdown). */
+[data-state] > .markdown > h1,
+[data-state] > .markdown > h2,
+[data-state] > .markdown > h3 {
+    margin-top: 0 !important;
+}
+
 /* A fourth-level accordion label (the builder's 'Caption, notes, and
    variables') sits close under the canvas instead of a heading's
    worth of air away. */

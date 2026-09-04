@@ -16,6 +16,23 @@
     color: #000 !important;
 }
 
+/* A section heading that opens its own markdown block keeps only the
+   cell margins above it: the theme's extra heading margin would stack
+   on top of them (it stays for a heading that follows prose in the
+   same block). */
+.prose h2:first-child,
+.markdown h2:first-child {
+    margin-top: -0.5rem !important;
+}
+
+/* ...and the paragraph right under such a heading sits close to it:
+   the theme gives both the heading a bottom margin and the paragraph
+   a top margin, which is one gap too many. */
+.prose h2 + .paragraph, .prose h2 + p,
+.markdown h2 + .paragraph, .markdown h2 + p {
+    margin-top: 0 !important;
+}
+
 /* Explanation tables: slightly larger headers and KaTeX. */
 .prose table thead th,
 .markdown table thead th {
@@ -80,6 +97,16 @@
     margin-top: 0 !important;
     margin-left: 0.5em;
     margin-right: auto;
+}
+
+/* A subhead-style accordion label ('### Details') sits close under
+   the prose above it: no heading top margin inside the trigger, and
+   the trigger's own top padding trimmed. */
+[data-state] > .markdown.contents > h3 {
+    margin-top: 0 !important;
+}
+[data-state]:has(> .markdown.contents > h3) {
+    padding-top: 0.25rem !important;
 }
 
 /* Narrow screens (phones): wide results tables and display math

@@ -389,7 +389,7 @@ def _(mo):
     n_points = mo.ui.slider(41, 161, step=20, value=81,
                             label='screen resolution', show_value=True)
     shots = mo.ui.slider(steps=[100, 200, 500, 1000, 2000, 5000, 10000],
-                         value=500, label='particles per volley',
+                         value=1000, label='particles per volley',
                          show_value=True)
     fire_btn = mo.ui.run_button(label='🔫 fire particles')
     reset_btn = mo.ui.run_button(label='reset screens')
@@ -430,12 +430,14 @@ def _(mo):
 
 @app.cell(hide_code=True)
 def _(mo):
-    mo.md(r"""
+    # the how-it-works paragraph folds away so the first screen and the
+    # fire button share the window
+    mo.vstack([mo.md(r"""
     ## Simulation results
 
     These are best viewed with a wide window on a large screen. The black rectangles are screens,
     which will light up where particles fired at the apparatus land.
-
+    """), mo.accordion({'### Details': mo.md(r"""
     Each particle brightens the pixel where it lands, like a grain of
     photographic film: a pixel's first hit turns it dim gray, and
     repeated hits build it toward white. The **horizontal** landing
@@ -448,7 +450,7 @@ def _(mo):
     physical screen. Interference never happens *between* particles —
     each particle's own superposed worlds interfere (in $x$) before it
     lands, one particle at a time.
-    """)
+    """)})])
     return
 
 
