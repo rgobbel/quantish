@@ -73,15 +73,17 @@ def spec_from_simulation(sim, fig: str = None) -> DiagramSpec:
     delay_names = list(sim.delay_gates.keys()) + _pass_through
     # A symbolic angle spec ('pi/6', 'rad(30)', 'theta1') labels the gate
     # verbatim with its degrees appended; a numeric one shows degrees only.
+    _vars = config.get('variables') or {}
+
     def angle_text(gname):
         text = angle_label(config.gates[gname].angle,
                            sim.fredkin_gates[gname].theta.degrees,
-                           degree_sign='°')
+                           degree_sign='°', variables=_vars)
         phase = config.gates[gname].get('phase')
         if phase is not None:
             text += ' φ=' + angle_label(
                 phase, sim.fredkin_gates[gname].phase.degrees,
-                degree_sign='°')
+                degree_sign='°', variables=_vars)
         return text
 
     gates = {gname: {'angle': angle_text(gname),
@@ -110,7 +112,7 @@ def spec_from_simulation(sim, fig: str = None) -> DiagramSpec:
         if phase is not None:
             delay_notes[gname] = 'φ=' + angle_label(
                 phase, sim.gates[gname].phase.degrees,
-                degree_sign='°')
+                degree_sign='°', variables=_vars)
 
     # Particle links stay in `links` for routing; the renderer draws them
     # from the particle circle to the destination port.

@@ -87,17 +87,29 @@ def symbolic_angle(spec):
         return spec
 
 
-def angle_label(spec, degrees, degree_sign='º'):
+def angle_label(spec, degrees, degree_sign='º', variables=None):
     """Diagram label for a gate angle: a symbolic spec shows verbatim
     with its value in degrees appended, 'pi/6 (30.0º)'; a numeric spec
     shows just the degrees. Long decimal literals inside the spec are
-    shortened for display — rad(36.87), not rad(36.8698976458)."""
+    shortened for display — rad(36.87), not rad(36.8698976458).
+
+    With the model's `variables`, a spec that names a variable whose
+    definition is itself symbolic shows that definition too,
+    'theta_split = pi/4 (45.0º)' — the degrees alone would read the
+    same for pi/4 and for 45°. A numeric definition adds nothing the
+    degrees don't already say, so it stays 'theta_split (45.0º)'."""
     symbolic = symbolic_angle(spec)
     deg = f'{float(degrees):.1f}{degree_sign}'
     if symbolic is None:
         return deg
-    shown = re.sub(r'\d+\.\d{3,}',
-                   lambda mt: f'{float(mt.group()):.2f}', symbolic)
+    def _short(s):
+        return re.sub(r'\d+\.\d{3,}',
+                      lambda mt: f'{float(mt.group()):.2f}', s)
+
+    shown = _short(symbolic)
+    definition = (variables or {}).get(symbolic.strip())
+    if definition is not None and symbolic_angle(definition) is not None:
+        shown += f' = {_short(str(definition).strip())}'
     return f'{shown} ({deg})'
 
 

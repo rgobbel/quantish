@@ -218,7 +218,8 @@ def _(build_sim, mo, mode_pick, model_pick, run_btn):
                 f"{len(sim.run_stages)} steps, "
                 f"{len(sim.result_space.index)} final configuration-space point(s), "
                 f"total probability "
-                f"{sum(float(p.probability) for p in sim.result_space.index.values()):.6f}")
+                f"{sum(float(p.probability) for p in sim.result_space.index.values()):.6f}"
+                + inexact_note(sim))
         else:
             msg = mo.md(
                 'Once a model has been loaded and its parameters set, '
@@ -462,7 +463,7 @@ def _(
         rows = [(
             f'`{p.short_config(key=lambda c: coord_sort_key(sim, c)).replace("|", " ")}`',
             math_weight(p.weight, prec=3),
-            f'${float(p.probability):.4f}$',
+            math_prob(p.probability),
             f'${phase_deg(p.weight):+.1f}º$',
         ) for p in sorted(sim.result_space.index.values(),
                           key=lambda p: cs_point_sort_key(sim, p))]
@@ -978,7 +979,8 @@ async def initialization():
     from quantish.builder_widget import (DiagramWidget,
                                          NetworkGraphWidget,
                                          WeightSplitWidget)
-    from quantish.display import coord_sort_key, cs_point_sort_key, gate_io
+    from quantish.display import (coord_sort_key, cs_point_sort_key, gate_io,
+                                  sym_or_float)
     from quantish.epr import run_epr_experiment, supports_epr
     from quantish.gate import FredkinGate
     from quantish.simulation import Simulation
@@ -1121,6 +1123,11 @@ def _(
                 # would freeze the current value into the gate.
                 qn.qify(cur['expr'], base_env)  # validate early, clear error
                 return cur['expr']
+            if mode_pick.value == 'Symbolic':
+                # a degree-marked spec stays exact (30.0° → pi/6); a
+                # float in radians would turn every result into a
+                # sympy Float and the displays into 15-digit decimals
+                return f"{cur['deg']}°"
             return math.radians(cur['deg'])
 
         CalcMode.default(mode_pick.value)
@@ -1325,14 +1332,16 @@ def _(cmath, mo, qn):
         # (the display.sym_or_float policy): complex models and awkward
         # inputs can produce unreadably long expressions, and those fall
         # back to the numeric form below.
-        try:
-            if qn.CalcMode.default() == 'Symbolic' and qn.isq(w):
-                import sympy
-                simplified = qn.simplify(w).v
-                if len(str(simplified)) <= max_len:
-                    return sympy.latex(simplified)
-        except Exception:  # noqa: BLE001 — fall back to the numeric form
-            pass
+        if qn.CalcMode.default() == 'Symbolic' and qn.isq(w):
+            import sympy
+            # sympy's simplify can choke on an odd but valid expression:
+            # the unsimplified form is still exact and still symbolic
+            try:
+                expr = qn.simplify(w).v
+            except Exception:  # noqa: BLE001 — keep the exact form
+                expr = w.v
+            if len(str(expr)) <= max_len and not qn.inexact(expr):
+                return sympy.latex(expr)
         wc = complex(w)
         real, imag = wc.real, wc.imag
         parts = []
@@ -1350,8 +1359,31 @@ def _(cmath, mo, qn):
         # math — symbolic LaTeX often leads with '- \frac{...}'.
         return f'${" ".join(latex_weight(w, prec).split())}$'
 
+    def inexact_note(sim) -> str:
+        # Symbolic mode with inputs that cannot be exact: say so, gently
+        bad = sim.inexact_inputs()
+        if not bad:
+            return ''
+        return ('<br><span style="color: #b00020">⚠ Symbolic mode, but '
+                + ', '.join(bad) + (' is' if len(bad) == 1 else ' are')
+                + ' not exact (a floating-point or long decimal '
+                'value), so these results carry floating point.</span>')
+
     def phase_deg(w) -> float:
         return cmath.phase(complex(w)) * 180.0 / cmath.pi
+
+    def math_prob(pr, prec=4) -> str:
+        # a probability as inline math: the exact form in Symbolic mode
+        # when it is short (9/16), the fixed-precision float otherwise
+        if qn.CalcMode.default() == 'Symbolic' and qn.isq(pr):
+            import sympy
+            try:
+                expr = qn.simplify(pr).v
+            except Exception:  # noqa: BLE001 — keep the exact form
+                expr = pr.v
+            if len(str(expr)) <= 40 and not qn.inexact(expr):
+                return f'${sympy.latex(expr)}$'
+        return f'${float(pr):.{prec}f}$'
 
     def md_table(headers, rows) -> str:
         # NB: markdown needs a blank line before a table, and literal '|'
@@ -1366,7 +1398,7 @@ def _(cmath, mo, qn):
         return '\n'.join(lines)
 
     _ = mo.md('')  # helpers only
-    return latex_weight, math_weight, md_table, phase_deg
+    return inexact_note, latex_weight, math_prob, math_weight, md_table, phase_deg
 
 
 @app.cell(hide_code=True)
@@ -1448,6 +1480,7 @@ def _(
     run_epr_experiment,
     sim_model,
     supports_epr,
+    sym_or_float,
     units_pick,
 ):
     def _():
@@ -1461,9 +1494,11 @@ def _(
             # the selected units, anything else a symbolic radian expression
             txt = (raw or '').strip().rstrip('º°').strip()
             try:
-                num = float(txt)
-                return qn.qify(num if units_pick.value == 'radians'
-                               else math.radians(num))
+                float(txt)   # a bare number, in the selected units
+                # as a spec string, so Symbolic mode keeps it exact
+                # (22.5 → pi/8), never a float in radians
+                return qn.qify(txt if units_pick.value == 'radians'
+                               else f'{txt}°')
             except ValueError:
                 # symbolic radian expression; may use model variables
                 return qn.qify(txt, base_env)
@@ -1482,7 +1517,11 @@ def _(
         labels = list(res['values'].keys())
 
         def grid_table(getter, fmt='{:.4f}'):
-            rows = [[f'**{l1}**'] + [fmt.format(getter(res['grid'][(l1, l2)]))
+            # exact rates show as such in Symbolic mode when short
+            # (sin²(π/8) = 1/2 - √2/4); floats otherwise
+            def cell(v):
+                return sym_or_float(v, fmt.format(qn.to_float(v)))
+            rows = [[f'**{l1}**'] + [cell(getter(res['grid'][(l1, l2)]))
                                      for l2 in labels]
                     for l1 in labels]
             return md_table([r'$\theta_1 \backslash \theta_2$'] + labels, rows)

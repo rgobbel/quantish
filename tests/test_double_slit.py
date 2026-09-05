@@ -44,3 +44,32 @@ class TestDoubleSlit(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def test_symbolic_phase_plate_runs():
+    """A non-zero phase-plate phase in Symbolic mode: the rotated
+    weights' |w|² must stay Real and sum to 1 (regression — the
+    invariant check used to choke on a Complex-typed probability)."""
+    from pathlib import Path
+
+    import yaml
+    from addict import Addict
+    from quantish.qnumber import CalcMode, Real
+    from quantish.simulation import Simulation
+    models = Path(__file__).resolve().parents[1] / 'models'
+    with open(models / 'defaults.yaml') as f:
+        cfg = yaml.safe_load(f)
+    with open(models / 'extras' / 'double_slit.yaml') as f:
+        cfg.update(yaml.safe_load(f))
+    cfg['variables']['phi'] = 'pi/3'
+    cfg['loglevel'] = 'warning'
+    cfg['calculation_mode'] = 'Symbolic'
+    CalcMode.default('Symbolic')
+    try:
+        sim = Simulation(Addict(cfg))
+        space, _ = sim.run()
+        probs = [p.probability for p in space.index.values()]
+        assert all(isinstance(p, Real) for p in probs)
+        assert abs(sum(float(p) for p in probs) - 1) < 1e-9
+    finally:
+        CalcMode.default('Float')

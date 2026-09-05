@@ -57,9 +57,22 @@ def sym_or_float(value, float_str, max_len=None) -> str:
     if qn.CalcMode.default() != 'Symbolic':
         return float_str
     try:
-        s = str(qn.simplify(qn.qify(value)))
+        e = qn.qify(value)
     except (TypeError, ValueError):
         return float_str
+    # sympy's simplify can choke on an odd but valid expression; the
+    # unsimplified form is still exact and still shown symbolically
+    try:
+        e = qn.simplify(e)
+    except Exception as exc:  # noqa: BLE001 — keep the exact, unsimplified form
+        log.debug(f'simplify failed on {e!r}: {exc!r}; showing it unsimplified')
+    # an expression carrying sympy Floats is not exact — a float-valued
+    # input leaked into the symbolic run — so it shows as a float too,
+    # at the display precision, not as 0.750000000000000
+    inner = getattr(e, 'v', e)
+    if qn.issym(inner) and inner.has(qn.sym.Float):
+        return float_str
+    s = str(e)
     limit = MAX_SYMBOLIC_LEN if max_len is None else max_len
     return s if len(s) <= limit else float_str
 

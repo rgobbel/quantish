@@ -1,14 +1,16 @@
+import cmath as cm
 import logging
+import math as m
 import numbers as n
-import sympy as sym
-from sympy import re, im, Rational, deg, rad, Eq, Piecewise
+import re as rex
+from collections.abc import Callable
 from functools import reduce
 from operator import mul
-import math as m
-import cmath as cm
+from typing import Any, Self, TypeIs, cast
+
 import scipy.special as sci
-import re as rex
-from typing import Any, Callable, TypeIs, cast
+import sympy as sym
+from sympy import Eq, Piecewise, Rational, deg, im, rad, re
 
 log = logging.getLogger('quantish')
 
@@ -74,9 +76,7 @@ class CalcMode(metaclass=CalcModeMeta):
 def realtype(x) -> TypeIs[int | float]:
     if isq(x):
         x = x.v
-    if type(x) in (int, float):
-        return True
-    return False
+    return type(x) in (int, float)
 
 def floatable(x):
     try:
@@ -114,14 +114,17 @@ def _rounded(v, n):
 
 
 def to_float(x) -> float:
+    """x as a float: a Real/Complex wrapper is unwrapped first, and a
+    symbolic value that is real up to numerical noise (an unsimplified
+    phase expression) is evaluated numerically."""
+    x = getattr(x, 'v', x)
     try:
-        result = float(x)
+        return float(x)
     except TypeError:
-        if sym.im(x) == 0:
-            result = complex(x).real
-        else:
-            raise
-    return result
+        z = complex(sym.N(x)) if issym(x) else complex(x)
+        if abs(z.imag) <= 1e-9 * max(1.0, abs(z.real)):
+            return z.real
+        raise
 
 
 # sympy's sympify overloads only declare the strict= keyword; rational= is
@@ -214,6 +217,13 @@ def qify(x, env: dict | None = None) -> 'Complex':
     ('0.7@30°': magnitude and phase). An expression that still
     contains unknown names raises — every quantity must be concrete."""
     if isq(x): return x
+    if (isinstance(x, float) and not isinstance(x, bool)
+            and CalcMode.default() == 'Symbolic' and m.isfinite(x)):
+        # a decimal that arrived as a Python float (a YAML literal like
+        # 0.5, a slider) is exact in Symbolic mode — 0.5 → 1/2, 0.1 →
+        # 1/10 via the shortest round-trip decimal — never a sympy
+        # Float, which would turn every downstream value into one
+        x = sym.Rational(repr(x))
     elif iscplx(x): return Complex(x)
     if isinstance(x, str):
         x = spec_rewrites(x)
@@ -256,6 +266,21 @@ def reserved_name(name: str) -> bool:
 
 
 
+def inexact(x) -> bool:
+    """Symbolic-mode input hygiene: True when a value cannot be
+    meaningfully exact — it carries a sympy Float, or a rational with
+    an enormous denominator (a long machine decimal such as
+    0.5235987755982988 rather than pi/6). Both are honest inputs, but
+    the results built on them will not simplify."""
+    v = getattr(x, 'v', x)
+    if not issym(v):
+        return False
+    if v.has(sym.Float):
+        return True
+    return any(isinstance(a, sym.Rational) and a.q > 10 ** 6
+               for a in v.atoms(sym.Rational))
+
+
 def exact(x) -> 'Real':
     """Parse/wrap x into the exact representation, independent of the
     global CalcMode. Canonical stored values use this; conversion into
@@ -272,7 +297,9 @@ def exact(x) -> 'Real':
     if not isinstance(val, sym.Expr):
         # sympify can "successfully" parse junk like 'not-a-number' into a
         # boolean expression; only genuine numeric expressions get through.
-        raise ValueError(f'{x!r} is not a numeric expression')
+        # a ValueError, not a TypeError: the input's type is fine, its
+        # content is not, and callers catch ValueError for bad specs
+        raise ValueError(f'{x!r} is not a numeric expression')  # noqa: TRY004
     if floatable(val):
         return Real(val, 'Symbolic')
     # Non-real input only arises from caller misuse (exact() values are
@@ -303,7 +330,7 @@ def softmax(vec):
     if isq(vec[0]): fn = type(vec[0])
     elif realtype(vec[0]): fn = Real
     elif iscplx(vec[0]): fn = Complex
-    elif isinstance(vec[0], sym.Integer) or isinstance(vec[0], sym.Float): fn = Real
+    elif isinstance(vec[0], (sym.Integer, sym.Float)): fn = Real
     else: fn = Complex
     return [fn(x) for x in sm]
 
@@ -346,7 +373,6 @@ class Complex(n.Number):
                     n_value = int(n_value)
                 self._value = n_value
 
-
     def newme(self, x):
         return self.__class__(x)
 
@@ -359,7 +385,6 @@ class Complex(n.Number):
         # argument" (e.g. copying a config whose gate angles are Reals).
         return (self._value,)
 
-
     @property
     def v(self):
         return self._value
@@ -368,10 +393,6 @@ class Complex(n.Number):
     def mm(self):
         if isnative(self._value): return 'Float'
         else: return 'Symbolic'
-
-
-
-
 
     def rotate(self, theta):
         """This value rotated by theta radians: self · e^(iθ).
@@ -520,14 +541,14 @@ class Complex(n.Number):
         """Returns the Real distance from 0. Called for abs(self)."""
         return Real(abs(self._value))
 
-    def __round__(self, n=None):
+    def __round__(self, ndigits=None):
         # round the underlying values: rounding the Real properties
         # would re-enter this method and lose the digits argument
         if bool(self.imag == 0):
-            return Real(_rounded(self.real.v, n))
+            return Real(_rounded(self.real.v, ndigits))
         i = sym.I if issym(self._value) else 1j
-        return Complex(_rounded(self.real.v, n)
-                       + _rounded(self.imag.v, n) * i)
+        return Complex(_rounded(self.real.v, ndigits)
+                       + _rounded(self.imag.v, ndigits) * i)
 
     def conjugate(self):
         """(x+y*i).conjugate() returns (x-y*i)."""
@@ -574,7 +595,7 @@ class Complex(n.Number):
 
 # noinspection PyAbstractClass
 class Real(Complex):
-    def __new__(cls, value: 'ANumber | Complex | str', mode: str | None = None) -> 'Real':
+    def __new__(cls, value: 'ANumber | Complex | str', mode: str | None = None) -> Self:
         if isinstance(value, cls):
             return value
         if not floatable(value):
@@ -685,8 +706,14 @@ class Real(Complex):
         else:
             return self._value <= otherv(other)
 
-def probability(w: Complex)-> Real:
+def probability(w: Complex) -> Real:
+    """|w|². A symbolic phase (a weight rotated by e^(iφ), which sympy
+    writes with (-1)**(1/3)-style roots) can leave abs(w)**2 as an
+    unsimplified complex-looking expression; its real part is the
+    probability, and it comes back as a Real either way."""
     result = abs(w)**2
+    if isinstance(result, Complex):
+        result = result.real
     return result
 
 def prod(it):
@@ -776,7 +803,6 @@ def zerop(x):
             cached = x._zerop = _zerop(x.v)
         return cached
     return _zerop(x)
-
 
 def _zerop(x) -> bool:
     """The uncached mode-aware zero test on an unwrapped value."""

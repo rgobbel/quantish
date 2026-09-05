@@ -26,13 +26,15 @@ import logging
 import random
 from collections import Counter
 
+import quantish.qnumber as qn
 from quantish.epr import epr_tally, expected_discrepancy, is_two_stage, log_epr
 
 log = logging.getLogger('quantish')
 
 
 def _prob(weight) -> float:
-    return abs(complex(weight)) ** 2
+    # sampling needs floats: the exact |w|², converted once, here
+    return qn.to_float(qn.probability(weight))
 
 
 def predicted_distribution(result_space) -> dict:

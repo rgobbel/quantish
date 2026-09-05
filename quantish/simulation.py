@@ -1,5 +1,4 @@
 import logging
-import math
 from collections import defaultdict
 from addict import Addict
 import networkx as nx
@@ -170,6 +169,31 @@ class Simulation:
         if problems:
             raise ValueError('bad wire_labels:\n  ' + '\n  '.join(problems))
 
+    def inexact_inputs(self) -> list[str]:
+        """Symbolic mode only: the inputs whose values cannot be
+        exact ('g1 angle', 'p2 weight' — see qnumber.inexact), so the
+        results built on them will carry floating point too. Empty in
+        Float mode and for a clean symbolic model."""
+        if qn.CalcMode.default() != 'Symbolic':
+            return []
+        out = []
+        for gname, gate in self.fredkin_gates.items():
+            if qn.inexact(gate.theta):
+                out.append(f'{gname} angle')
+            if getattr(gate, 'phase', None) is not None \
+                    and qn.inexact(gate.phase):
+                out.append(f'{gname} phase')
+        for pname, plate in getattr(self, 'phase_plates', {}).items():
+            if qn.inexact(plate.phase):
+                out.append(f'{pname} phase')
+        for pname, particle in self.particles.items():
+            if qn.inexact(particle.weight):
+                out.append(f'{pname} weight')
+        for pname, amps in getattr(self, 'branch_amps', {}).items():
+            if any(qn.inexact(a) for a in amps):
+                out.append(f'{pname} branch probability')
+        return out
+
     def check_roots(self):
         """The zero-in-degree nodes of the link graph must be exactly the
         declared particles — as SETS: YAML declaration order and graph
@@ -329,7 +353,9 @@ class Simulation:
         def angle_spec(v):
             if degrees and isinstance(v, (int, float)) \
                     and not isinstance(v, bool):
-                return math.radians(v)
+                # as a degree-marked spec, so qify keeps it exact in
+                # Symbolic mode (30 → pi/6), not a float in radians
+                return f'{v}°'
             return v
 
         for gname, gval in gates.items():

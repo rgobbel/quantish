@@ -180,33 +180,39 @@ def run_pair(sim, theta1, theta2, n_trials: int = 0, rng=None) -> dict:
         cfg.gates['g6'].angle = -theta2
     cell = Simulation(cfg)
     cell.run()
-    probs = {'same': 0.0, 'diff': 0.0, 'uncoupled': 0.0}
+    # the cell's probabilities and rates stay in the engine's number
+    # system (exact in Symbolic mode); callers convert for display or
+    # for the Bell/CHSH comparisons
+    probs = {'same': qn.ZERO, 'diff': qn.ZERO, 'uncoupled': qn.ZERO}
     for point in cell.result_space.index.values():
-        probs[classify(point, two_stage)] += float(point.probability)
+        c = classify(point, two_stage)
+        probs[c] = probs[c] + point.probability
     coupled = probs['same'] + probs['diff']
     result = {
-        'exact': probs['diff'] / coupled if coupled > 0 else 0.0,
-        'analytical': float(qn.simplify((theta1 - theta2).sin ** 2)),
-        'classical': float(2 * abs(theta1 - theta2) / qn.PI),
+        'exact': (qn.simplify(probs['diff'] / coupled)
+                  if not qn.zerop(coupled) else qn.ZERO),
+        'analytical': qn.simplify((theta1 - theta2).sin ** 2),
+        'classical': qn.simplify(2 * abs(theta1 - theta2) / qn.PI),
     }
     if n_trials and rng is not None:
         tally = sample_terminal(cell.result_space, n_trials, rng)
         counts = epr_tally(cell.result_space, tally, two_stage)
         n_coupled = counts['same'] + counts['diff']
         result['sampled'] = counts['diff'] / n_coupled if n_coupled else 0.0
+        # a sampled rate is a float by nature (a count ratio)
         result['counts'] = counts
     return result
 
 
 def observed_rate(cell: dict) -> float:
-    """The experiment's discrepancy for one grid cell: the sampled rate
-    when trials were run, the exact rate otherwise."""
-    return cell.get('sampled', cell['exact'])
+    """The experiment's discrepancy for one grid cell as a float: the
+    sampled rate when trials were run, the exact rate otherwise."""
+    return qn.to_float(cell.get('sampled', cell['exact']))
 
 
 def correlation_from_discrepancy(d) -> float:
     """E(a,b) = 1 − 2·discrepancy(a,b)."""
-    return 1.0 - 2.0 * float(d)
+    return 1.0 - 2.0 * qn.to_float(d)
 
 
 def chsh_max(grid: dict, rate=observed_rate) -> tuple[float, tuple]:
@@ -240,7 +246,7 @@ def bell_max(grid: dict, rate=observed_rate) -> tuple[float, tuple]:
     labels = sorted({label for pair in grid for label in pair})
 
     def d(x, y):
-        return float(rate(grid[(x, y)]))
+        return qn.to_float(rate(grid[(x, y)]))
 
     best_excess, best_triple = None, (labels[0],) * 3
     for a in labels:

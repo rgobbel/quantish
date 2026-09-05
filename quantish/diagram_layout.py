@@ -232,7 +232,8 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
             _phspec = ((sim.config.get('gates', {}).get(gname) or {})
                        .get('phase', 0))
             angle_text += ', φ ' + _sub(
-                angle_label(_phspec, float(_gph.degrees), '°'))
+                angle_label(_phspec, float(_gph.degrees), '°',
+                            variables=sim.config.get('variables') or {}))
         texts.append(dict(x=cx, y=top - 0.60 * KH, lines=[angle_text],
                           size=10, color='#777777', weight='normal'))
         deg = float(gdata.get('deg', 0.0))
@@ -328,8 +329,9 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
                      .get('phase', 0))
             _angles = re.findall(r'∠\S+', ' '.join(vals))
             vals = ([_override if _override
-                     else _sub(angle_label(_spec, float(_ph.degrees),
-                                           '°'))]
+                     else _sub(angle_label(
+                         _spec, float(_ph.degrees), '°',
+                         variables=sim.config.get('variables') or {}))]
                     + _angles)
         _dline, _druns = display_text(dname)
         lines = ([_dline] + vals) if vals else [_dline]

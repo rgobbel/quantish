@@ -65,7 +65,8 @@ async def initialization():
                                   graph_to_config, validate_graph,
                                   variables_env)
     from quantish.builder_widget import BuilderWidget, DiagramWidget
-    from quantish.display import coord_sort_key, cs_point_sort_key
+    from quantish.display import (coord_sort_key, cs_point_sort_key,
+                                  sym_or_float)
     from quantish.util import angle_label
     from quantish.simulation import Simulation
 
@@ -603,7 +604,8 @@ def _(
             try:
                 out[_n] = angle_label(
                     _spec, angle_degrees(_spec, _env,
-                                         _unit or 'radians'), '°')
+                                         _unit or 'radians'), '°',
+                    variables=model_vars)
             except Exception:  # noqa: BLE001 — reported via problems
                 out[_n] = f'⚠ {_spec}'
         return out
@@ -674,11 +676,17 @@ def _(Addict, CalcMode, Simulation, builder_config, mo, run_network_btn):
             return None, mo.md(f'**run failed** — `{exc}`')
         total = sum(float(p.probability)
                     for p in s.result_space.index.values())
+        bad = s.inexact_inputs()
+        note = ('' if not bad else
+                '<br><span style="color: #b00020">⚠ Symbolic mode, but '
+                + ', '.join(bad) + (' is' if len(bad) == 1 else ' are')
+                + ' not exact (a floating-point or long decimal value), '
+                'so these results carry floating point.</span>')
         return s, mo.md(
             f'Ran **{config.title}** — '
             f'{len(s.run_stages)} stage(s), '
             f'{len(s.result_space.index)} final configuration-space '
-            f'point(s), total probability {total:.6f}')
+            f'point(s), total probability {total:.6f}' + note)
 
     sim_built, _msg = _build()
     _msg
@@ -711,7 +719,7 @@ def _(DiagramWidget, diagram_geometry, mo, sim_built):
 
 
 @app.cell(hide_code=True)
-def _(coord_sort_key, cs_point_sort_key, mo, sim_built):
+def _(coord_sort_key, cs_point_sort_key, mo, sim_built, sym_or_float):
     mo.stop(sim_built is None)
 
     def _():
@@ -721,8 +729,11 @@ def _(coord_sort_key, cs_point_sort_key, mo, sim_built):
             cfg = p.short_config(
                 key=lambda c: coord_sort_key(sim_built, c)).replace('|', ' ')
             w = complex(p.weight)
-            rows.append(f'| `{cfg}` | {w.real:+.4f}{w.imag:+.4f}i '
-                        f'| {float(p.probability):.4f} |')
+            # exact forms in Symbolic mode when short, floats otherwise
+            w_txt = sym_or_float(p.weight, f'{w.real:+.4f}{w.imag:+.4f}i')
+            pr_txt = sym_or_float(p.probability,
+                                  f'{float(p.probability):.4f}')
+            rows.append(f'| `{cfg}` | {w_txt} | {pr_txt} |')
         return mo.md('\n'.join(
             ['', '| configuration | weight | probability |',
              '|---|---|---|'] + rows))

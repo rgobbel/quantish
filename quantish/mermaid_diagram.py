@@ -210,13 +210,15 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
                 gg = pg.add_subgraph(gname)
                 # a symbolic angle spec labels the gate verbatim with its
                 # degrees appended; a numeric one shows degrees only
+                _vars = sim.config.get('variables') or {}
                 _angle = fmt_label(
                     angle_label(sim.config.gates[gname].angle,
-                                gate.theta.degrees))
+                                gate.theta.degrees, variables=_vars))
                 _phase = sim.config.gates[gname].get('phase')
                 if _phase is not None:
                     _angle += ' φ=' + fmt_label(
-                        angle_label(_phase, gate.phase.degrees))
+                        angle_label(_phase, gate.phase.degrees,
+                                    variables=_vars))
                 gg.header = f'subgraph {gname}["{gname}: {_angle}"]'
                 ggi = gg.add_subgraph(f'{gname}.input')
                 ggi.header = f'subgraph {gname}.input[input]'
