@@ -151,7 +151,7 @@ def _(mo):
     - Double-click in the middle of a Fredkin gate to set its measurement angle, or for a phase
       plate, its rotation angle.
 
-      - Angles can be entered using the full expression syntax supported in the the models' YAML files:
+      - Angles can be entered using the full expression syntax supported in the models' YAML files:
         - Arithmetic expressions such `pi/6`, `rad(30)`, `acos(4/5)`, or `pi/2 + pi/8` produce values in radians.
         - Numeric values with no other expressions included, or suffixed with a degree symbol (°) are interpreted as degrees.
         - Anything unparseable is flagged on the gate and detailed in the status line.

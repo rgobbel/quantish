@@ -1,6 +1,6 @@
 title: Double slit (one pixel)
 
-caption: One screen pixel of the double-slit apparatus — the recombining gate of figure 4.14 with a phase plate carrying that pixel's path-length difference.
+caption: One screen pixel of the double-slit apparatus — the split-and-merge circuit of figure 4.13 (2026 numbering) with a phase plate carrying that pixel's path-length difference.
 
 notes: |-
   The double-slit app loads this network as its base circuit and, per

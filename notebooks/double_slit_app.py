@@ -190,7 +190,7 @@ def _(DEFAULT_THETA_S, math, mo):
     passing through it–its occupancy decides only whether or not that gate
     swaps its switch wires. (One deliberate exception: a gate with a
     **phase** setting, like $\varphi$, rotates the weight of every particle
-    traversing it, control input included, without effecting amplitude.)
+    traversing it, control input included, without affecting amplitude.)
 
     #####  **Real-world vs. quantish model**
 
