@@ -133,7 +133,9 @@ Model files define:
 - `particles`: Initial particles with weight and sign
 - `gates`: Fredkin gates with rotation angles (and optionally a `phase`)
 - `phase_plates` (optional): phase plates, name → phase spec ({φ: phi});
-  control-only pass-throughs that rotate traversing weights by e^(iφ)
+  control-only pass-throughs that rotate traversing weights by e^(iφ).
+  Links address a plate by its bare name, like a delay gate
+  (`S2: φ`, `φ: g_merge.lower`); the explicit `φ.control` still loads
 - `display_strings` (optional): object name → the string displays draw
   in place of the name ({g_split: '$g_{split}$'}); covers gates, delay
   gates, phase plates, and particles alike — the name stays the

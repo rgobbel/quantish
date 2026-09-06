@@ -279,6 +279,9 @@ def _(
     mo,
     mode_pick,
     units_pick,
+    variables_editor,
+    vars_error,
+    vars_problem,
 ):
     # The whole Model Parameters section lives in one accordion so it is
     # collapsed by default in BOTH edit and app mode (accordions are the
@@ -309,6 +312,12 @@ def _(
                   "expression (`pi/8`, `rad(30)`, `acos(4/5)`)."),
             mo.hstack([mode_pick, units_pick], wrap=True, justify='start', gap=2),
             mo.vstack(rows),
+            mo.md("**Variables**: the model's named constants, one "
+                  "`name: expression` per line (`theta_split: pi/4`); "
+                  "gate angles and weights that refer to them follow."),
+            variables_editor,
+            mo.md(f'<span style="color: #b00020">⚠ {vars_error or vars_problem}'
+                  '</span>') if (vars_error or vars_problem) else mo.md(''),
         ])
 
     # the accordion label is markdown: the heading plus a short
@@ -325,6 +334,7 @@ def _(
 
 @app.cell(hide_code=True)
 def _(
+    short_label,
     GatePort,
     coord_sort_key,
     cs_point_sort_key,
@@ -349,7 +359,7 @@ def _(
         # the branch amplitude, and the output configuration-space point's total weight. Where
         # branch w ≠ point w, interfering branches merged into that configuration-space point.
         def label(p):
-            return f'`{p.short_config(key=lambda c: coord_sort_key(sim, c)).replace("|", " ")}`'
+            return f'`{short_label(sim, p)}`'
 
         # the product sign, in a math serif so it doesn't read as a
         # gateway glyph, with the explanation on hover
@@ -461,7 +471,7 @@ def _(
         # (upper before lower), then sign (+ before −); the configuration
         # label's coordinates are reordered to match.
         rows = [(
-            f'`{p.short_config(key=lambda c: coord_sort_key(sim, c)).replace("|", " ")}`',
+            f'`{short_label(sim, p)}`',
             math_weight(p.weight, prec=3),
             math_prob(p.probability),
             f'${phase_deg(p.weight):+.1f}º$',
@@ -523,6 +533,7 @@ def _(
 
 @app.cell(hide_code=True)
 def _(
+    short_label,
     coord_sort_key,
     mc_button,
     mc_cancel,
@@ -565,8 +576,7 @@ def _(
         # compact row labels: the same short-config form the final-points
         # table uses, looked up from the terminal points (raw keys are
         # unreadably long for multi-particle models)
-        short = {p.key: p.short_config(
-                     key=lambda c: coord_sort_key(job_sim, c)).replace('|', ' ')
+        short = {p.key: short_label(job_sim, p)
                  for p in job_sim.result_space.index.values()}
         sections = []
         if _job['cancel'].is_set():
@@ -980,7 +990,7 @@ async def initialization():
                                          NetworkGraphWidget,
                                          WeightSplitWidget)
     from quantish.display import (coord_sort_key, cs_point_sort_key, gate_io,
-                                  sym_or_float)
+                                  short_label, sym_or_float)
     from quantish.epr import run_epr_experiment, supports_epr
     from quantish.gate import FredkinGate
     from quantish.simulation import Simulation
@@ -1107,6 +1117,7 @@ def _(
     mo,
     mode_pick,
     model_pick,
+    model_vars,
     qn,
 ):
     # Model construction is cheap and needs no ▶ Run: cells that only need
@@ -1132,6 +1143,7 @@ def _(
 
         CalcMode.default(mode_pick.value)
         config = load_config(model_pick.value)[0]
+        config.variables.update(model_vars)
         for g in gate_names:
             config.gates[g].angle = angle_for(g)
         return Simulation(config)
@@ -1187,12 +1199,58 @@ def _(Addict, MODELS_TOP, Simulation, mo, model_pick, yaml):
                              label='displayed angle values are',
                              inline=True)
 
+    # the model's own variables, editable as `name: expression` lines
+    # (the builder's format); reseeded when the model changes
+    def _vars_text(vs):
+        return '\n'.join(
+            f"{k}: '{v}'" if isinstance(v, str) else f'{k}: {v}'
+            for k, v in (vs or {}).items())
+
+    variables_editor = mo.ui.text_area(
+        value=_vars_text(_model_raw.get('variables')),
+        rows=max(2, min(8, len(_model_raw.get('variables') or {}) + 1)),
+        full_width=True,
+        placeholder='name: expression   (e.g. theta_split: pi/4)')
+    return (
+        base_config,
+        load_config,
+        mode_pick,
+        units_pick,
+        variables_editor,
+    )
+
+
+@app.cell(hide_code=True)
+def _(mo, variables_editor, yaml):
+    # the edited variables as a mapping; a parse problem shows under the
+    # editor and the model's own definitions stand meanwhile
+    def _():
+        text = variables_editor.value.strip()
+        if not text:
+            return {}, None
+        try:
+            v = yaml.safe_load(text)
+            if v is None:
+                return {}, None
+            if not isinstance(v, dict):
+                raise ValueError('expected name: expression lines')
+            return {str(k): val for k, val in v.items()}, None
+        except Exception as exc:  # noqa: BLE001 — show, don't crash
+            return {}, f'variables not parseable — {exc}'
+
+    model_vars, vars_error = _()
+    return model_vars, vars_error
+
+
+@app.cell(hide_code=True)
+def _(Simulation, base_config, load_config, mo, model_pick, model_vars):
     # ONE state for all gate angles: {gate: {'deg': float, 'expr': str|None}}.
     # marimo's state reactivity keys on the getter being referenced as a
     # global variable — a dict of per-gate states breaks the subscription
     # (the earlier bug), so everything lives under a single getter/setter.
     # 'expr' preserves the symbolic form (model YAML or typed) alongside
-    # its numeric degree equivalent.
+    # its numeric degree equivalent. Reseeded when the model or its
+    # variables change, since the variables define the angles.
     def _():
         def centered(deg):
             d = deg % 360.0
@@ -1215,26 +1273,24 @@ def _(Addict, MODELS_TOP, Simulation, mo, model_pick, yaml):
             except ValueError:
                 return s
 
-        base_sim = Simulation(load_config(model_pick.value)[0])
+        config = load_config(model_pick.value)[0]
+        config.variables.update(model_vars)
+        problem = None
+        try:
+            base_sim = Simulation(config)
+        except Exception as exc:  # noqa: BLE001 — bad variable definitions
+            problem = f'variables rejected — {exc}'
+            base_sim = Simulation(load_config(model_pick.value)[0])
         names = list(base_sim.fredkin_gates.keys())
         angles = mo.state({
             g: {'deg': round(centered(float(gate.theta.degrees)) * 2) / 2,
                 'expr': spec_expr(g)}
             for g, gate in base_sim.fredkin_gates.items()})
         # the model's variables, so typed expressions can use them by name
-        return names, angles, dict(base_sim.qvars)
+        return names, angles, dict(base_sim.qvars), problem
 
-    gate_names, (angles_get, angles_set), base_env = _()
-    return (
-        angles_get,
-        angles_set,
-        base_config,
-        base_env,
-        gate_names,
-        load_config,
-        mode_pick,
-        units_pick,
-    )
+    gate_names, (angles_get, angles_set), base_env, vars_problem = _()
+    return angles_get, angles_set, base_env, gate_names, vars_problem
 
 
 @app.cell(hide_code=True)
@@ -1439,17 +1495,17 @@ def _(mc_cancel, mc_job_slot):
 
 
 @app.cell(hide_code=True)
-def _(base_config, mo):
+def _(base_config, mo, model_vars):
     # Sweep-angle entries, reseeded from the model's qa/qb/qc variables
-    # (or the canonical 0, pi/8, pi/4) when the model changes. Same input
-    # forms as the gate-angle entries: a bare number in the selected
-    # units, anything else a symbolic radian expression.
+    # (or the canonical 0, pi/8, pi/4) when the model or its variables
+    # change. Same input forms as the gate-angle entries: a bare number
+    # in the selected units, anything else a symbolic radian expression.
     def _():
         from quantish.epr import DEFAULT_VALUES
-        model_vars = {str(k).lower(): str(v)
-                      for k, v in base_config.variables.items()}
+        _vars = {str(k).lower(): str(v)
+                 for k, v in {**base_config.variables, **model_vars}.items()}
         return mo.ui.dictionary({
-            k: mo.ui.text(value=model_vars.get(k, v), label=f'**{k}** =')
+            k: mo.ui.text(value=_vars.get(k, v), label=f'**{k}** =')
             for k, v in DEFAULT_VALUES.items()})
 
     epr_angle_elems = _()

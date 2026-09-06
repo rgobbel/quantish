@@ -77,6 +77,22 @@ def sym_or_float(value, float_str, max_len=None) -> str:
     return s if len(s) <= limit else float_str
 
 
+def pass_through_names(sim) -> set:
+    """The gates a particle passes straight through on one wire: delay
+    gates, phase plates, and gates wired only through their control
+    port. Labels show them bare — no port letter."""
+    return (set(sim.delay_gates) | set(getattr(sim, 'phase_plates', {}))
+            | set(getattr(sim, 'pass_through_gates', ())))
+
+
+def short_label(sim, point) -> str:
+    """The point's compact configuration label in canonical coordinate
+    order, e.g. '+g2c +g3u +S' — pass-through gates without a port
+    letter."""
+    return point.short_config(key=lambda c: coord_sort_key(sim, c),
+                              bare=pass_through_names(sim)).replace('|', ' ')
+
+
 def coord_sort_key(sim, coord):
     """Canonical display order for one particle coordinate: gate (in
     logical evaluation order), then port (upper, lower, control), then

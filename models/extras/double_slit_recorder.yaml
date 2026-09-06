@@ -1,0 +1,64 @@
+title: Double slit, recorder on the right slit (one pixel)
+
+caption: One screen pixel of the double-slit apparatus with both slits open and a which-way recorder on the right slit — the angle-0 gate g_obs (figures 4.10 and 4.15, 2026 numbering) whose switch-wire particle p2 ends up recording which slit p1 went through.
+
+notes: |-
+  The "recorder on right slit" condition of the double-slit app: the
+  same circuit as double_slit.yaml with the right slit's wire routed
+  through the control input of g_obs on its way to S2, and the recorder
+  particle p2 on g_obs's switch wires. p2 is swapped exactly when p1
+  takes the right slit, so the two paths end in distinguishable
+  configurations and the engine's remerge rule forbids their
+  interference: the fringes wash out and the screen shows the
+  classical sum of the two single-slit patterns, though nothing
+  blocked either path. Per screen pixel the app overrides phi with
+  that pixel's phase.
+
+variables:
+   theta_split: 45°
+   theta_merge: 45°
+   theta_sort: 0
+   phi: 0
+
+run_stages:
+   split: [g_split]
+   observe: [g_obs]
+   slits: [S1, S2]
+   phase: [φ]
+   merge: [g_merge]
+   sort: [g_sort]
+   detect: [S, D]
+
+particles:
+   p1: {sign: 1, weight: 1}
+   p2: {sign: 1, weight: 1}
+
+gates:
+   g_split: {angle: theta_split}
+   g_obs: {angle: 0}
+   g_merge: {angle: theta_merge}
+   g_sort: {angle: theta_sort}
+
+delay_gates: [S1, S2, S, D]
+
+phase_plates:
+   φ: phi
+
+display_strings:
+   g_split: '$g_{split}$'
+   g_obs: '$g_{obs}$'
+   g_merge: '$g_{merge}$'
+   g_sort: '$g_{sort}$'
+
+links:
+   p1: g_split.upper
+   p2: g_obs.upper
+   g_split.upper: S1
+   S1: g_merge.upper
+   g_split.lower: g_obs.control
+   g_obs.control: S2
+   S2: φ
+   φ: g_merge.lower
+   g_merge.upper: g_sort.upper
+   g_sort.upper: S
+   g_sort.lower: D

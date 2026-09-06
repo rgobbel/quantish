@@ -46,8 +46,8 @@ links:
    g_split.upper: S1
    S1: g_merge.upper
    g_split.lower: S2
-   S2: φ.control
-   φ.control: g_merge.lower
+   S2: φ
+   φ: g_merge.lower
    g_merge.upper: g_sort.upper
    g_sort.upper: S
    g_sort.lower: D

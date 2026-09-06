@@ -26,9 +26,12 @@ output for a labeled null output. A link source is a particle name
 ('p1') or a gate output
 ('g1.upper'), and a destination is always a gate input ('g2.control').
 A gate with kind 'phase' is a phase plate (gate.PhasePlate): a
-pass-through that only rotates traversing weights by e^{iφ}, used
-through its control wire only and emitted as the model's phase_plates
-section (name → phase spec). A gate with kind 'delay'
+pass-through that only rotates traversing weights by e^{iφ}. It has
+a single wire, so a model's links address it by its bare name
+('S2: φ', 'φ: g_merge.lower'; the explicit 'φ.control' still reads),
+while on the canvas that wire is the plate's control port
+('φ.control'); it is emitted as the model's phase_plates section
+(name → phase spec). A gate with kind 'delay'
 is a delay gate: a portless pass-through, addressed in links by its
 bare name ('g1.upper: d1', 'd1: g2.control'), emitted as the model's
 delay_gates list. 'stage' names a user-assigned execution stage and
@@ -192,7 +195,7 @@ def validate_graph(graph, variables=None,
     plates = {n for n, g in gates.items() if g.get('kind') == 'phase'}
     for end in sorted({e for l in links for e in l}):
         eg, ew = _endpoint(end, gates)
-        if eg in plates and ew != 'control':
+        if eg in plates and ew not in (None, 'control'):
             problems.append(f'{end}: a phase plate only uses its '
                             'control wire')
 
@@ -411,7 +414,15 @@ def graph_to_config(graph, title: str, caption: str | None = None,
     # probability (when set) riding as the list's third item
     config['links'] = {}
     branches = graph.get('branches') or {}
+
+    def _bare(end):
+        # a phase plate's one wire is its control port on the canvas;
+        # the model names the plate bare, like a delay gate
+        g, w = _endpoint(end, gates)
+        return g if g in plates and w == 'control' else end
+
     for src, dst in graph.get('links', []):
+        src, dst = _bare(src), _bare(dst)
         if src in config['links']:
             arms = [config['links'][src], dst]
             prob = branches.get(src)
@@ -603,9 +614,16 @@ def config_to_graph(config) -> tuple[dict, list[str]]:
         if name in _displays:
             graph['particles'][name]['display_string'] = _displays[name]
     graph['links'] = []
+    _plates = set(config.get('phase_plates') or {})
+
+    def _port(end):
+        # a bare plate name means its one wire: the canvas's control port
+        return f'{end}{SEP}control' if end in _plates else end
+
     for src, dst in config['links'].items():
+        src = _port(src)
         if isinstance(dst, (list, tuple)):
-            arms = [d for d in dst if isinstance(d, str)]
+            arms = [_port(d) for d in dst if isinstance(d, str)]
             probs = [d for d in dst if not isinstance(d, str)]
             graph['links'] += [[src, d] for d in arms]
             if probs:
@@ -613,7 +631,7 @@ def config_to_graph(config) -> tuple[dict, list[str]]:
                     probs[0] if isinstance(probs[0], (int, float))
                     else str(probs[0]))
         else:
-            graph['links'].append([src, dst])
+            graph['links'].append([src, _port(dst)])
     if config.get('wire_labels'):
         graph['wire_labels'] = {str(k): str(v) for k, v
                                 in config['wire_labels'].items()}

@@ -61,3 +61,34 @@ def test_mathrm_and_text_unwrap():
     assert math_to_unicode(r'$g_{\mathrm{split}}$') == 'gₛₚₗᵢₜ'
     assert math_runs(r'$g_{\mathrm{split}}$') == [('g', 0), ('split', -1)]
     assert math_to_unicode(r'$\text{S}_1$') == 'S₁'
+
+
+def test_short_labels_show_pass_through_gates_bare():
+    """Delay gates, phase plates and control-only gates are single-wire
+    pass-throughs: the configuration label names them with no port
+    letter ('+S2', not '+S2c') — that they route through a control
+    port is an implementation detail."""
+    from pathlib import Path
+
+    import yaml
+    from addict import Addict
+    from quantish.display import pass_through_names, short_label
+    from quantish.qnumber import CalcMode
+    from quantish.simulation import Simulation
+
+    models = Path(__file__).resolve().parents[1] / 'models' / 'extras'
+    with open(models / 'double_slit_recorder.yaml') as f:
+        cfg = yaml.safe_load(f)
+    cfg['loglevel'] = 'warning'
+    CalcMode.default('Float')
+    sim = Simulation(Addict(cfg))
+    space, _ = sim.run()
+    assert {'S1', 'S2', 'S', 'D', 'φ'} <= pass_through_names(sim)
+    labels = [short_label(sim, p) for p in space.index.values()]
+    assert labels, 'no final points'
+    for label in labels:
+        for tok in label.split():
+            assert not tok.endswith('Sc') and not tok.endswith('Dc'), label
+    # a real Fredkin gate keeps its port letter
+    assert any('g_obs' in tok and tok[-1] in 'ul'
+               for label in labels for tok in label.split()), labels

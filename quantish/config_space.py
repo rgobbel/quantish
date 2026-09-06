@@ -157,11 +157,16 @@ class ConfigSpacePoint:
                   or list(self.coords.values()))
         return f'{"|".join(str(c) for c in coords)}:{self.weight.display()}'
 
-    def short_config(self, key=None) -> str:
+    def short_config(self, key=None, bare=()) -> str:
         """Compact one-line label for this point's coordinates: sign, gate,
         and the port initial for each particle, e.g. '+g2c|+g2l|+g3u'.
-        Coordinates appear in particle-name order unless a sort key (e.g.
-        display.coord_sort_key with the sim bound) is supplied."""
+        Gates named in `bare` — the single-wire pass-throughs (delay
+        gates, phase plates, gates wired through their control only)
+        — show no port letter at all: their one wire is not a choice,
+        and that they route through a control port is an
+        implementation detail. Coordinates appear in particle-name
+        order unless a sort key (e.g. display.coord_sort_key with the
+        sim bound) is supplied."""
         coords = self.coords.values()
         if key is not None:
             coords = sorted(coords, key=key)
@@ -170,6 +175,8 @@ class ConfigSpacePoint:
             port = coord.position.origin or coord.position.endpoint
             if port is None:
                 parts.append(f'{coord.sign}?')
+            elif port.gate in bare:
+                parts.append(f'{coord.sign}{port.gate}')
             else:
                 parts.append(f'{coord.sign}{port.gate}{(port.port or "c")[0]}')
         return '|'.join(parts)

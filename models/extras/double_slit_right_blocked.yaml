@@ -1,0 +1,48 @@
+title: Double slit, right slit blocked (one pixel)
+
+caption: One screen pixel of the double-slit apparatus with the right slit blocked — the block B2 diverts g_split's lower output away (figure 4.14, 2026 numbering), so only the left slit's path reaches the remerge gate.
+
+notes: |-
+  The "right slit blocked" condition of the double-slit app: the same
+  circuit as double_slit.yaml with the block B2 in place of the slit
+  S2. The blocked path never reaches g_merge, so there is nothing for
+  the phase plate to act on and no interference — the screen shows a
+  flat line at the left slit's intensity. Loaded standalone, it is
+  that condition at one pixel; the app overrides nothing here since
+  the pixel's phase no longer matters.
+
+variables:
+   theta_split: 45°
+   theta_merge: 45°
+   theta_sort: 0
+
+run_stages:
+   split: [g_split]
+   slits: [S1, B2]
+   merge: [g_merge]
+   sort: [g_sort]
+   detect: [S, D]
+
+particles:
+   p1: {sign: 1, weight: 1}
+
+gates:
+   g_split: {angle: theta_split}
+   g_merge: {angle: theta_merge}
+   g_sort: {angle: theta_sort}
+
+delay_gates: [S1, B2, S, D]
+
+display_strings:
+   g_split: '$g_{split}$'
+   g_merge: '$g_{merge}$'
+   g_sort: '$g_{sort}$'
+
+links:
+   p1: g_split.upper
+   g_split.upper: S1
+   S1: g_merge.upper
+   g_split.lower: B2
+   g_merge.upper: g_sort.upper
+   g_sort.upper: S
+   g_sort.lower: D

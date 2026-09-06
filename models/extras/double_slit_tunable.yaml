@@ -1,0 +1,106 @@
+title: Double slit, recorder on the right slit, tunable decoherence
+
+caption: One screen pixel of the double-slit apparatus with a which-way recorder that reaches the slit only in part of its weight — a tunable degree of decoherence, from full fringes to none.
+
+notes: |-
+  This variant of double_slit.yaml adds a gate, g_pre, on the recorder
+  particle p2's path ahead of the recorder gate g_obs. At g_pre, p2's
+  weight splits: the straight component continues to g_obs and records
+  which slit p1 used; the crossing component runs into a dead-end delay
+  gate (bypass) and never interacts with p1. The setting theta_pre fixes
+  the division.
+
+  The two components of p2 are separated along the p2-position
+  dimension of configuration space and never interfere with each
+  other. Within the bypass component no record of p1's path exists, so
+  p1's two slit branches reconverge at g_merge and interfere exactly as
+  in figure 4.13; within the recording component the observation is a
+  complete one (the control-wire swap makes the two outcomes orthogonal
+  regardless of g_obs's angle), so the branches remain separated and do
+  not interfere, as in figure 4.15. The screen shows the weighted sum:
+
+      P(S) = sin^2(theta_pre) * cos^2(phi/2) + cos^2(theta_pre) * 1/2
+
+  so the fringe visibility equals sin^2(theta_pre), the fraction of p2's
+  weight that bypasses the recorder — equivalently, the overlap of the
+  two recorder states. theta_pre = 0 reproduces the recorder condition
+  (figure 4.15); theta_pre = 90 degrees reproduces the both-open
+  condition (figure 4.13); 45 degrees gives half visibility.
+
+  This is a quantish instance of what Everett's long thesis calls an
+  approximate measurement — an observation that only partly correlates
+  the observer with the observed — and of the complementarity relation
+  between fringe visibility and which-way information. It goes beyond
+  the observations in Good and Real chapter 4, all of which are complete.
+  Compare the general case of the Mach-Zehnder interferometer in Wu
+  (arXiv:2005.04812), Part I, where both beam-splitter mirrors are
+  partial recorders.
+
+  Because g_pre is oblique, p2 acquires minus-sign components, and g_obs
+  routes those crosswise irrespective of p1; the which-way record is
+  therefore carried by p2's position and sign jointly rather than by
+  its exit wire alone. The engine's remerge rule handles this correctly.
+  The "recorder on right slit" condition of the double-slit app: the
+  same circuit as double_slit.yaml with the right slit's wire routed
+  through the control input of g_obs on its way to S2, and the recorder
+  particle p2 on g_obs's switch wires. p2 is swapped exactly when p1
+  takes the right slit, so the two paths end in distinguishable
+  configurations and the engine's remerge rule forbids their
+  interference: the fringes wash out and the screen shows the
+  classical sum of the two single-slit patterns, though nothing
+  blocked either path. Per screen pixel the app overrides phi with
+  that pixel's phase.
+
+
+run_stages:
+  split: [g_split]
+  decoherence: [g_pre, bypass]
+  observe: [g_obs]
+  slits: [S1, S2]
+  phase: [φ]
+  merge: [g_merge]
+  sort: [g_sort]
+  detect: [D, S]
+
+particles:
+  p1: {weight: 1, sign: 1}
+  p2: {weight: 1, sign: 1}
+
+gates:
+  g_merge: {angle: theta_merge}
+  g_obs: {angle: 0}
+  g_pre: {angle: 0}
+  g_sort: {angle: theta_sort}
+  g_split: {angle: theta_split}
+
+delay_gates: [D, S, S1, S2, bypass]
+
+phase_plates:
+  φ: 'phi'
+
+display_strings:
+  g_merge: '$g_{merge}$'
+  g_obs: '$g_{obs}$'
+  g_sort: '$g_{sort}$'
+  g_split: '$g_{split}$'
+
+variables:
+  theta_split: '45°'
+  theta_merge: '45°'
+  theta_sort: 0
+  phi: 0
+
+links:
+  p1: g_split.upper
+  p2: g_pre.upper
+  g_pre.upper: g_obs.upper
+  g_split.upper: S1
+  S1: g_merge.upper
+  g_split.lower: g_obs.control
+  g_obs.control: S2
+  S2: φ
+  φ: g_merge.lower
+  g_merge.upper: g_sort.upper
+  g_sort.upper: S
+  g_sort.lower: D
+  g_pre.lower: bypass

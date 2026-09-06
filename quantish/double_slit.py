@@ -61,32 +61,40 @@ DEFAULT_THETA_S = math.radians(45.0)  # split angle (equal slit amplitudes)
 
 MODES = ('both', 'slit1', 'slit2', 'observed')
 
-_BASE_CACHE = None
+# The four conditions are model files in models/extras/ — reading or
+# diffing the YAML says what each condition is. The app only sets the
+# angles and the pixel's phase on top of them.
+MODEL_FILES = {'both': 'double_slit',
+               'slit1': 'double_slit_right_blocked',
+               'slit2': 'double_slit_left_blocked',
+               'observed': 'double_slit_recorder'}
+
+_CACHE: dict[str, dict] = {}
 
 
-def _base_config() -> dict:
-    """The apparatus network, from models/extras/double_slit.yaml (the
-    repo copy, or the frozen library under WASM) — one parse, deep-
-    copied per use so per-pixel overrides never leak."""
-    global _BASE_CACHE
-    if _BASE_CACHE is None:
-        for cand in (Path('/wasm-data/models/extras/double_slit.yaml'),
+def _model_config(mode: str) -> dict:
+    """The condition's model (the repo copy, or the frozen library under
+    WASM) — one parse per file, deep-copied per use so per-pixel
+    overrides never leak."""
+    name = MODEL_FILES[mode]
+    if name not in _CACHE:
+        for cand in (Path('/wasm-data/models/extras') / f'{name}.yaml',
                      Path(__file__).resolve().parent.parent / 'models'
-                     / 'extras' / 'double_slit.yaml'):
+                     / 'extras' / f'{name}.yaml'):
             if cand.is_file():
-                _BASE_CACHE = yaml.safe_load(cand.read_text())
+                _CACHE[name] = yaml.safe_load(cand.read_text())
                 break
         else:
-            raise FileNotFoundError(
-                'models/extras/double_slit.yaml not found')
-    return copy.deepcopy(_BASE_CACHE)
+            raise FileNotFoundError(f'models/extras/{name}.yaml not found')
+    return copy.deepcopy(_CACHE[name])
 
 
 def slit_config(mode: str = 'both', theta_s: float = DEFAULT_THETA_S,
                 phi: float = 0.0, theta_merge: float | None = None,
                 theta_sort: float = 0.0) -> Addict:
     """The full apparatus for one screen pixel, whose path-length
-    difference from the slits is the phase phi. Each switch output of g_split
+    difference from the slits is the phase phi: the condition's model
+    file with the angles and phi set. Each switch output of g_split
     reaches the slit plane: the upper output at the left slit (box S1),
     the lower at the right slit (S2), and a blocked slit n has the block
     Bn in its place (the book's "diversion away", fig 4.14). The right
@@ -97,35 +105,16 @@ def slit_config(mode: str = 'both', theta_s: float = DEFAULT_THETA_S,
     S2, with the recorder particle p2 on g_obs's switch wires."""
     if mode not in MODES:
         raise ValueError(f'unknown mode {mode!r}; expected one of {MODES}')
-    cfg = _base_config()
-    cfg['title'] = f'double slit ({mode})'
+    cfg = _model_config(mode)
     cfg['loglevel'] = 'error'
-    cfg['variables'].update(
+    overrides = dict(
         theta_split=theta_s,
         theta_merge=theta_s if theta_merge is None else theta_merge,
-        theta_sort=theta_sort,
-        phi=phi)
-    gates, links = cfg['gates'], cfg['links']
-    stages = cfg['run_stages']
-    slits = stages['slits']
-    if mode == 'slit1':
-        slits[:] = ['S1', 'B2']
-        links['g_split.lower'] = 'B2'
-        del links['S2'], links['φ.control'], cfg['phase_plates']['φ']
-        del stages['phase']
-    elif mode == 'slit2':
-        slits[:] = ['B1', 'S2']
-        links['g_split.upper'] = 'B1'
-        del links['S1']
-    elif mode == 'observed':
-        gates['g_obs'] = {'angle': 0}
-        cfg.setdefault('display_strings', {})['g_obs'] = '$g_{obs}$'
-        cfg['particles']['p2'] = {'sign': 1, 'weight': 1}
-        links.update({'g_split.lower': 'g_obs.control',
-                      'g_obs.control': 'S2', 'p2': 'g_obs.upper'})
-        cfg['run_stages'] = {'split': stages.pop('split'),
-                             'observe': ['g_obs'], **stages}
-    cfg['delay_gates'] = slits + ['S', 'D']
+        theta_sort=theta_sort)
+    if 'phi' in cfg['variables']:
+        # the right-slit-blocked model has no phase plate, hence no phi
+        overrides['phi'] = phi
+    cfg['variables'].update(overrides)
     return Addict(cfg)
 
 

@@ -77,11 +77,24 @@ def test_phase_plate_round_trip():
     assert notes == []
     assert graph['gates']['pp'] == {
         **graph['gates']['pp'], 'kind': 'phase', 'phase': '30°'}
+    # the model names the plate bare; the canvas wires its control port
+    assert ['g1.upper', 'pp.control'] in graph['links']
+    assert ['pp.control', 'g2.upper'] in graph['links']
+    assert not any('phase plate' in p
+                   for p in validate_graph(graph, angle_unit='degrees'))
     out = graph_to_config(graph, cfg['title'],
                           angle_unit=cfg['angle_unit'])
     back = yaml.safe_load(config_to_yaml(out))
     assert back['phase_plates'] == {'pp': '30°'}
     assert 'pp' not in back['gates']
+    assert back['links'] == {'p1': 'g1.upper', 'g1.upper': 'pp',
+                             'pp': 'g2.upper'}
+    # the explicit port form still reads, and comes back bare
+    cfg2 = dict(cfg)
+    cfg2['links'] = {'p1': 'g1.upper', 'g1.upper': 'pp.control',
+                     'pp.control': 'g2.upper'}
+    graph2, _ = config_to_graph(cfg2)
+    assert graph2['links'] == graph['links']
     # read as radians, 30 is more than a full turn — the tripwire fires
     assert any('full turn' in p
                for p in validate_graph(graph, angle_unit='radians'))

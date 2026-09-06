@@ -23,7 +23,10 @@ copy of the book and the file names line up with its figure numbers.
   variants of book circuits
   (`fig4.13_full`, `fig4.15x`, `fig4.16x`, `fig4.16_delay`, named by
   their 2026 figure numbers), the double-slit apparatus behind the
-  double-slit app (`double_slit`), diagnostic circuits (`noop_*`,
+  double-slit app in its four conditions (`double_slit` with both slits
+  open, `double_slit_left_blocked`, `double_slit_right_blocked`, and
+  `double_slit_recorder` with the which-way recorder on the right
+  slit), diagnostic circuits (`noop_*`,
   `zero_*`, `one_angle_plus_zero`, `split_*`), and figure 12 of AI Memo
   1026a (`AIM_Figure12`), the 1988 paper the chapter grew from.
 

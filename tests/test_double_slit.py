@@ -73,3 +73,33 @@ def test_symbolic_phase_plate_runs():
         assert abs(sum(float(p) for p in probs) - 1) < 1e-9
     finally:
         CalcMode.default('Float')
+
+
+def test_conditions_come_from_their_model_files():
+    """Each app condition is one of the extras/double_slit*.yaml files
+    with only the angles and phi set on top — so the files are the
+    source of truth and each also loads and runs on its own."""
+    from pathlib import Path
+
+    import yaml
+    from addict import Addict
+    from quantish.double_slit import MODEL_FILES, MODES, slit_config
+    from quantish.simulation import Simulation
+
+    models = Path(__file__).resolve().parents[1] / 'models' / 'extras'
+    assert set(MODEL_FILES) == set(MODES)
+    for mode, name in MODEL_FILES.items():
+        with open(models / f'{name}.yaml') as f:
+            cfg = yaml.safe_load(f)
+        app = slit_config(mode)
+        assert app['title'] == cfg['title']
+        for key in ('run_stages', 'gates', 'particles', 'delay_gates',
+                    'links'):
+            got = (dict(app[key]) if isinstance(cfg[key], dict)
+                   else list(app[key]))
+            assert got == cfg[key], (name, key)
+        assert set(app['variables']) == set(cfg['variables']), name
+        cfg['loglevel'] = 'warning'
+        space, _ = Simulation(Addict(cfg)).run()
+        total = sum(float(p.probability) for p in space.index.values())
+        assert abs(total - 1) < 1e-9, name

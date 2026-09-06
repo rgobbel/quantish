@@ -66,7 +66,7 @@ async def initialization():
                                   variables_env)
     from quantish.builder_widget import BuilderWidget, DiagramWidget
     from quantish.display import (coord_sort_key, cs_point_sort_key,
-                                  sym_or_float)
+                                  short_label, sym_or_float)
     from quantish.util import angle_label
     from quantish.simulation import Simulation
 
@@ -719,15 +719,14 @@ def _(DiagramWidget, diagram_geometry, mo, sim_built):
 
 
 @app.cell(hide_code=True)
-def _(coord_sort_key, cs_point_sort_key, mo, sim_built, sym_or_float):
+def _(cs_point_sort_key, mo, short_label, sim_built, sym_or_float):
     mo.stop(sim_built is None)
 
     def _():
         rows = []
         for p in sorted(sim_built.result_space.index.values(),
                         key=lambda p: cs_point_sort_key(sim_built, p)):
-            cfg = p.short_config(
-                key=lambda c: coord_sort_key(sim_built, c)).replace('|', ' ')
+            cfg = short_label(sim_built, p)
             w = complex(p.weight)
             # exact forms in Symbolic mode when short, floats otherwise
             w_txt = sym_or_float(p.weight, f'{w.real:+.4f}{w.imag:+.4f}i')
