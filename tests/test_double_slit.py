@@ -176,3 +176,36 @@ def test_eraser_complementary_fringes():
         early = {k: complex(p.weight.v) for k, p in space.index.items()}
         assert early == {k: complex(p.weight.v)
                          for k, p in late_space.index.items()}
+
+
+def test_eraser_screen_split_by_sign():
+    """The eraser condition of the app: the screen intensity split by
+    p2's sign gives the complementary fringes ½cos²(φ/2) and ½sin²(φ/2)
+    and the flat total; θ_erase = 0 is the recorder (all plus); grouped
+    hit sampling tags each hit with a group drawn at its pixel's odds."""
+    import random
+
+    import pytest
+    from quantish.double_slit import (pixel_by_sign, sample_hits,
+                                      screen_curves_by_sign)
+    for phi in (0.0, math.pi / 3, math.pi / 2, math.pi):
+        plus, minus = pixel_by_sign(phi, 'eraser')
+        assert abs(plus - 0.5 * math.cos(phi / 2) ** 2) < 1e-9
+        assert abs(minus - 0.5 * math.sin(phi / 2) ** 2) < 1e-9
+        assert pixel_by_sign(phi, 'eraser', theta_erase=0.0) == \
+            pytest.approx((0.5, 0.0))
+        assert pixel_by_sign(phi, 'both') == \
+            pytest.approx((math.cos(phi / 2) ** 2, 0.0))
+    xs, (plus, minus) = screen_curves_by_sign(41, 3.0, 'eraser')
+    total = [a + b for a, b in zip(plus, minus)]
+    assert all(abs(t - 0.5) < 1e-9 for t in total)
+    hits = sample_hits(xs, total, 2000, random.Random(7), parts=(plus, minus))
+    assert hits and all(len(h) == 3 and h[2] in (0, 1) for h in hits)
+    # the screen center (φ = 0) is a plus-sign fringe and x = ±1/3
+    # (φ = π) a minus-sign one; jitter lets a neighbor pixel's few
+    # other-sign hits stray in, so the checks are statistical
+    center = [h for h in hits if abs(h[0]) < 0.05]
+    dark = [h for h in hits if abs(abs(h[0]) - 1 / 3) < 0.05]
+    assert len(center) > 50 and len(dark) > 50
+    assert sum(h[2] for h in center) / len(center) < 0.15
+    assert sum(1 - h[2] for h in dark) / len(dark) < 0.15

@@ -59,7 +59,7 @@ from addict import Dict as Addict
 
 DEFAULT_THETA_S = math.radians(45.0)  # split angle (equal slit amplitudes)
 
-MODES = ('both', 'slit1', 'slit2', 'observed', 'tunable')
+MODES = ('both', 'slit1', 'slit2', 'observed', 'tunable', 'eraser')
 
 # The four conditions are model files in models/extras/ — reading or
 # diffing the YAML says what each condition is. The app only sets the
@@ -68,7 +68,8 @@ MODEL_FILES = {'both': 'double_slit',
                'slit1': 'double_slit_right_blocked',
                'slit2': 'double_slit_left_blocked',
                'observed': 'double_slit_recorder',
-               'tunable': 'double_slit_tunable'}
+               'tunable': 'double_slit_tunable',
+               'eraser': 'double_slit_eraser'}
 
 _CACHE: dict[str, dict] = {}
 
@@ -92,7 +93,8 @@ def _model_config(mode: str) -> dict:
 
 def slit_config(mode: str = 'both', theta_s: float = DEFAULT_THETA_S,
                 phi: float = 0.0, theta_merge: float | None = None,
-                theta_sort: float = 0.0, theta_pre: float = 0.0) -> Addict:
+                theta_sort: float = 0.0, theta_pre: float = 0.0,
+                theta_erase: float = math.pi / 4) -> Addict:
     """The full apparatus for one screen pixel, whose path-length
     difference from the slits is the phase phi: the condition's model
     file with the angles and phi set. Each switch output of g_split
@@ -107,7 +109,11 @@ def slit_config(mode: str = 'both', theta_s: float = DEFAULT_THETA_S,
     'tunable' is the recorder condition with a gate g_pre (angle
     theta_pre) ahead of the recorder on p2's path: the part of p2's
     weight that g_pre sends crosswise bypasses the recorder, so the
-    fringe visibility is sin²(theta_pre) — an approximate measurement."""
+    fringe visibility is sin²(theta_pre) — an approximate measurement.
+    'eraser' is the recorder condition with a gate g_erase (angle
+    theta_erase) that mixes p2's two which-way wires after the record is
+    made: sorted by p2's sign the screen shows complementary fringes,
+    unsorted the recorder's flat line."""
     if mode not in MODES:
         raise ValueError(f'unknown mode {mode!r}; expected one of {MODES}')
     cfg = _model_config(mode)
@@ -123,38 +129,65 @@ def slit_config(mode: str = 'both', theta_s: float = DEFAULT_THETA_S,
     if 'theta_pre' in cfg['variables']:
         # only the tunable recorder has the pre-recorder gate
         overrides['theta_pre'] = theta_pre
+    if 'theta_erase' in cfg['variables']:
+        # only the eraser has the mixing gate on p2's path
+        overrides['theta_erase'] = theta_erase
     cfg['variables'].update(overrides)
     return Addict(cfg)
 
 
 def slit_sim(mode: str = 'both', theta_s: float = DEFAULT_THETA_S,
              phi: float = 0.0, theta_merge: float | None = None,
-             theta_sort: float = 0.0, theta_pre: float = 0.0):
+             theta_sort: float = 0.0, theta_pre: float = 0.0,
+             theta_erase: float = math.pi / 4):
     """A loaded (unrun) Simulation of the mode's apparatus — e.g. for
     rendering its circuit diagram."""
     from quantish.simulation import Simulation
     return Simulation(slit_config(mode, theta_s, phi, theta_merge,
-                                  theta_sort, theta_pre))
+                                  theta_sort, theta_pre, theta_erase))
+
+
+SIGNS = ('+', '-')   # the eraser's readout: p2's final sign
 
 
 @functools.lru_cache(maxsize=1 << 17)
+def pixel_by_sign(phi: float, mode: str = 'both',
+                  theta_s: float = DEFAULT_THETA_S,
+                  theta_merge: float | None = None,
+                  theta_sort: float = 0.0,
+                  theta_pre: float = 0.0,
+                  theta_erase: float = math.pi / 4) -> tuple[float, float]:
+    """One exact engine run: the probability that p1 ends at this pixel's
+    detector S, split by the recorder particle p2's final sign (all of
+    it on '+' when the condition has no p2, or p2 never changes sign).
+    Memoized — the engine run is the expensive thing, and slider moves
+    revisit the same (phi, angles) points constantly (returning a
+    slider to 45° re-renders every curve from cache instead of
+    rerunning the engine n_points times per condition)."""
+    sim = slit_sim(mode, theta_s, phi, theta_merge, theta_sort, theta_pre,
+                   theta_erase)
+    sim.run()
+    by_sign = {'+': 0.0, '-': 0.0}
+    for point in sim.result_space.index.values():
+        origin = point.coords['p1'].position.origin
+        if origin is None or origin.gate != 'S':
+            continue
+        p2 = point.coords.get('p2')
+        key = '-' if p2 is not None and int(p2.sign) < 0 else '+'
+        by_sign[key] += abs(complex(point.weight.v)) ** 2
+    return by_sign['+'], by_sign['-']
+
+
 def pixel_probability(phi: float, mode: str = 'both',
                       theta_s: float = DEFAULT_THETA_S,
                       theta_merge: float | None = None,
                       theta_sort: float = 0.0,
-                      theta_pre: float = 0.0) -> float:
-    """One exact engine run: the probability that p1 ends at this pixel's
-    detector S, given the pixel's path-difference phase phi. Memoized —
-    the engine run is the expensive thing, and slider moves revisit the
-    same (phi, angles) points constantly (returning a slider to 45°
-    re-renders every curve from cache instead of rerunning the engine
-    4 × n_points times)."""
-    sim = slit_sim(mode, theta_s, phi, theta_merge, theta_sort, theta_pre)
-    sim.run()
-    return sum(abs(complex(point.weight.v)) ** 2
-               for point in sim.result_space.index.values()
-               if (origin := point.coords['p1'].position.origin) is not None
-               and origin.gate == 'S')
+                      theta_pre: float = 0.0,
+                      theta_erase: float = math.pi / 4) -> float:
+    """The probability that p1 ends at this pixel's detector S, given the
+    pixel's path-difference phase phi — the pixel's intensity."""
+    return sum(pixel_by_sign(phi, mode, theta_s, theta_merge, theta_sort,
+                             theta_pre, theta_erase))
 
 
 def screen_positions(n_points: int) -> list[float]:
@@ -166,25 +199,50 @@ def screen_curve(n_points: int, fringes: float, mode: str = 'both',
                  theta_s: float = DEFAULT_THETA_S,
                  theta_merge: float | None = None,
                  theta_sort: float = 0.0,
-                 theta_pre: float = 0.0) -> tuple[list[float], list[float]]:
+                 theta_pre: float = 0.0,
+                 theta_erase: float = math.pi / 4
+                 ) -> tuple[list[float], list[float]]:
     """(positions, intensities) across the screen — one engine run per
     pixel. The right slit's path difference sweeps `fringes` pattern
     periods over the screen; a blocked slit's wire ends at its block
     inside the circuit and contributes nothing."""
+    xs, parts = screen_curves_by_sign(n_points, fringes, mode, theta_s,
+                                      theta_merge, theta_sort, theta_pre,
+                                      theta_erase)
+    return xs, [a + b for a, b in zip(*parts)]
+
+
+def screen_curves_by_sign(n_points: int, fringes: float, mode: str = 'both',
+                          theta_s: float = DEFAULT_THETA_S,
+                          theta_merge: float | None = None,
+                          theta_sort: float = 0.0,
+                          theta_pre: float = 0.0,
+                          theta_erase: float = math.pi / 4
+                          ) -> tuple[list[float], tuple[list[float], list[float]]]:
+    """(positions, (plus, minus)): the screen intensity split by p2's
+    final sign — the eraser's two complementary fringe patterns, whose
+    sum is screen_curve's total."""
     xs = screen_positions(n_points)
-    return xs, [pixel_probability(fringes * math.pi * x, mode, theta_s,
-                                  theta_merge, theta_sort, theta_pre)
-                for x in xs]
+    pairs = [pixel_by_sign(fringes * math.pi * x, mode, theta_s,
+                           theta_merge, theta_sort, theta_pre, theta_erase)
+             for x in xs]
+    return xs, ([a for a, _ in pairs], [b for _, b in pairs])
 
 
 def sample_hits(xs: list[float], intensities: list[float], n: int,
-                rng: random.Random) -> list[tuple[float, float]]:
+                rng: random.Random,
+                parts: tuple[list[float], ...] | None = None
+                ) -> list[tuple]:
     """The impacts on the screen from a volley of n particles FIRED at
     the apparatus: x drawn from the intensity distribution with
     within-bin jitter, y uniform — the dots that build up the pattern,
     one particle at a time. How many of the n actually land is the
     intensity's integral over the screen (blocking a slit absorbs about
-    half the volley, so those rasters fill half as fast)."""
+    half the volley, so those rasters fill half as fast). With `parts`
+    (per-group intensities summing to `intensities`, e.g. the eraser's
+    by-sign curves) each hit carries a third element, the index of the
+    group it was drawn for, with probability parts[g][i] / total at
+    its pixel."""
     if sum(intensities) <= 0:
         return []
     bin_w = (xs[-1] - xs[0]) / (len(xs) - 1) if len(xs) > 1 else 0.02
@@ -198,5 +256,11 @@ def sample_hits(xs: list[float], intensities: list[float], n: int,
     weights[-1] /= 2
     landing = min(n, round(n * sum(weights) * bin_w))
     picks = rng.choices(range(len(xs)), weights=weights, k=landing)
-    return [(xs[i] + rng.uniform(-bin_w / 2, bin_w / 2), rng.random())
+    hits = [(xs[i] + rng.uniform(-bin_w / 2, bin_w / 2), rng.random())
             for i in picks]
+    if parts is None:
+        return hits
+    groups = [rng.choices(range(len(parts)),
+                          weights=[part[i] for part in parts])[0]
+              for i in picks]
+    return [(x, y, g) for (x, y), g in zip(hits, groups)]

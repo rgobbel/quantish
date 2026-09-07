@@ -2963,6 +2963,11 @@ function render({ model, el }) {
   const SCREEN_H = 190, LINE_H = 100, GAP = 4;
   const M = { l: 46, r: 10, t: 26, b: 40 };
   const TAU = 4;     // film response: hits on a pixel to ~63% white
+  // Grouped hits (a third element per point, e.g. the eraser's p2 sign)
+  // expose the film in a color per group; where two groups land on
+  // one pixel the colors add toward white, so brightness still reads
+  // the total while the color reads the sorting.
+  const GROUP_RGB = [[255, 170, 60], [70, 190, 255]];
 
   function dims() {
     // two pixel columns per engine sample: the grain follows the
@@ -2973,18 +2978,33 @@ function render({ model, el }) {
     return { pw, nx, ny };
   }
 
+  const film = (n) => 1 - Math.exp(-n / TAU);
+
   function paint(pts) {
     if (!ctx) return;
     const { nx, ny } = dims();
-    for (const [x, y] of pts) {
+    for (const [x, y, g] of pts) {
       const i = Math.max(0, Math.min(nx - 1,
         Math.floor((x + 1) / 2 * nx)));
       const j = Math.max(0, Math.min(ny - 1, Math.floor(y * ny)));
       const k = j * nx + i;
-      const n = (counts.get(k) || 0) + 1;
-      counts.set(k, n);
-      const c = Math.round(255 * (1 - Math.exp(-n / TAU)));
-      ctx.fillStyle = `rgb(${c},${c},${c})`;
+      if (g === undefined) {
+        const n = (counts.get(k) || 0) + 1;
+        counts.set(k, n);
+        const c = Math.round(255 * film(n));
+        ctx.fillStyle = `rgb(${c},${c},${c})`;
+      } else {
+        const per = counts.get(k) || [];
+        per[g] = (per[g] || 0) + 1;
+        counts.set(k, per);
+        const rgb = [0, 0, 0];
+        per.forEach((n, gi) => {
+          const f = film(n || 0), col = GROUP_RGB[gi % GROUP_RGB.length];
+          for (let c = 0; c < 3; c++) rgb[c] += col[c] * f;
+        });
+        ctx.fillStyle = `rgb(${rgb.map((v) => Math.min(255, Math.round(v)))
+                                 .join(',')})`;
+      }
       ctx.fillRect(i, ny - 1 - j, 1, 1);
     }
   }
@@ -3002,7 +3022,7 @@ function render({ model, el }) {
     counts = new Map();
     cv = ctx = img = titleNode = null;
     if (!cfg.curve) return;
-    allHits = (cfg.hits || []).map((p) => [p[0], p[1]]);
+    allHits = (cfg.hits || []).map((p) => p.slice(0, 3));
     const { pw, nx, ny } = dims();
     const W = M.l + pw + M.r;
     const H = M.t + SCREEN_H + GAP + LINE_H + M.b;
@@ -3030,6 +3050,30 @@ function render({ model, el }) {
                             'screen position', 'intensity');
     svg.appendChild(polyline(cfg.curve.x, cfg.curve.y, sx, sy,
                              '#4477cc'));
+    // grouped conditions: one curve per group in the film's colors,
+    // with a small legend at the top right of the line area
+    const parts = cfg.parts || [];
+    parts.forEach((part, gi) => {
+      const col = GROUP_RGB[gi % GROUP_RGB.length];
+      svg.appendChild(polyline(cfg.curve.x, part.y, sx, sy,
+                               `rgb(${col.join(',')})`));
+    });
+    if (parts.length) {
+      const entries = [...parts.map((part, gi) => [part.name,
+                         `rgb(${GROUP_RGB[gi % GROUP_RGB.length].join(',')})`]),
+                       [cfg.curve.name || 'all', '#4477cc']];
+      let lx = M.l + pw - 4;
+      for (const [name, color] of entries.reverse()) {
+        const t = h('text', { x: lx, y: oy + 12, 'text-anchor': 'end',
+          'font-size': 10, fill: '#000', 'font-family': 'sans-serif' },
+          name);
+        svg.appendChild(t);
+        lx -= 6.2 * name.length + 6;
+        svg.appendChild(h('line', { x1: lx - 16, y1: oy + 9, x2: lx,
+          y2: oy + 9, stroke: color, 'stroke-width': 2 }));
+        lx -= 24;
+      }
+    }
     paint(allHits);
     refresh();
   }
@@ -3045,7 +3089,7 @@ function render({ model, el }) {
       refresh(0);
       return;
     }
-    const pts = (c.pts || []).map((p) => [p[0], p[1]]);
+    const pts = (c.pts || []).map((p) => p.slice(0, 3));
     allHits.push(...pts);
     paint(pts);
     refresh(c.total);

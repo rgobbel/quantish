@@ -85,8 +85,8 @@ async def initialization():
     from quantish.builder_widget import (DiagramWidget, LinePlotWidget,
                                          ScreenPanelWidget)
     from quantish.double_slit import (DEFAULT_THETA_S, sample_hits,
-                                      screen_curve, screen_positions,
-                                      slit_sim)
+                                      screen_curve, screen_curves_by_sign,
+                                      screen_positions, slit_sim)
 
     WASM_MODE = sys.platform == 'emscripten'
     EDITOR_UI = (_wasm_editor if WASM_MODE
@@ -103,6 +103,7 @@ async def initialization():
         random,
         sample_hits,
         screen_curve,
+        screen_curves_by_sign,
         screen_positions,
         slit_sim,
         sys,
@@ -399,6 +400,8 @@ def _(mo):
     # the tunable recorder's pre-gate angle (its own section below)
     theta_pre_sl = mo.ui.slider(0, 90, step=5, value=45,
                                 label='θ pre (°)', show_value=True)
+    theta_erase_sl = mo.ui.slider(0, 90, step=5, value=45,
+                                  label='θ erase (°)', show_value=True)
     # gate-angle experiments: break the ideal conditions and watch
     theta_split_sl = mo.ui.slider(0, 90, step=5, value=45,
                                   label='θ split (°)', show_value=True)
@@ -428,6 +431,7 @@ def _(mo):
         n_points,
         reset_btn,
         shots,
+        theta_erase_sl,
         theta_merge_sl,
         theta_pre_sl,
         theta_sort_sl,
@@ -462,16 +466,22 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(MODES, PANEL_TITLES, curves, hit_store, panel_widgets, xs):
+def _(MODES, PANEL_TITLES, curves, hit_store, panel_widgets, parts, xs):
     # a curve change rebuilds each panel in place; the client replays
     # the accumulated hits from this baseline
     for _m in MODES:
-        panel_widgets[_m].data = {
+        _data = {
             'title': PANEL_TITLES[_m],
             'curve': {'x': list(xs), 'y': list(curves[_m])},
             'width': 380,
             'hits': [list(_p) for _p in hit_store['hits'][_m]],
         }
+        if _m in parts:
+            # a grouped condition: the film colors hits by group and
+            # draws one curve per group under the total
+            _data['parts'] = [{'name': _name, 'y': list(_ys)}
+                              for _name, _ys in parts[_m]]
+        panel_widgets[_m].data = _data
     return
 
 
@@ -534,6 +544,55 @@ def _(diagrams, mo, panels, theta_pre_sl):
         _text,
         theta_pre_sl,
         mo.hstack([diagrams['tunable'], panels['tunable']],
+                  align='center', justify='start', gap=1, wrap=True),
+    ], gap=1)})
+    return
+
+
+@app.cell(hide_code=True)
+def _(diagrams, mo, panels, theta_erase_sl):
+    # The quantum eraser in its own section: the explanation, its one
+    # control, and its row (hits colored by the eraser's outcome).
+    _text = mo.md(r"""
+    A sixth condition: the recorder circuit with one more gate on the
+    recorder particle's path. After $g_{obs}$ has swapped $p_2$ exactly
+    when $p_1$ took the right slit, both of $p_2$'s possible wires feed
+    the switch inputs of $g_{erase}$, and its two outputs end at the
+    detectors $E_1$ and $E_2$. This is the quantish version of the
+    delayed-choice quantum eraser of Kim et al. (2000), where the
+    which-way paths of the idler photon are recombined on a beam
+    splitter: here $g_{erase}$ is the beam splitter.
+
+    At $\theta_{erase} = 45°$ each of $p_2$'s incoming wires splits
+    evenly over both outgoing wires, so which detector $p_2$ reaches
+    no longer tells which slit $p_1$ used, and neither does $p_2$'s
+    sign taken alone. The record is not destroyed — a reversible gate
+    keeps $p_2$'s two branch states orthogonal — but it is spread over
+    $p_2$'s exit wire and sign jointly, where no single readout can
+    recover it. Yet sorted by $p_2$'s *sign* the screen shows fringes:
+    the hits with $p_2$ at plus sign follow $\tfrac{1}{2}\cos^2\tfrac{\varphi}{2}$
+    and those at minus sign $\tfrac{1}{2}\sin^2\tfrac{\varphi}{2}$,
+    whichever detector $p_2$ reached. The two patterns are
+    complementary, and their sum is the recorder's flat line: the
+    screen taken as a whole is as fringeless as in the recorder
+    condition, which is why the erasure can be "chosen" after $p_1$ has
+    hit the screen without changing anything there.
+
+    On the film below, each hit is colored by $p_2$'s sign (orange for
+    plus, blue for minus): the brightness is the flat total, the
+    colors are the two fringe patterns. At $\theta_{erase} = 0$ the
+    gate passes $p_2$ straight through and the condition is the plain
+    recorder, every hit plus; between $0$ and $45°$ the minus-sign
+    fringes keep full contrast while the plus-sign ones gain it.
+    """)
+    _text = mo.Html('<div class="tight-prose">' + _text.text + '</div>')
+    mo.accordion({'### Quantum eraser\n\n<span style="font-size:0.85em">'
+                  'the which-way record mixed away after the fact: '
+                  'fringes return, one sorted subset at a time</span>':
+                  mo.vstack([
+        _text,
+        theta_erase_sl,
+        mo.hstack([diagrams['eraser'], panels['eraser']],
                   align='center', justify='start', gap=1, wrap=True),
     ], gap=1)})
     return
@@ -616,12 +675,13 @@ def _(ScreenPanelWidget, mo):
     # the rebuild baseline (remounts, curve changes).
     # the four conditions of the main grid, plus the tunable recorder
     # in its own section; the panel machinery covers all five
-    MODES = ('both', 'slit2', 'slit1', 'observed', 'tunable')
+    MODES = ('both', 'slit2', 'slit1', 'observed', 'tunable', 'eraser')
     PANEL_TITLES = {'both': 'both slits open',
                     'slit2': 'left slit blocked',
                     'slit1': 'right slit blocked',
                     'observed': 'recorder on right slit (both open)',
-                    'tunable': 'recorder with tunable decoherence'}
+                    'tunable': 'recorder with tunable decoherence',
+                    'eraser': 'recorder with quantum eraser'}
     panel_widgets = {_m: ScreenPanelWidget() for _m in MODES}
     panels = {_m: mo.ui.anywidget(_w)
               for _m, _w in panel_widgets.items()}
@@ -636,7 +696,9 @@ def _(
     mo,
     n_points,
     screen_curve,
+    screen_curves_by_sign,
     screen_positions,
+    theta_erase_sl,
     theta_merge_sl,
     theta_pre_sl,
     theta_sort_sl,
@@ -644,18 +706,24 @@ def _(
 ):
     """Exact screen intensities: one engine run per screen pixel per
     condition, the pixel's path difference set as the phase plate's
-    phase and the gate angles taken from the sliders."""
+    phase and the gate angles taken from the sliders. The eraser's
+    curve comes split by p2's sign (`parts`), its total in `curves`."""
     with mo.status.spinner(title='running the exact simulations…'):
-        curves = {mode: screen_curve(
-                      n_points.value, fringes.value, mode,
-                      theta_pre=math.radians(theta_pre_sl.value),
-                      theta_s=math.radians(theta_split_sl.value),
-                      theta_merge=math.radians(theta_merge_sl.value),
-                      theta_sort=math.radians(theta_sort_sl.value))[1]
+        _angles = {'theta_pre': math.radians(theta_pre_sl.value),
+                   'theta_erase': math.radians(theta_erase_sl.value),
+                   'theta_s': math.radians(theta_split_sl.value),
+                   'theta_merge': math.radians(theta_merge_sl.value),
+                   'theta_sort': math.radians(theta_sort_sl.value)}
+        curves = {mode: screen_curve(n_points.value, fringes.value, mode,
+                                     **_angles)[1]
                   for mode in ('slit1', 'both', 'slit2', 'observed',
                                'tunable')}
+        _plus, _minus = screen_curves_by_sign(n_points.value, fringes.value,
+                                              'eraser', **_angles)[1]
+        curves['eraser'] = [a + b for a, b in zip(_plus, _minus)]
+        parts = {'eraser': [('p₂ +', _plus), ('p₂ −', _minus)]}
         xs = screen_positions(n_points.value)
-    return curves, xs
+    return curves, parts, xs
 
 
 @app.cell(hide_code=True)
@@ -665,6 +733,7 @@ def _(
     math,
     mo,
     slit_sim,
+    theta_erase_sl,
     theta_merge_sl,
     theta_pre_sl,
     theta_sort_sl,
@@ -679,13 +748,15 @@ def _(
                          theta_s=math.radians(theta_split_sl.value),
                          theta_merge=math.radians(theta_merge_sl.value),
                          theta_sort=math.radians(theta_sort_sl.value),
-                         theta_pre=math.radians(theta_pre_sl.value)),
+                         theta_pre=math.radians(theta_pre_sl.value),
+                         theta_erase=math.radians(theta_erase_sl.value)),
                 has_run=False,
                 angle_overrides={
                     'g_split': f'{theta_split_sl.value:.0f}°',
                     'g_merge': f'{theta_merge_sl.value:.0f}°',
                     'g_obs': '0°',
                     'g_pre': f'{theta_pre_sl.value:.0f}°',
+                    'g_erase': f'{theta_erase_sl.value:.0f}°',
                     'g_sort': f'{theta_sort_sl.value:.0f}°', 'φ': 'φ(x)'})
             # the grid rows size their own frames, and open with the
             # whole circuit in view (fit) rather than at natural scale
@@ -699,7 +770,8 @@ def _(
     # Grid layout: the circuit fills the row beside the narrower raster.
     diagrams = {mode: _diagram(mode, 900 if mode in ('slit1', 'both', 'slit2')
                                else 1050)
-                for mode in ('slit1', 'both', 'slit2', 'observed', 'tunable')}
+                for mode in ('slit1', 'both', 'slit2', 'observed', 'tunable',
+                             'eraser')}
     return (diagrams,)
 
 
@@ -711,6 +783,7 @@ def _(
     hit_store,
     mo,
     panel_widgets,
+    parts,
     random,
     sample_hits,
     shots,
@@ -720,7 +793,9 @@ def _(
     _rng = random.Random()
     hit_store['seq'] += 1
     for _m in MODES:
-        _new = sample_hits(xs, curves[_m], shots.value, _rng)
+        _new = sample_hits(xs, curves[_m], shots.value, _rng,
+                           parts=(tuple(_ys for _, _ys in parts[_m])
+                                  if _m in parts else None))
         hit_store['hits'][_m].extend(_new)
         panel_widgets[_m].hits_chunk = {
             'seq': hit_store['seq'],
