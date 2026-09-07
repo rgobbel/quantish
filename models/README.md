@@ -27,7 +27,9 @@ copy of the book and the file names line up with its figure numbers.
   open, `double_slit_left_blocked`, `double_slit_right_blocked`, and
   `double_slit_recorder` with the which-way recorder on the right
   slit, plus `double_slit_tunable` with a partial recorder and
-  `double_slit_eraser` with a quantum eraser after the recorder),
+  `double_slit_eraser` with a quantum eraser after the recorder — the
+  last three also declare a `sweep`, the screen intensity across one
+  fringe period, which the quantish app plots and `--sweep` prints),
   diagnostic circuits (`noop_*`,
   `zero_*`, `one_angle_plus_zero`, `split_*`), and figure 12 of AI Memo
   1026a (`AIM_Figure12`), the 1988 paper the chapter grew from.

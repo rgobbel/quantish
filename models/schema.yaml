@@ -98,6 +98,36 @@ properties:
   wire_labels:
     type: object
     additionalProperties: {type: string}
+  # a model-declared sweep: rerun the circuit over a range of one of
+  # its variables and record the probability that a particle ends at
+  # a gate, optionally split by another particle's final coordinate
+  # (the eraser's fringes, sorted by p2's sign). The quantish app shows
+  # the plot for a model that declares one; the CLI prints the table
+  # with --sweep
+  sweep:
+    type: object
+    additionalProperties: false
+    required: [variable, to, observe]
+    properties:
+      title: {type: string}          # shown over the plot
+      variable: {type: string}       # a name from `variables`
+      from: {$ref: '#/$defs/spec'}   # default 0
+      to: {$ref: '#/$defs/spec'}
+      points: {type: integer, minimum: 2}   # default 41
+      observe:
+        type: object
+        additionalProperties: false
+        required: [particle, at]
+        properties:
+          particle: {type: string}
+          at: {type: string}         # the gate (or delay gate) it ends at
+      group_by:
+        type: object
+        additionalProperties: false
+        required: [particle]
+        properties:
+          particle: {type: string}
+          coordinate: {enum: [sign, position, both]}   # default sign
 $defs:
   spec: {type: [string, number]}
   groups:

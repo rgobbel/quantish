@@ -20,6 +20,16 @@ variables:
    theta_sort: 0
    phi: 0
 
+# the screen: P(p1 at S) across one fringe period — flat, the recorder
+# having made the two paths distinguishable
+sweep:
+   title: screen intensity across one fringe period
+   variable: phi
+   from: 0
+   to: 2*pi
+   points: 41
+   observe: {particle: p1, at: S}
+
 run_stages:
    split: [g_split]
    observe: [g_obs]

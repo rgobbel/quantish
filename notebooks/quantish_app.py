@@ -862,6 +862,143 @@ def _(
 
 
 @app.cell(hide_code=True)
+def _(mo, sim_model, sweep_spec):
+    # The sweep's controls, seeded from the loaded model's declaration
+    # so they follow a model change. A run button keeps the cost
+    # (one engine run per point) explicit, as for the EPR sweep.
+    def _():
+        try:
+            spec = sweep_spec(sim_model)
+            problem = None
+        except ValueError as exc:
+            spec, problem = None, str(exc)
+        points = mo.ui.number(2, 401, value=(spec or {}).get('points', 41),
+                              label='points')
+        return spec, problem, points, mo.ui.run_button(label='Run sweep')
+
+    sweep_decl, sweep_problem, sweep_points, sweep_button = _()
+    return sweep_button, sweep_decl, sweep_points, sweep_problem
+
+
+@app.cell(hide_code=True)
+def _(
+    LinePlotWidget,
+    math,
+    md_table,
+    mo,
+    qn,
+    run_sweep,
+    sim_model,
+    sweep_button,
+    sweep_decl,
+    sweep_points,
+    sweep_problem,
+    sweep_values,
+    sym_or_float,
+    units_pick,
+):
+    def _():
+        if sweep_problem:
+            return mo.md('<span style="color:#b00">**sweep declaration '
+                         f'problem** — {sweep_problem}</span>')
+        if sweep_decl is None:
+            return None
+        if not sweep_button.value:
+            return mo.md('_press **Run sweep** to run the model across '
+                         'the range_')
+        spec = sweep_decl
+        with mo.status.spinner(title='running the sweep…'):
+            res = run_sweep(sim_model, spec,
+                            values=sweep_values(spec, int(sweep_points.value)))
+        degrees = units_pick.value == 'degrees'
+        xs = [math.degrees(qn.to_float(x)) if degrees else qn.to_float(x)
+              for x in res['x']]
+        var, obs, grp = spec['variable'], spec['observe'], spec.get('group_by')
+        # series names carry the grouping particle ('p2 +', 'p2 −')
+        names = {lab: f"{grp['particle']} {lab}" if grp else lab
+                 for lab in res['series']}
+        palette = ['#4c78a8', '#f58518', '#54a24b', '#e45756', '#72b7b2',
+                   '#b279a2', '#ff9da6', '#9d755d']
+        series = [{'name': names[lab], 'x': xs,
+                   'y': [qn.to_float(v) for v in ys],
+                   'color': palette[i % len(palette)]}
+                  for i, (lab, ys) in enumerate(res['series'].items())]
+        if grp:
+            series.append({'name': 'total', 'x': xs,
+                           'y': [qn.to_float(v) for v in res['total']],
+                           'color': '#333', 'dash': '6 4'})
+        chart = mo.ui.anywidget(LinePlotWidget(data={
+            'series': series, 'xdomain': [min(xs), max(xs)],
+            'xlabel': f'{var} ({"degrees" if degrees else "radians"})',
+            'ylabel': f"P({obs['particle']} at {obs['at']})",
+            'width': 900, 'height': 220}))
+        # the values, exact in Symbolic mode where short
+        headers = [var] + [names[lab] for lab in res['series']] \
+            + (['total'] if grp else [])
+        rows = []
+        for i, x in enumerate(xs):
+            cells = [f'{x:.2f}'] + [
+                sym_or_float(res['series'][lab][i],
+                             f"{qn.to_float(res['series'][lab][i]):.4f}")
+                for lab in res['series']]
+            if grp:
+                cells.append(sym_or_float(res['total'][i],
+                                          f"{qn.to_float(res['total'][i]):.4f}"))
+            rows.append(cells)
+        table = mo.accordion({'values': mo.md(md_table(headers, rows))},
+                             lazy=True)
+        return mo.vstack([chart, table])
+
+    sweep_view = _()
+    return (sweep_view,)
+
+
+@app.cell(hide_code=True)
+def _(mo, sweep_button, sweep_decl, sweep_points, sweep_problem, sweep_view):
+    def _():
+        if sweep_decl is None and not sweep_problem:
+            return mo.md('_The loaded model declares no sweep. A model may '
+                         'declare one in its `sweep` section — see the '
+                         'double-slit models under **extras**, where the '
+                         'sweep is the screen: the pixel phase across one '
+                         'fringe period._')
+        if sweep_decl is None:
+            return sweep_view
+        spec = sweep_decl
+        obs, grp = spec['observe'], spec.get('group_by')
+        what = (f"the probability that **{obs['particle']}** ends at "
+                f"**{obs['at']}**")
+        if grp:
+            coord = ('sign and position' if grp['coordinate'] == 'both'
+                     else grp['coordinate'])
+            what += f", split by **{grp['particle']}**'s final {coord}"
+        return mo.vstack([
+            mo.md(r"""
+    **What a sweep does:** it re-runs the whole circuit once per point,
+    with one of the model's variables rebound to each value across the
+    declared range, and records a probability from the final
+    configuration-space points. The model's own gate expressions say
+    how the variable enters the circuit, so the model file stays the
+    single source of truth. Symbolic mode keeps every point exact (the
+    values are rational fractions of the range) at a cost of several
+    seconds; Float mode is quick.
+    """),
+            mo.md(f"**{spec.get('title', 'declared sweep')}** — "
+                  f"`{spec['variable']}` from `{spec['from']}` to "
+                  f"`{spec['to']}`, recording {what}."),
+            mo.hstack([sweep_points, sweep_button], justify='start',
+                      wrap=True),
+            sweep_view,
+        ])
+
+    mo.accordion({'## Sweep\n\n<span style="font-size:0.85em">Run the '
+                  'model across a range of one variable — for models '
+                  'that declare a sweep, such as the double-slit '
+                  'circuits</span>': _()})
+    return
+
+
+@app.cell(hide_code=True)
 def _(mo, ws_components, ws_sign, ws_theta, ws_view, ws_wmag, ws_wphase):
     mo.accordion({'## Weight-split Explorer\n\n'
                   '<span style="font-size:0.85em">An interactive tool '
@@ -986,13 +1123,14 @@ async def initialization():
 
     from quantish.config_space import GatePort
     from quantish.diagram_layout import diagram_geometry
-    from quantish.builder_widget import (DiagramWidget,
+    from quantish.builder_widget import (DiagramWidget, LinePlotWidget,
                                          NetworkGraphWidget,
                                          WeightSplitWidget)
     from quantish.display import (coord_sort_key, cs_point_sort_key, gate_io,
                                   short_label, sym_or_float)
     from quantish.epr import run_epr_experiment, supports_epr
     from quantish.gate import FredkinGate
+    from quantish.sweep import run_sweep, sweep_spec, sweep_values
     from quantish.simulation import Simulation
     from quantish.network_graph import NetworkGraph
 
@@ -1009,6 +1147,7 @@ async def initialization():
         Addict,
         CalcMode,
         DiagramWidget,
+        LinePlotWidget,
         NetworkGraphWidget,
         EDITOR_UI,
         FredkinGate,
@@ -1027,7 +1166,10 @@ async def initialization():
         mo,
         qn,
         run_epr_experiment,
+        run_sweep,
         supports_epr,
+        sweep_spec,
+        sweep_values,
         yaml,
     )
 

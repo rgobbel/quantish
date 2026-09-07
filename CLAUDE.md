@@ -145,6 +145,13 @@ Model files define:
   it in a superposition over two destinations, the number being the
   probability of the first (even split when omitted; real amplitudes,
   the U2 notion of a superposition)
+- `sweep` (optional): a model-declared sweep — rerun the circuit over a
+  range of one variable and record the probability that a particle ends
+  at a gate, optionally split by another particle's final coordinate
+  (`{variable: phi, from: 0, to: 2*pi, points: 41, observe: {particle:
+  p1, at: S}, group_by: {particle: p2, coordinate: sign}}`). Engine in
+  `quantish/sweep.py`; the quantish app shows the plot for models that
+  declare one; the CLI prints the table with `--sweep`
 - `wire_labels` (optional): the book's wire-segment names, keyed by the
   link the label sits on ({p1: w2, g1.upper: w2a}). A `'>g.port'` key is
   an empty (null) input into that port; an unlinked output port's key is

@@ -58,6 +58,18 @@ variables:
    theta_erase: 45°
    phi: 0
 
+# the screen: P(p1 at S) across one fringe period, sorted by the
+# eraser's outcome (p2's sign) — the two complementary patterns and
+# their flat sum
+sweep:
+   title: screen intensity across one fringe period, sorted by the eraser's outcome
+   variable: phi
+   from: 0
+   to: 2*pi
+   points: 41
+   observe: {particle: p1, at: S}
+   group_by: {particle: p2, coordinate: sign}
+
 run_stages:
    split: [g_split]
    observe: [g_obs]

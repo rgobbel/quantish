@@ -86,6 +86,9 @@ def main():
                              'final superposition, path walks one world-line per trial')
     parser.add_argument('--mc-seed', type=int, default=None, help='Monte Carlo RNG seed')
     parser.add_argument('--epr-stats', action='store_true', help='Run statistics on EPR experiment model (book figure 4.16)')
+    parser.add_argument('--sweep', action='store_true',
+                        help="Run the model's declared sweep (its `sweep` section) and "
+                             "log the table; with --csv-output also writes <name>_sweep.csv")
     parser.add_argument('--full-stats', action='store_true', help='Include particle names and probabilities in results')
     args = parser.parse_args()
     # append rather than with_suffix: model names like fig4.17 have a
@@ -330,6 +333,16 @@ def main():
                 else:
                     log.info('no coupled worlds at p3@g4.upper')
 
+
+            if args.sweep:
+                from quantish.sweep import log_sweep, run_sweep, sweep_spec
+                spec = sweep_spec(sim)
+                if spec is None:
+                    log.warning('--sweep: the model declares no sweep section')
+                else:
+                    log_sweep(run_sweep(sim, spec),
+                              csv_path=(f'{args.csv_output}_sweep.csv'
+                                        if args.csv_output else None))
 
             if config.sample and sim.n_samples > 0:
                 from quantish.montecarlo import run_monte_carlo
