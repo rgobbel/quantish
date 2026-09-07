@@ -155,3 +155,47 @@
         margin-left: 0;
     }
 }
+
+/* Accordion triggers read as controls (Randy's spec, 2026-09-07): a
+   large bold black '>' chevron on the LEFT that turns to point down
+   when the section is open, and the heading and its detail line
+   underlined in the link color, so it is obvious something is
+   underneath. Marimo's trigger is a flex row whose last child is the
+   chevron svg (lucide chevron-down, rotated 180° by a Tailwind class
+   when open); `order` moves it first and the transforms below replace
+   that rotation with right (closed) / down (open). The label wrapper
+   is .markdown.contents on desktop and .markdown.content on phones,
+   hence the bare .markdown in the selectors; the :has(> .markdown)
+   guard keeps other Radix triggers (the page's ⋮ menu button) out,
+   and rem sizing ignores the trigger's small font. */
+[data-state]:has(> .markdown) > svg {
+    order: -1;
+    flex: none;
+    align-self: center;   /* the row aligns text by baseline; an svg's baseline is its bottom edge */
+    width: 1.6rem;
+    height: 1.6rem;
+    margin-right: 0.45em;
+    color: #000;
+    stroke-width: 3;
+    /* Tailwind v4 rotates through the separate `rotate` property, so
+       that is the one to override (a `transform` would compose with it) */
+    rotate: -90deg !important;
+    transition: rotate 0.2s;
+}
+[data-state="open"]:has(> .markdown) > svg {
+    rotate: 0deg !important;
+}
+/* with the chevron first, the trigger's justify-between would push a
+   lone heading to the far right: pack everything at the left */
+[data-state]:has(> .markdown) {
+    justify-content: flex-start !important;
+}
+[data-state] > .markdown > h1,
+[data-state] > .markdown > h2,
+[data-state] > .markdown > h3,
+[data-state] > .markdown > h4,
+[data-state] > .markdown > .paragraph {
+    color: var(--link, #0b68cb) !important;
+    text-decoration: underline;
+    text-underline-offset: 0.15em;
+}
