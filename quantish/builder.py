@@ -43,6 +43,7 @@ import re
 from fractions import Fraction
 
 import sympy as sym
+import yaml
 
 from quantish.qnumber import qify, reserved_name, sym_text
 from quantish.util import SEP, WIRES
@@ -343,18 +344,90 @@ def derive_stages(graph) -> dict[str, list[str]]:
     return stages
 
 
+# The top-level model keys the builder itself derives or edits. Any
+# other key in a loaded model (a `sweep` declaration, epr_stats, a
+# loglevel, whatever a future feature adds) is an "extra": it rides
+# through config_to_graph / graph_to_config / config_to_yaml untouched,
+# so nothing is lost when a model is saved from the builder — an
+# unwanted section is easily edited out of the file later, a dropped
+# one is not recoverable.
+HANDLED_KEYS = frozenset((
+    'title', 'caption', 'notes', 'calculation_mode', 'angle_unit',
+    'run_stages', 'diagram_groups', 'particles', 'gates', 'delay_gates',
+    'phase_plates', 'display_strings', 'variables', 'links',
+    'wire_labels'))
+
+
+def config_extras(config) -> dict:
+    """The top-level entries of a model config the builder does not
+    handle itself, in file order — to pass back into graph_to_config
+    so they survive a save."""
+    return {k: v for k, v in dict(config).items() if k not in HANDLED_KEYS}
+
+
+_TOP_KEY = re.compile(r'^([A-Za-z_][\w.\-]*)\s*:')
+
+
+def extract_sections(text: str) -> dict[str, str]:
+    """Each top-level section of a model file as its raw text — the key
+    line, everything indented under it, and the comment lines leading
+    up to it — keyed by the section's name, in file order. Handed to
+    config_to_yaml as `raw_sections`, an unhandled section is written
+    back verbatim, comments and all, instead of re-serialized from its
+    parsed value. Comments between sections go with the section that
+    follows them; a file's opening comment goes with `title`."""
+    sections: dict[str, str] = {}
+    current: str | None = None
+    lines: list[str] = []      # the current section's lines
+    pending: list[str] = []    # comment / blank lines awaiting a key
+
+    def _close():
+        if current is not None:
+            while lines and not lines[-1].strip():
+                lines.pop()
+            sections[current] = '\n'.join(lines)
+
+    for line in text.splitlines():
+        m = _TOP_KEY.match(line)
+        if m and not line.startswith(('-', ' ', '\t', '#')):
+            _close()
+            current = m.group(1)
+            while pending and not pending[0].strip():
+                pending.pop(0)      # blank lines above the comments
+            lines = pending + [line]
+            pending = []
+        elif current is None or not line.strip() or line.lstrip().startswith('#'):
+            # before the first key, or a comment/blank line: held until
+            # the next key claims it — unless it is indented (a comment
+            # inside the current section's block)
+            if line.startswith((' ', '\t')) and current is not None:
+                lines.extend(pending)
+                pending = []
+                lines.append(line)
+            else:
+                pending.append(line)
+        else:
+            lines.extend(pending)
+            pending = []
+            lines.append(line)
+    _close()
+    return sections
+
+
 def graph_to_config(graph, title: str, caption: str | None = None,
                     variables: dict | None = None,
                     symbolic: bool | None = None,
                     angle_unit: str | None = None,
-                    notes: str | None = None) -> dict:
+                    notes: str | None = None,
+                    extras: dict | None = None) -> dict:
     """The model-config dict the Simulation loads (no defaults mixed
     in). caption, variables, symbolic, angle_unit, and notes ride
     along when given; angle and weight specs referencing the variables
     stay verbatim. symbolic is tri-state: None leaves the key out of
     the YAML entirely (the loader's defaults decide), True/False write
     it explicitly; angle_unit None likewise omits the key (plain
-    numbers then read as radians)."""
+    numbers then read as radians). `extras` are the loaded model's
+    unhandled top-level entries (config_extras), appended verbatim."""
     gates = graph.get('gates', {})
     delays = sorted((n for n, g in gates.items()
                      if g.get('kind') == 'delay'), key=_natural)
@@ -461,6 +534,9 @@ def graph_to_config(graph, title: str, caption: str | None = None,
                 key=lambda kv: (rank.get(kv[0], len(rank)),
                                 min(order.get(g, 0) for g in kv[1]),
                                 kv[0]))}
+    for key, value in (extras or {}).items():
+        if key not in HANDLED_KEYS:
+            config[key] = value
     return config
 
 
@@ -641,9 +717,12 @@ def config_to_graph(config) -> tuple[dict, list[str]]:
     return graph, notes
 
 
-def config_to_yaml(config) -> str:
+def config_to_yaml(config, raw_sections: dict[str, str] | None = None) -> str:
     """The config in the model files' style: block YAML, sections in the
-    conventional order, flow mappings for the one-line entries."""
+    conventional order, flow mappings for the one-line entries. The
+    builder's own sections are regenerated; any other section is
+    written from `raw_sections` (extract_sections of the loaded file,
+    comments intact) when present there, else dumped from its value."""
     def _scalar(v):
         s = str(v)
         return f"'{s.replace(chr(39), chr(39) * 2)}'" \
@@ -715,4 +794,17 @@ def config_to_yaml(config) -> str:
         for key, label in config['wire_labels'].items():
             k = f"'{key}'" if key.startswith('>') else key
             lines.append(f'  {k}: {label}')
+    # the extras (config_extras): sections the builder does not know,
+    # after the ones it does — verbatim from the loaded file when its
+    # text is at hand, else dumped as ordinary block YAML
+    raw = raw_sections or {}
+    for key, value in config.items():
+        if key in HANDLED_KEYS:
+            continue
+        if key in raw:
+            lines += ['', raw[key].rstrip()]
+        else:
+            lines += ['', yaml.safe_dump({key: value}, sort_keys=False,
+                                         allow_unicode=True,
+                                         default_flow_style=False).rstrip()]
     return '\n'.join(lines) + '\n'

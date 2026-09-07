@@ -126,3 +126,82 @@ def test_branching_particle_round_trip():
     graph['links'].append(['p1', 'g1.lower'])
     assert any('two ways at most' in pr
                for pr in validate_graph(graph, angle_unit='degrees'))
+
+
+def test_unhandled_sections_survive_a_save():
+    """Nothing is lost when a model is saved from the builder: sections
+    it does not edit (a sweep declaration, epr_stats, …) ride through
+    config -> graph -> config -> YAML -> config verbatim."""
+    from pathlib import Path
+
+    from quantish.builder import config_extras
+    models = Path(__file__).resolve().parents[1] / 'models' / 'extras'
+    with open(models / 'double_slit_eraser.yaml') as f:
+        cfg = yaml.safe_load(f)
+    cfg['epr_stats'] = False
+    cfg['loglevel'] = 'warning'
+    extras = config_extras(cfg)
+    assert set(extras) == {'sweep', 'epr_stats', 'loglevel'}
+    graph, _ = config_to_graph(cfg)
+    out = graph_to_config(graph, cfg['title'], caption=cfg['caption'],
+                          variables=cfg['variables'], notes=cfg['notes'],
+                          extras=extras)
+    back = yaml.safe_load(config_to_yaml(out))
+    assert back['sweep'] == cfg['sweep']
+    assert back['epr_stats'] is False and back['loglevel'] == 'warning'
+    # and the handled sections are still the builder's own
+    assert back['links'] == cfg['links'] and back['gates'] == cfg['gates']
+    # extras never override a handled key
+    out2 = graph_to_config(graph, 'T', extras={'title': 'X', 'sweep': {}})
+    assert out2['title'] == 'T' and out2['sweep'] == {}
+
+
+def test_unhandled_sections_keep_their_comments():
+    """With the loaded file's text at hand, an unhandled section is
+    written back verbatim — its comments included."""
+    from pathlib import Path
+
+    from quantish.builder import config_extras, extract_sections
+    path = (Path(__file__).resolve().parents[1] / 'models' / 'extras'
+            / 'double_slit_eraser.yaml')
+    text = path.read_text()
+    cfg = yaml.safe_load(text)
+    sections = extract_sections(text)
+    assert list(sections)[:3] == ['title', 'caption', 'notes']
+    assert sections['sweep'].startswith('# the screen: P(p1 at S)')
+    assert sections['sweep'].rstrip().endswith('coordinate: sign}')
+    graph, _ = config_to_graph(cfg)
+    out = graph_to_config(graph, cfg['title'], variables=cfg['variables'],
+                          extras=config_extras(cfg))
+    txt = config_to_yaml(out, raw_sections=sections)
+    assert sections['sweep'] in txt
+    assert yaml.safe_load(txt)['sweep'] == cfg['sweep']
+    # a section the text lacks still comes out, dumped from its value
+    out['epr_stats'] = True
+    assert '\nepr_stats: true\n' in config_to_yaml(out, raw_sections=sections)
+
+
+def test_extract_sections_edge_cases():
+    from quantish.builder import extract_sections
+    text = """# file header
+title: T
+
+# about the list
+items:
+  - a   # inline
+  # inner comment
+
+  - b
+
+# trailing comment for k2
+
+k2: {x: 1}
+k3: v
+"""
+    s = extract_sections(text)
+    assert list(s) == ['title', 'items', 'k2', 'k3']
+    assert s['title'] == '# file header\ntitle: T'
+    assert s['items'] == ('# about the list\nitems:\n  - a   # inline\n'
+                          '  # inner comment\n\n  - b')
+    assert s['k2'] == '# trailing comment for k2\n\nk2: {x: 1}'
+    assert s['k3'] == 'k3: v'

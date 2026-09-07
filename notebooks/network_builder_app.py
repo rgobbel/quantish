@@ -61,7 +61,8 @@ async def initialization():
 
     from quantish.diagram_layout import diagram_geometry
     from quantish.builder import (angle_degrees, coherence_warnings,
-                                  config_to_graph, config_to_yaml,
+                                  config_extras, config_to_graph,
+                                  config_to_yaml, extract_sections,
                                   graph_to_config, validate_graph,
                                   variables_env)
     from quantish.builder_widget import BuilderWidget, DiagramWidget
@@ -91,8 +92,10 @@ async def initialization():
         angle_degrees,
         angle_label,
         coherence_warnings,
+        config_extras,
         config_to_graph,
         config_to_yaml,
+        extract_sections,
         coord_sort_key,
         cs_point_sort_key,
         diagram_geometry,
@@ -258,7 +261,15 @@ def _(mo, model_paths):
 
 
 @app.cell(hide_code=True)
-def _(WASM_MODE, builder_config, config_to_yaml, file_name, mo, model_paths):
+def _(
+    WASM_MODE,
+    builder_config,
+    config_to_yaml,
+    file_name,
+    loaded_extras_text,
+    mo,
+    model_paths,
+):
     # the File row, in the spirit of a Mac File menu: New, Open a
     # predefined model, Upload one, Save into the local models
     # directory (running from the repo only — in the browser the
@@ -271,7 +282,8 @@ def _(WASM_MODE, builder_config, config_to_yaml, file_name, mo, model_paths):
                                 disabled=(builder_config is None
                                           or not model_paths))
     _download = (
-        mo.download(data=config_to_yaml(builder_config).encode(),
+        mo.download(data=config_to_yaml(builder_config,
+                                        raw_sections=loaded_extras_text).encode(),
                     filename=f'{file_name.value}.yaml',
                     label='download')
         if builder_config is not None
@@ -357,6 +369,7 @@ def _(
                          'file': 'my_network', 'caption': '',
                          'variables': {}, 'symbolic': None,
                          'angle_unit': None, 'model_notes': '',
+                         'extras': {}, 'extras_text': {},
                          'source': 'a new empty model'})
             return None
         if upload_go_btn.value and model_upload.contents():
@@ -382,6 +395,11 @@ def _(
                      'symbolic': _tri_mode(config),
                      'angle_unit': config.get('angle_unit'),
                      'model_notes': config.get('notes') or '',
+                     # sections the builder does not edit (a sweep,
+                     # epr_stats, …) ride through to the saved file
+                     'extras': config_extras(config),
+                     # … and their raw text, so their comments survive
+                     'extras_text': extract_sections(text),
                      'source': source})
         return None
 
@@ -435,7 +453,15 @@ def _(confirm_load_btn, get_pending, keep_canvas_btn, set_loaded, set_pending):
 
 
 @app.cell(hide_code=True)
-def _(builder_config, config_to_yaml, file_name, mo, models_top, save_btn):
+def _(
+    builder_config,
+    config_to_yaml,
+    file_name,
+    loaded_extras_text,
+    mo,
+    models_top,
+    save_btn,
+):
     # save writes into the local models directory (the web deployment
     # has no server filesystem — download covers it there)
     def _():
@@ -444,7 +470,8 @@ def _(builder_config, config_to_yaml, file_name, mo, models_top, save_btn):
         dest = models_top / 'extras' / f'{file_name.value}.yaml'
         try:
             dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_text(config_to_yaml(builder_config))
+            dest.write_text(config_to_yaml(builder_config,
+                                           raw_sections=loaded_extras_text))
         except Exception as exc:  # noqa: BLE001 — show, don't crash the app
             return mo.md(f'**could not save** — {exc}')
         return mo.md('<span style="font-size: 0.9em">saved '
@@ -494,6 +521,10 @@ def _(get_loaded, mo):
         value=_vars_text(_loaded.get('variables')), rows=6,
         full_width=True,
         placeholder='variable definitions in YAML format')
+    # the loaded model's unhandled sections, kept for the save — their
+    # parsed values (for the config) and their raw text (for the file)
+    loaded_extras = _loaded.get('extras') or {}
+    loaded_extras_text = _loaded.get('extras_text') or {}
     _report = None
     if _loaded and _loaded.get('source'):
         _msg = ('<span style="font-size: 0.9em">loaded '
@@ -510,6 +541,8 @@ def _(get_loaded, mo):
     return (
         caption_input,
         file_name,
+        loaded_extras,
+        loaded_extras_text,
         mode_pick,
         model_title,
         notes_input,
@@ -560,6 +593,7 @@ def _(
     caption_input,
     coherence_warnings,
     graph_to_config,
+    loaded_extras,
     mo,
     mode_pick,
     model_title,
@@ -571,7 +605,8 @@ def _(
 ):
     # The live translation of the canvas: either the list of problems
     # keeping it from running, or the derived model config — caption,
-    # notes, variables, calculation mode, and angle unit included.
+    # notes, variables, calculation mode, angle unit, and the loaded
+    # model's other sections (extras) included.
     _graph = builder.value.get('graph') or {}
     _unit = None if unit_pick.value == '-' else unit_pick.value
     problems = validate_graph(_graph, variables=model_vars,
@@ -586,7 +621,8 @@ def _(
                 symbolic={'-': None, 'Float': False,
                           'Symbolic': True}[mode_pick.value],
                 angle_unit=_unit,
-                notes=notes_input.value.strip() or None)
+                notes=notes_input.value.strip() or None,
+                extras=loaded_extras)
         except ValueError as exc:  # a wiring loop
             problems = [str(exc)]
     _env, _ = variables_env(model_vars)
@@ -742,9 +778,9 @@ def _(cs_point_sort_key, mo, short_label, sim_built, sym_or_float):
 
 
 @app.cell(hide_code=True)
-def _(builder_config, config_to_yaml, mo):
+def _(builder_config, config_to_yaml, loaded_extras_text, mo):
     mo.stop(builder_config is None)
-    _yaml = config_to_yaml(builder_config)
+    _yaml = config_to_yaml(builder_config, raw_sections=loaded_extras_text)
     mo.accordion({'Model YAML': mo.md(f'```yaml\n{_yaml}```')})
     return
 
