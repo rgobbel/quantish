@@ -65,7 +65,7 @@ def _(WASM_MODE, mo):
         "**Note:** this copy runs entirely in your browser (via "
         "WebAssembly) — there is no server behind it. The model library "
         "was frozen into the page when it was built, so the models and "
-        "their parameters above are fixed; gate angles and everything "
+        "their parameters above are fixed. Gate angles and everything "
         "below remain fully adjustable."
         if WASM_MODE else
         "The **rescan models** button will reload models that have been "
