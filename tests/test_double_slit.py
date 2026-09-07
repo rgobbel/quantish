@@ -53,7 +53,7 @@ def test_symbolic_phase_plate_runs():
     from pathlib import Path
 
     import yaml
-    from addict import Addict
+    from addict import Dict as Addict
     from quantish.qnumber import CalcMode, Real
     from quantish.simulation import Simulation
     models = Path(__file__).resolve().parents[1] / 'models'
@@ -103,3 +103,22 @@ def test_conditions_come_from_their_model_files():
         space, _ = Simulation(Addict(cfg)).run()
         total = sum(float(p.probability) for p in space.index.values())
         assert abs(total - 1) < 1e-9, name
+
+
+def test_tunable_recorder_visibility():
+    """The tunable recorder: fringe visibility sin²(θ_pre). Per pixel,
+    I = sin²θ_pre · cos²(φ/2) + ½ cos²θ_pre — the recorder condition at
+    θ_pre = 0, both-slits-open at 90°, half visibility at 45°."""
+    from quantish.double_slit import pixel_probability
+    for deg in (0, 30, 45, 60, 90):
+        t = math.radians(deg)
+        for phi in (0.0, math.pi / 3, math.pi / 2, math.pi):
+            got = pixel_probability(phi, 'tunable', theta_pre=t)
+            want = (math.sin(t) ** 2 * math.cos(phi / 2) ** 2
+                    + 0.5 * math.cos(t) ** 2)
+            assert abs(got - want) < 1e-9, (deg, phi, got, want)
+    assert abs(pixel_probability(math.pi, 'tunable', theta_pre=0.0)
+               - pixel_probability(math.pi, 'observed')) < 1e-12
+    assert abs(pixel_probability(math.pi / 3, 'tunable',
+                                 theta_pre=math.pi / 2)
+               - pixel_probability(math.pi / 3, 'both')) < 1e-12

@@ -71,7 +71,8 @@ def test_short_labels_show_pass_through_gates_bare():
     from pathlib import Path
 
     import yaml
-    from addict import Addict
+    from addict import Dict as Addict
+
     from quantish.display import pass_through_names, short_label
     from quantish.qnumber import CalcMode
     from quantish.simulation import Simulation

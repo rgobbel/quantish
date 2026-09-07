@@ -55,11 +55,11 @@ import random
 from pathlib import Path
 
 import yaml
-from addict import Addict
+from addict import Dict as Addict
 
 DEFAULT_THETA_S = math.radians(45.0)  # split angle (equal slit amplitudes)
 
-MODES = ('both', 'slit1', 'slit2', 'observed')
+MODES = ('both', 'slit1', 'slit2', 'observed', 'tunable')
 
 # The four conditions are model files in models/extras/ — reading or
 # diffing the YAML says what each condition is. The app only sets the
@@ -67,7 +67,8 @@ MODES = ('both', 'slit1', 'slit2', 'observed')
 MODEL_FILES = {'both': 'double_slit',
                'slit1': 'double_slit_right_blocked',
                'slit2': 'double_slit_left_blocked',
-               'observed': 'double_slit_recorder'}
+               'observed': 'double_slit_recorder',
+               'tunable': 'double_slit_tunable'}
 
 _CACHE: dict[str, dict] = {}
 
@@ -91,7 +92,7 @@ def _model_config(mode: str) -> dict:
 
 def slit_config(mode: str = 'both', theta_s: float = DEFAULT_THETA_S,
                 phi: float = 0.0, theta_merge: float | None = None,
-                theta_sort: float = 0.0) -> Addict:
+                theta_sort: float = 0.0, theta_pre: float = 0.0) -> Addict:
     """The full apparatus for one screen pixel, whose path-length
     difference from the slits is the phase phi: the condition's model
     file with the angles and phi set. Each switch output of g_split
@@ -102,44 +103,53 @@ def slit_config(mode: str = 'both', theta_s: float = DEFAULT_THETA_S,
     g_merge, whose upper output the sorter g_sort splits into the detectors S
     (plus sign) and D (minus sign). 'observed' routes the right slit's
     wire through the control input of the angle-0 gate g_obs on its way to
-    S2, with the recorder particle p2 on g_obs's switch wires."""
+    S2, with the recorder particle p2 on g_obs's switch wires.
+    'tunable' is the recorder condition with a gate g_pre (angle
+    theta_pre) ahead of the recorder on p2's path: the part of p2's
+    weight that g_pre sends crosswise bypasses the recorder, so the
+    fringe visibility is sin²(theta_pre) — an approximate measurement."""
     if mode not in MODES:
         raise ValueError(f'unknown mode {mode!r}; expected one of {MODES}')
     cfg = _model_config(mode)
     cfg['loglevel'] = 'error'
-    overrides = dict(
-        theta_split=theta_s,
-        theta_merge=theta_s if theta_merge is None else theta_merge,
-        theta_sort=theta_sort)
+    overrides = {
+        'theta_split': theta_s,
+        'theta_merge': theta_s if theta_merge is None else theta_merge,
+        'theta_sort': theta_sort
+    }
     if 'phi' in cfg['variables']:
         # the right-slit-blocked model has no phase plate, hence no phi
         overrides['phi'] = phi
+    if 'theta_pre' in cfg['variables']:
+        # only the tunable recorder has the pre-recorder gate
+        overrides['theta_pre'] = theta_pre
     cfg['variables'].update(overrides)
     return Addict(cfg)
 
 
 def slit_sim(mode: str = 'both', theta_s: float = DEFAULT_THETA_S,
              phi: float = 0.0, theta_merge: float | None = None,
-             theta_sort: float = 0.0):
+             theta_sort: float = 0.0, theta_pre: float = 0.0):
     """A loaded (unrun) Simulation of the mode's apparatus — e.g. for
     rendering its circuit diagram."""
     from quantish.simulation import Simulation
     return Simulation(slit_config(mode, theta_s, phi, theta_merge,
-                                  theta_sort))
+                                  theta_sort, theta_pre))
 
 
 @functools.lru_cache(maxsize=1 << 17)
 def pixel_probability(phi: float, mode: str = 'both',
                       theta_s: float = DEFAULT_THETA_S,
                       theta_merge: float | None = None,
-                      theta_sort: float = 0.0) -> float:
+                      theta_sort: float = 0.0,
+                      theta_pre: float = 0.0) -> float:
     """One exact engine run: the probability that p1 ends at this pixel's
     detector S, given the pixel's path-difference phase phi. Memoized —
     the engine run is the expensive thing, and slider moves revisit the
     same (phi, angles) points constantly (returning a slider to 45°
     re-renders every curve from cache instead of rerunning the engine
     4 × n_points times)."""
-    sim = slit_sim(mode, theta_s, phi, theta_merge, theta_sort)
+    sim = slit_sim(mode, theta_s, phi, theta_merge, theta_sort, theta_pre)
     sim.run()
     return sum(abs(complex(point.weight.v)) ** 2
                for point in sim.result_space.index.values()
@@ -155,14 +165,15 @@ def screen_positions(n_points: int) -> list[float]:
 def screen_curve(n_points: int, fringes: float, mode: str = 'both',
                  theta_s: float = DEFAULT_THETA_S,
                  theta_merge: float | None = None,
-                 theta_sort: float = 0.0) -> tuple[list[float], list[float]]:
+                 theta_sort: float = 0.0,
+                 theta_pre: float = 0.0) -> tuple[list[float], list[float]]:
     """(positions, intensities) across the screen — one engine run per
     pixel. The right slit's path difference sweeps `fringes` pattern
     periods over the screen; a blocked slit's wire ends at its block
     inside the circuit and contributes nothing."""
     xs = screen_positions(n_points)
     return xs, [pixel_probability(fringes * math.pi * x, mode, theta_s,
-                                  theta_merge, theta_sort)
+                                  theta_merge, theta_sort, theta_pre)
                 for x in xs]
 
 

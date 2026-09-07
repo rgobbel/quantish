@@ -57,7 +57,7 @@ def test_angle_unit_degrees():
     are never converted."""
     import math
 
-    from addict import Addict
+    from addict import Dict as Addict
 
     from quantish.qnumber import CalcMode
     from quantish.simulation import Simulation
@@ -90,7 +90,7 @@ def test_degree_marked_angle_spec():
     """A '30°' angle string reads as degrees regardless of angle_unit."""
     import math
 
-    from addict import Addict
+    from addict import Dict as Addict
 
     from quantish.qnumber import CalcMode
     from quantish.simulation import Simulation

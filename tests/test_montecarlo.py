@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 
 import yaml
-from addict import Addict
+from addict import Dict as Addict
 
 REPO_DIR = Path(__file__).resolve().parents[1]
 MODELS_DIR = REPO_DIR / 'models'

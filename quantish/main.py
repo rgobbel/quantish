@@ -7,7 +7,7 @@ from collections import defaultdict
 from pathlib import Path
 
 import yaml
-from addict import Addict
+from addict import Dict as Addict
 
 import quantish.qnumber as qn
 from quantish.qnumber import CalcMode

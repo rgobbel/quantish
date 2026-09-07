@@ -1,7 +1,7 @@
 """Load-time wiring validation and bare-name delay links."""
 import unittest
 
-from addict import Addict
+from addict import Dict as Addict
 
 import quantish.qnumber as qn
 from quantish.qnumber import CalcMode

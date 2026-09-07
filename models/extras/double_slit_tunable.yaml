@@ -40,17 +40,6 @@ notes: |-
   routes those crosswise irrespective of p1; the which-way record is
   therefore carried by p2's position and sign jointly rather than by
   its exit wire alone. The engine's remerge rule handles this correctly.
-  The "recorder on right slit" condition of the double-slit app: the
-  same circuit as double_slit.yaml with the right slit's wire routed
-  through the control input of g_obs on its way to S2, and the recorder
-  particle p2 on g_obs's switch wires. p2 is swapped exactly when p1
-  takes the right slit, so the two paths end in distinguishable
-  configurations and the engine's remerge rule forbids their
-  interference: the fringes wash out and the screen shows the
-  classical sum of the two single-slit patterns, though nothing
-  blocked either path. Per screen pixel the app overrides phi with
-  that pixel's phase.
-
 
 run_stages:
   split: [g_split]
@@ -69,7 +58,7 @@ particles:
 gates:
   g_merge: {angle: theta_merge}
   g_obs: {angle: 0}
-  g_pre: {angle: 0}
+  g_pre: {angle: theta_pre}
   g_sort: {angle: theta_sort}
   g_split: {angle: theta_split}
 
@@ -81,10 +70,12 @@ phase_plates:
 display_strings:
   g_merge: '$g_{merge}$'
   g_obs: '$g_{obs}$'
+  g_pre: '$g_{pre}$'
   g_sort: '$g_{sort}$'
   g_split: '$g_{split}$'
 
 variables:
+  theta_pre: 0
   theta_split: '45°'
   theta_merge: '45°'
   theta_sort: 0

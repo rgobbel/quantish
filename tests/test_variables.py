@@ -1,7 +1,7 @@
 """Model variables usable by name in YAML expressions (eager substitution)."""
 import unittest
 
-from addict import Addict
+from addict import Dict as Addict
 
 import quantish.qnumber as qn
 from quantish.qnumber import CalcMode, qify, reserved_name

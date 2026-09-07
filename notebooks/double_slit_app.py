@@ -35,8 +35,9 @@ async def initialization():
     # (deps=False — micropip would otherwise stall resolving
     # marimo/sympy from PyPI in the browser), and the Pyodide-shipped
     # packages the engine imports internally are loaded explicitly
-    # (auto-loading only covers notebook-level imports). This app needs
-    # no model files: its circuits are built in code.
+    # (auto-loading only covers notebook-level imports). The model
+    # library is materialized too: the engine reads each condition's
+    # circuit from its models/extras/double_slit*.yaml file.
     if sys.platform == 'emscripten':
         # dynamic import: a literal `import micropip` makes server-side
         # marimo install a mock micropip meta-path finder whose globals
@@ -51,7 +52,8 @@ async def initialization():
         await micropip.install(['sympy', 'scipy', 'networkx',
                                 'pyyaml', 'anywidget'])
         # the model library, frozen into the page at build time — the
-        # engine reads the apparatus from models/extras/double_slit.yaml
+        # engine reads the four conditions from models/extras/
+        # double_slit*.yaml (quantish.double_slit.MODEL_FILES)
         import json as _json
 
         from pyodide.http import pyfetch
@@ -103,6 +105,7 @@ async def initialization():
         screen_curve,
         screen_positions,
         slit_sim,
+        sys,
     )
 
 
@@ -393,6 +396,9 @@ def _(mo):
                          show_value=True)
     fire_btn = mo.ui.run_button(label='🔫 fire particles')
     reset_btn = mo.ui.run_button(label='reset screens')
+    # the tunable recorder's pre-gate angle (its own section below)
+    theta_pre_sl = mo.ui.slider(0, 90, step=5, value=45,
+                                label='θ pre (°)', show_value=True)
     # gate-angle experiments: break the ideal conditions and watch
     theta_split_sl = mo.ui.slider(0, 90, step=5, value=45,
                                   label='θ split (°)', show_value=True)
@@ -423,6 +429,7 @@ def _(mo):
         reset_btn,
         shots,
         theta_merge_sl,
+        theta_pre_sl,
         theta_sort_sl,
         theta_split_sl,
     )
@@ -477,8 +484,58 @@ def _(diagrams, mo, panels):
                          align='center', justify='start', gap=1,
                          wrap=True)
 
-    mo.vstack([_row('both'), _row('slit2'), _row('slit1'),
-               _row('observed')], gap=2)
+    mo.vstack([_row('both'), _row('slit2'), _row('slit1'), _row('observed')],
+              gap=2)
+    return
+
+
+@app.cell(hide_code=True)
+def _(diagrams, mo, panels, theta_pre_sl):
+    # The tunable recorder — an approximate measurement — in its own
+    # section: the explanation, its one control, and its row.
+    _text = mo.md(r"""
+    A fifth condition: the recorder circuit with one more gate,
+    $g_{pre}$, on the recorder particle $p_2$'s path ahead of $g_{obs}$.
+    At $g_{pre}$ the weight of $p_2$ splits: the straight component goes
+    on to $g_{obs}$ and records which slit $p_1$ used, while the crossing
+    component runs into a dead-end delay gate (*bypass*) and never
+    meets $p_1$. The angle $\theta_{pre}$ sets the division.
+
+    The two components of $p_2$ are separated along the $p_2$-position
+    dimension of configuration space, so they never interfere with
+    each other. Within the bypass component no record of $p_1$'s path
+    exists, and $p_1$'s two slit branches reconverge at $g_{merge}$ and
+    interfere exactly as with both slits open; within the recording
+    component the observation is complete, so the branches stay
+    separated and do not interfere, as in the recorder condition. The
+    screen shows the weighted sum
+
+    $$\mathcal{I} = \sin^2\theta_{pre}\,\cos^2\tfrac{\varphi}{2} + \tfrac{1}{2}\cos^2\theta_{pre},$$
+
+    so the fringe visibility is $\sin^2\theta_{pre}$, the fraction of
+    $p_2$'s weight that bypasses the recorder. $\theta_{pre} = 0$ is the
+    recorder condition, $90°$ the both-slits-open condition, and $45°$
+    gives half visibility.
+
+    This is a quantish instance of what Everett's long thesis calls an
+    *approximate measurement* — an observation that only partly
+    correlates the observer with the observed — and of the
+    complementarity between fringe visibility and which-way
+    information. It goes beyond the observations of *Good and Real*
+    chapter 4, all of which are complete. Compare the general case of
+    the Mach–Zehnder interferometer in Wu (arXiv:2005.04812), Part I,
+    where both beam-splitter mirrors are partial recorders.
+    """)
+    # .tight-prose (css/double_slit_app.css) closes up the paragraphs
+    _text = mo.Html('<div class="tight-prose">' + _text.text + '</div>')
+    mo.accordion({'### Tunable decoherence\n\n<span style="font-size:0.85em">'
+                  'an approximate measurement: a recorder that only '
+                  'partly records</span>': mo.vstack([
+        _text,
+        theta_pre_sl,
+        mo.hstack([diagrams['tunable'], panels['tunable']],
+                  align='center', justify='start', gap=1, wrap=True),
+    ], gap=1)})
     return
 
 
@@ -557,11 +614,14 @@ def _(ScreenPanelWidget, mo):
     # Each volley streams only its NEW hits to the client, which adds
     # them into its raster; hit_store keeps the accumulated history as
     # the rebuild baseline (remounts, curve changes).
-    MODES = ('both', 'slit2', 'slit1', 'observed')
+    # the four conditions of the main grid, plus the tunable recorder
+    # in its own section; the panel machinery covers all five
+    MODES = ('both', 'slit2', 'slit1', 'observed', 'tunable')
     PANEL_TITLES = {'both': 'both slits open',
                     'slit2': 'left slit blocked',
                     'slit1': 'right slit blocked',
-                    'observed': 'recorder on right slit (both open)'}
+                    'observed': 'recorder on right slit (both open)',
+                    'tunable': 'recorder with tunable decoherence'}
     panel_widgets = {_m: ScreenPanelWidget() for _m in MODES}
     panels = {_m: mo.ui.anywidget(_w)
               for _m, _w in panel_widgets.items()}
@@ -578,6 +638,7 @@ def _(
     screen_curve,
     screen_positions,
     theta_merge_sl,
+    theta_pre_sl,
     theta_sort_sl,
     theta_split_sl,
 ):
@@ -587,10 +648,12 @@ def _(
     with mo.status.spinner(title='running the exact simulations…'):
         curves = {mode: screen_curve(
                       n_points.value, fringes.value, mode,
+                      theta_pre=math.radians(theta_pre_sl.value),
                       theta_s=math.radians(theta_split_sl.value),
                       theta_merge=math.radians(theta_merge_sl.value),
                       theta_sort=math.radians(theta_sort_sl.value))[1]
-                  for mode in ('slit1', 'both', 'slit2', 'observed')}
+                  for mode in ('slit1', 'both', 'slit2', 'observed',
+                               'tunable')}
         xs = screen_positions(n_points.value)
     return curves, xs
 
@@ -603,6 +666,7 @@ def _(
     mo,
     slit_sim,
     theta_merge_sl,
+    theta_pre_sl,
     theta_sort_sl,
     theta_split_sl,
 ):
@@ -614,12 +678,14 @@ def _(
                 slit_sim(mode,
                          theta_s=math.radians(theta_split_sl.value),
                          theta_merge=math.radians(theta_merge_sl.value),
-                         theta_sort=math.radians(theta_sort_sl.value)),
+                         theta_sort=math.radians(theta_sort_sl.value),
+                         theta_pre=math.radians(theta_pre_sl.value)),
                 has_run=False,
                 angle_overrides={
                     'g_split': f'{theta_split_sl.value:.0f}°',
                     'g_merge': f'{theta_merge_sl.value:.0f}°',
                     'g_obs': '0°',
+                    'g_pre': f'{theta_pre_sl.value:.0f}°',
                     'g_sort': f'{theta_sort_sl.value:.0f}°', 'φ': 'φ(x)'})
             # the grid rows size their own frames, and open with the
             # whole circuit in view (fit) rather than at natural scale
@@ -631,8 +697,9 @@ def _(
             return mo.md(f'_diagram failed: {exc}_')
 
     # Grid layout: the circuit fills the row beside the narrower raster.
-    diagrams = {mode: _diagram(mode, 1050 if mode == 'observed' else 900)
-                for mode in ('slit1', 'both', 'slit2', 'observed')}
+    diagrams = {mode: _diagram(mode, 900 if mode in ('slit1', 'both', 'slit2')
+                               else 1050)
+                for mode in ('slit1', 'both', 'slit2', 'observed', 'tunable')}
     return (diagrams,)
 
 

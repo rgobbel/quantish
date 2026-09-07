@@ -967,7 +967,7 @@ async def initialization():
         _wasm_editor = '"mode": "edit"' in _page
 
     import yaml
-    from addict import Addict
+    from addict import Dict as Addict
 
     # make the repo importable no matter where marimo was launched from
     def _():

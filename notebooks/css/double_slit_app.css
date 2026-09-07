@@ -72,6 +72,17 @@
     margin-bottom: 0.25rem !important;
 }
 
+/* A block of explanatory prose whose paragraphs sit close together
+   (the tunable-decoherence section): the theme's paragraph margins,
+   generous for a page of separate cells, read as gaps in one argument. */
+.tight-prose .paragraph {
+    margin-top: 0.35em !important;
+    margin-bottom: 0.35em !important;
+}
+.tight-prose .katex-display {
+    margin: 0.5em 0 !important;
+}
+
 /* Marimo caps cell output at 610px and scrolls inside the cell; let the
    simulation-results panels render at full height instead. */
 .output-area {

@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 import sympy as sym
 import yaml
-from addict import Addict
+from addict import Dict as Addict
 
 import quantish.qnumber as qn
 from quantish.epr import run_pair, sweep_angles

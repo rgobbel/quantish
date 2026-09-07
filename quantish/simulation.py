@@ -1,6 +1,6 @@
 import logging
 from collections import defaultdict
-from addict import Addict
+from addict import Dict as Addict
 import networkx as nx
 from quantish.particle import Particle
 from quantish.gate import DelayGate, FredkinGate, PhasePlate
