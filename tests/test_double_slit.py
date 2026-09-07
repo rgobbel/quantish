@@ -122,3 +122,57 @@ def test_tunable_recorder_visibility():
     assert abs(pixel_probability(math.pi / 3, 'tunable',
                                  theta_pre=math.pi / 2)
                - pixel_probability(math.pi / 3, 'both')) < 1e-12
+
+
+def test_eraser_complementary_fringes():
+    """The quantum eraser (extras/double_slit_eraser.yaml): a 45° gate
+    after the recorder mixes p2's two which-way wires. Sorted by p2's
+    sign the screen shows complementary fringes — P(S, p2+) = ½cos²(φ/2)
+    and P(S, p2−) = ½sin²(φ/2) whichever detector p2 reached — while
+    sorted by p2's detector alone, and in total, it is the recorder's
+    flat ½."""
+    import copy
+    from collections import defaultdict
+    from pathlib import Path
+
+    import yaml
+    from addict import Dict as Addict
+    from quantish.qnumber import CalcMode
+    from quantish.simulation import Simulation
+
+    models = Path(__file__).resolve().parents[1] / 'models' / 'extras'
+    with open(models / 'double_slit_eraser.yaml') as f:
+        base = yaml.safe_load(f)
+    base['loglevel'] = 'warning'
+    CalcMode.default('Float')
+    for phi in (0.0, math.pi / 3, math.pi / 2, math.pi, 1.5 * math.pi):
+        cfg = copy.deepcopy(base)
+        cfg['variables']['phi'] = phi
+        space, _ = Simulation(Addict(cfg)).run()
+        at_s = defaultdict(float)     # (p2 detector, p2 sign) -> P(p1 at S)
+        for p in space.index.values():
+            c1, c2 = p.coords['p1'], p.coords['p2']
+            if c1.position.origin.gate != 'S':
+                continue
+            at_s[(c2.position.origin.gate, int(c2.sign))] += float(p.probability)
+        assert set(at_s) <= {('E1', 1), ('E1', -1), ('E2', 1), ('E2', -1)}
+        plus = sum(v for (_, s), v in at_s.items() if s > 0)
+        minus = sum(v for (_, s), v in at_s.items() if s < 0)
+        assert abs(plus - 0.5 * math.cos(phi / 2) ** 2) < 1e-9, (phi, plus)
+        assert abs(minus - 0.5 * math.sin(phi / 2) ** 2) < 1e-9, (phi, minus)
+        for det in ('E1', 'E2'):
+            by_wire = at_s[(det, 1)] + at_s[(det, -1)]
+            assert abs(by_wire - 0.25) < 1e-9, (phi, det, by_wire)
+        assert abs(plus + minus - 0.5) < 1e-9
+        # delayed choice: erasing after p1 has hit the screen changes
+        # nothing — the final configuration-space points are identical
+        late = copy.deepcopy(cfg)
+        late['run_stages'] = {'split': ['g_split'], 'observe': ['g_obs'],
+                              'slits': ['S1', 'S2'], 'phase': ['φ'],
+                              'merge': ['g_merge'], 'sort': ['g_sort'],
+                              'detect': ['S', 'D'], 'erase': ['g_erase'],
+                              'read': ['E1', 'E2']}
+        late_space, _ = Simulation(Addict(late)).run()
+        early = {k: complex(p.weight.v) for k, p in space.index.items()}
+        assert early == {k: complex(p.weight.v)
+                         for k, p in late_space.index.items()}

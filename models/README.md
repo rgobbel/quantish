@@ -26,7 +26,9 @@ copy of the book and the file names line up with its figure numbers.
   double-slit app in its four conditions (`double_slit` with both slits
   open, `double_slit_left_blocked`, `double_slit_right_blocked`, and
   `double_slit_recorder` with the which-way recorder on the right
-  slit), diagnostic circuits (`noop_*`,
+  slit, plus `double_slit_tunable` with a partial recorder and
+  `double_slit_eraser` with a quantum eraser after the recorder),
+  diagnostic circuits (`noop_*`,
   `zero_*`, `one_angle_plus_zero`, `split_*`), and figure 12 of AI Memo
   1026a (`AIM_Figure12`), the 1988 paper the chapter grew from.
 
