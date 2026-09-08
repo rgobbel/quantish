@@ -597,8 +597,7 @@ def _(
             n = max(1, int(mc_trials_text.value.strip()))
         except ValueError:
             n = int(mc_trials.value)
-        return mo.md('_Predicted runtime: '
-                     f'{projection(sampling_seconds(sim, chosen, n))}_')
+        return projection(sampling_seconds(sim, chosen, n))
 
     def _progress(_job):
         pct = 100 * _job['progress'] / max(1, _job['total'])
@@ -963,14 +962,18 @@ def _(
                    epr_angle_elems['qc']],
                   justify='start', gap=2, wrap=True),
         mo.hstack([epr_trials,
+                   # the slider's own readout turns to 1.0e6 at a million
+                   mo.md(f'{int(epr_trials.value):,}'),
                    mo.Html('<div class="mode-boxes">' + mo.hstack(
                        [mo.md('sampling (when trials > 0):'),
                         *epr_modes.elements.values()],
                        gap=0.75, align='center').text + '</div>'),
                    epr_button,
-                   mo.md('_Predicted runtime: '
-                         f'{projection(sampling_seconds(sim_model, picked_modes(epr_modes, EPR_SAMPLER_LABELS), int(epr_trials.value), cells=9))}_'
-                         if epr_trials.value and picked_modes(epr_modes, EPR_SAMPLER_LABELS) else '')],
+                   (projection(sampling_seconds(
+                       sim_model, picked_modes(epr_modes, EPR_SAMPLER_LABELS),
+                       int(epr_trials.value), cells=9))
+                    if epr_trials.value and picked_modes(epr_modes, EPR_SAMPLER_LABELS)
+                    else mo.md(''))],
                   justify='start', wrap=True, align='center'),
         epr_view,
     ])
@@ -1788,12 +1791,24 @@ def _(Simulation, mo):
                              + (fit_cost if m == 'pilot' else 0.0))
         return secs
 
+    LONG_RUN_SECONDS = 30
+
     def projection(secs):
+        """The predicted-runtime line: italic, and red bold past
+        LONG_RUN_SECONDS so a long wait is announced before the Run
+        button is pressed. (Html rather than markdown: marimo's markdown
+        strips inline styles.)"""
         if secs < 1:
-            return 'under a second'
-        if secs < 90:
-            return f'about {secs:.0f} s'
-        return f'about {secs / 60:.1f} min'
+            text = 'under a second'
+        elif secs < 90:
+            text = f'about {secs:.0f} s'
+        else:
+            text = f'about {secs / 60:.1f} min'
+        # explicit colors: bare Html output would inherit marimo's muted
+        # gray, and a prose wrapper overrides the red
+        style = ('color: #ff1f1f; font-weight: 700' if secs > LONG_RUN_SECONDS
+                 else 'color: #000')
+        return mo.Html(f'<em style="{style}">Predicted runtime: {text}</em>')
 
     return (EPR_SAMPLER_LABELS, SAMPLER_LABELS, SAMPLER_NAMES, picked_modes,
             projection, sampling_seconds)
@@ -1866,8 +1881,9 @@ def _(EPR_SAMPLER_LABELS, mo):
     # Defined independently of sim/mode so a math-mode change or a Run can
     # never reset the user's chosen trial count.
     epr_trials = mo.ui.slider(
-        steps=[0, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000],
-        value=0, label='trials per cell (0 = exact only)', show_value=True)
+        steps=[0, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000,
+               500000, 1000000],
+        value=0, label='trials per cell (0 = exact only)', show_value=False)
     # the models the sampled cells run under, compared side by side:
     # the wave samplers show the violation, Bell's hidden-variable
     # example sits exactly at the classical bound
