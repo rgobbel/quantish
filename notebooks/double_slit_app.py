@@ -328,11 +328,27 @@ def _(DEFAULT_THETA_S, math, mo):
       slits open.
     """)
 
+    _where = mo.md(r"""
+    In quantish physics, only a recombining gate makes superposed
+    worlds interfere (see figures 4.13 and 4.14: worlds remerge only
+    when they agree in *every* particle). Here that gate really is in
+    the circuit: each screen pixel is one engine run through the
+    remerge gate $g_{merge}$ (matched to the split at $g_{split}$, as in
+    figure 4.7), with the effective path-length difference to that
+    pixel carried by the phase plate $\varphi$ and the result sorted
+    into the detectors by $g_{sort}$. That is also exactly why the
+    recorder kills the fringes: $p_2$ makes the two slits' worlds
+    disagree, and the remerge rule then has nothing it is allowed to
+    merge with. This is why blocking a slit gives a flat line. A single
+    world has nothing to interfere with.
+    """)
+
     mo.accordion({'## Details\n\n<span style="font-size:0.85em">'
                   'how this model works</span>': mo.vstack([
         mo.accordion({'### A step-by-step explanation of the quantish '
                       'model vs. the real-world experiment':
                           _step_by_step}),
+        mo.accordion({'### Where the interference happens': _where}),
         mo.accordion({'### How each curve is computed': _curves}),
     ])})
     return
@@ -402,6 +418,13 @@ def _(mo):
                                 label='θ pre (°)', show_value=True)
     theta_erase_sl = mo.ui.slider(0, 90, step=5, value=45,
                                   label='θ erase (°)', show_value=True)
+    # The section accordions show these two sliders through plain
+    # containers rather than by name: a cell that references a UI
+    # element's variable reruns on every change, and re-rendering an
+    # accordion re-mounts its diagram and screen. Only the engine cells
+    # reference the sliders themselves.
+    tunable_controls = mo.hstack([theta_pre_sl], justify='start')
+    eraser_controls = mo.hstack([theta_erase_sl], justify='start')
     # gate-angle experiments: break the ideal conditions and watch
     theta_split_sl = mo.ui.slider(0, 90, step=5, value=45,
                                   label='θ split (°)', show_value=True)
@@ -417,15 +440,38 @@ def _(mo):
     - _a mismatched merge (θ merge ≠ θ split) reduces the maximum intensity_
     - _changing the sorter angle reduces the contrast between high and low intensities._
     """).text + '</div>')
+    # How the curves under the screens are computed. While a slider
+    # moves, each curve is redrawn from three engine runs: every path
+    # crosses the phase plate at most once, so a pixel's intensity is
+    # exactly A + B cos φ + C sin φ, and runs at φ = 0, π/2, π fix the
+    # coefficients (double_slit.fringe_coefficients). Fire particles
+    # and reset screens redraw them from one engine run per pixel. The
+    # switch makes every redraw per pixel — slower, but the plot is
+    # then the engine's per-pixel output at all times.
+    exact_sw = mo.ui.switch(value=False,
+                            label='one engine run per pixel on every change')
+    _curves_note = mo.Html('<div class="gates-note">' + mo.md("""
+    _Curves:_ _while a slider moves, the curve under each screen is
+    redrawn from three engine runs — a pixel's intensity is exactly
+    $A + B\\cos\\varphi + C\\sin\\varphi$, since every path crosses the
+    phase plate at most once, and runs at $\\varphi = 0, \\pi/2, \\pi$
+    fix the coefficients. **fire particles** and **reset screens**
+    redraw it from one engine run per pixel; the switch does that on
+    every change._
+    """).text + '</div>')
     mo.vstack([_mtext,
         mo.hstack([fringes, n_points, shots, fire_btn, reset_btn],
                   wrap=True, justify='start'),
         mo.accordion({'Implementation-level controls': mo.vstack([
             mo.hstack([theta_split_sl, theta_merge_sl, theta_sort_sl],
                       wrap=True, justify='start'),
-            _gates_note])}),
+            _gates_note,
+            exact_sw,
+            _curves_note])}),
         _ftext])
     return (
+        eraser_controls,
+        exact_sw,
         fire_btn,
         fringes,
         n_points,
@@ -436,6 +482,7 @@ def _(mo):
         theta_pre_sl,
         theta_sort_sl,
         theta_split_sl,
+        tunable_controls,
     )
 
 
@@ -466,29 +513,34 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(MODES, PANEL_TITLES, curves, hit_store, panel_widgets, parts, xs):
-    # a curve change rebuilds each panel in place; the client replays
-    # the accumulated hits from this baseline
-    for _m in MODES:
-        _data = {
-            'title': PANEL_TITLES[_m],
-            'curve': {'x': list(xs), 'y': list(curves[_m])},
-            'width': 380,
-            'hits': [list(_p) for _p in hit_store['hits'][_m]],
-        }
-        if _m in parts:
-            # a grouped condition: the film colors hits by group and
-            # draws one curve per group under the total
-            _data['parts'] = [{'name': _name, 'y': list(_ys)}
-                              for _name, _ys in parts[_m]]
-        panel_widgets[_m].data = _data
+def _(MAIN_MODES, curves_main, set_panel_curves, xs):
+    # A curve change redraws the affected panels' line areas in place;
+    # the screens themselves redisplay only for a new grain (screen
+    # resolution), a volley, or a reset. One cell per condition group,
+    # so a slider only one group's model has a variable for (θ pre,
+    # θ erase) leaves the other panels untouched.
+    for _m in MAIN_MODES:
+        set_panel_curves(_m, xs, curves_main[_m])
+    return
+
+
+@app.cell(hide_code=True)
+def _(curve_tunable, set_panel_curves, xs):
+    set_panel_curves('tunable', xs, curve_tunable)
+    return
+
+
+@app.cell(hide_code=True)
+def _(curve_eraser, parts_eraser, set_panel_curves, xs):
+    set_panel_curves('eraser', xs, curve_eraser, parts_eraser)
     return
 
 
 @app.cell(hide_code=True)
 def _(diagrams, mo, panels):
     # A 4×2 grid: one condition per row — the circuit on the left, the
-    # screen/curve pair to its right.
+    # screen/curve pair to its right. The widgets are created once and
+    # updated in place, so this cell never reruns.
     def _row(mode):
         return mo.hstack([diagrams[mode], panels[mode]],
                          align='center', justify='start', gap=1,
@@ -500,7 +552,7 @@ def _(diagrams, mo, panels):
 
 
 @app.cell(hide_code=True)
-def _(diagrams, mo, panels, theta_pre_sl):
+def _(diagrams, mo, panels, tunable_controls):
     # The tunable recorder — an approximate measurement — in its own
     # section: the explanation, its one control, and its row.
     _text = mo.md(r"""
@@ -542,7 +594,7 @@ def _(diagrams, mo, panels, theta_pre_sl):
                   'an approximate measurement: a recorder that only '
                   'partly records</span>': mo.vstack([
         _text,
-        theta_pre_sl,
+        tunable_controls,
         mo.hstack([diagrams['tunable'], panels['tunable']],
                   align='center', justify='start', gap=1, wrap=True),
     ], gap=1)})
@@ -550,7 +602,7 @@ def _(diagrams, mo, panels, theta_pre_sl):
 
 
 @app.cell(hide_code=True)
-def _(diagrams, mo, panels, theta_erase_sl):
+def _(diagrams, eraser_controls, mo, panels):
     # The quantum eraser in its own section: the explanation, its one
     # control, and its row (hits colored by the eraser's outcome).
     _text = mo.md(r"""
@@ -591,7 +643,7 @@ def _(diagrams, mo, panels, theta_erase_sl):
                   'fringes return, one sorted subset at a time</span>':
                   mo.vstack([
         _text,
-        theta_erase_sl,
+        eraser_controls,
         mo.hstack([diagrams['eraser'], panels['eraser']],
                   align='center', justify='start', gap=1, wrap=True),
     ], gap=1)})
@@ -599,50 +651,41 @@ def _(diagrams, mo, panels, theta_erase_sl):
 
 
 @app.cell(hide_code=True)
-def _(LinePlotWidget, curves, mo, xs):
-    """What classical physics would predict for two
-    open slits (the sum of the single-slit lines, which is also exactly
-    the recorder curve) against what actually happens: super-additive at
-    bright fringes, zero at dark ones."""
-    _chart = mo.ui.anywidget(LinePlotWidget(data={
+def _(LinePlotWidget, mo):
+    """What classical physics would predict for two open slits (the
+    sum of the single-slit lines, which is also exactly the recorder
+    curve) against what actually happens: super-additive at bright
+    fringes, zero at dark ones. The chart widget is created here, once;
+    the cell below feeds it the current curves, so a slider move
+    updates the plot in place and this section never re-renders."""
+    additivity_widget = LinePlotWidget(data={})
+    mo.accordion({'#### Note: Interference is not additivity\n\n<span style='
+                  '"font-size:0.85em">the classical sum of the single-slit '
+                  'curves against what actually happens</span>': mo.vstack([
+        mo.md('Opening the second slit removes particles from the dark '
+              'fringes by interference, and delivers *twice both slits\' '
+              'worth* to the bright ones. If we couple a which-way recorder '
+              'to one slit the actual curve collapses into the classical '
+              'sum.'),
+        mo.ui.anywidget(additivity_widget),
+    ], gap=1)})
+    return (additivity_widget,)
+
+
+@app.cell(hide_code=True)
+def _(additivity_widget, curves_main, xs):
+    additivity_widget.data = {
         'series': [
             {'name': 'both slits (actual)', 'x': list(xs),
-             'y': list(curves['both']), 'color': '#4c78a8'},
+             'y': list(curves_main['both']), 'color': '#4c78a8'},
             {'name': "slit1 + slit2 (classical sum)", 'x': list(xs),
-             'y': [a + b for a, b in zip(curves['slit1'],
-                                         curves['slit2'])],
+             'y': [a + b for a, b in zip(curves_main['slit1'],
+                                         curves_main['slit2'])],
              'color': '#f58518', 'dash': '6 4'},
         ],
         'xdomain': [-1, 1], 'xlabel': 'screen position',
         'ylabel': 'intensity', 'width': 940, 'height': 180,
-    }))
-    mo.vstack([
-        mo.md('### Note: Interference is not additivity\n'
-              'Opening the second slit removes particles from the dark '
-              'fringes by interference, and delivers *twice both slits\' worth* to the '
-              'bright ones. If we couple a which-way recorder to one slit the '
-              'actual curve collapses into the classical sum.'),
-        _chart,
-    ])
-    return
-
-
-@app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""
-    **Where the interference happens:** In quantish physics, only a
-    recombining gate makes superposed worlds interfere (see figures 4.13 and 4.14: worlds
-    remerge only when they agree in *every* particle). Here that gate
-    really is in the circuit: each screen pixel is one engine run through
-    the remerge gate $g_{merge}$ (matched to the split at $g_{split}$, as in figure
-    4.7), with the effective path-length difference to that pixel carried by the
-    phase plate $\varphi$ and the result sorted into the detectors by $g_{sort}$.
-    That is also exactly why the
-    recorder kills the fringes: $p_2$ makes the two slits' worlds disagree, and the
-    remerge rule then has nothing it is allowed to merge with. This is why
-    blocking a slit gives a flat
-    line. A single world has nothing to interfere with.
-    """)
+    }
     return
 
 
@@ -675,7 +718,8 @@ def _(ScreenPanelWidget, mo):
     # the rebuild baseline (remounts, curve changes).
     # the four conditions of the main grid, plus the tunable recorder
     # in its own section; the panel machinery covers all five
-    MODES = ('both', 'slit2', 'slit1', 'observed', 'tunable', 'eraser')
+    MAIN_MODES = ('both', 'slit2', 'slit1', 'observed')   # the grid
+    MODES = MAIN_MODES + ('tunable', 'eraser')
     PANEL_TITLES = {'both': 'both slits open',
                     'slit2': 'left slit blocked',
                     'slit1': 'right slit blocked',
@@ -686,116 +730,265 @@ def _(ScreenPanelWidget, mo):
     panels = {_m: mo.ui.anywidget(_w)
               for _m, _w in panel_widgets.items()}
     hit_store = {'seq': 0, 'hits': {_m: [] for _m in MODES}}
-    return MODES, PANEL_TITLES, hit_store, panel_widgets, panels
+
+    panel_grain = {}   # mode -> the len(xs) its raster was built for
+    # The settings the live curves were last computed for, as a plain
+    # dict: the fire and reset cells read them from here instead of
+    # from the sliders, so a slider move does not run those cells at
+    # all (a cell that references a slider reruns on every change).
+    current = {}
+
+    def set_panel_curves(mode, xs, curve, parts=None):
+        # New curves for a panel. Same grain: only the line area under
+        # the screen redraws (the `curves` trait). A new grain: the
+        # panel rebuilds from its baseline — title, curves, and every
+        # hit so far — since the raster's pixel count follows len(xs).
+        curves = {'x': list(xs), 'y': list(curve)}
+        if parts:
+            # a grouped condition: the film colors hits by group and
+            # draws one curve per group under the total
+            curves['parts'] = [{'name': name, 'y': list(ys)}
+                               for name, ys in parts]
+        if panel_grain.get(mode) == len(xs):
+            panel_widgets[mode].curves = curves
+            return
+        panel_grain[mode] = len(xs)
+        panel_widgets[mode].curves = curves
+        panel_widgets[mode].data = {
+            'title': PANEL_TITLES[mode],
+            'curve': curves,
+            'width': 380,
+            'hits': [list(p) for p in hit_store['hits'][mode]],
+        }
+
+    return (
+        MAIN_MODES,
+        MODES,
+        PANEL_TITLES,
+        hit_store,
+        panel_widgets,
+        current,
+        panels,
+        set_panel_curves,
+    )
 
 
 @app.cell(hide_code=True)
-def _(
-    fringes,
-    math,
-    mo,
-    n_points,
-    screen_curve,
-    screen_curves_by_sign,
-    screen_positions,
-    theta_erase_sl,
-    theta_merge_sl,
-    theta_pre_sl,
-    theta_sort_sl,
-    theta_split_sl,
-):
-    """Exact screen intensities: one engine run per screen pixel per
-    condition, the pixel's path difference set as the phase plate's
-    phase and the gate angles taken from the sliders. The eraser's
-    curve comes split by p2's sign (`parts`), its total in `curves`."""
-    with mo.status.spinner(title='running the exact simulations…'):
-        _angles = {'theta_pre': math.radians(theta_pre_sl.value),
-                   'theta_erase': math.radians(theta_erase_sl.value),
-                   'theta_s': math.radians(theta_split_sl.value),
+def _(math, theta_merge_sl, theta_sort_sl, theta_split_sl):
+    # the gate angles every condition shares, from the sliders
+    main_angles = {'theta_s': math.radians(theta_split_sl.value),
                    'theta_merge': math.radians(theta_merge_sl.value),
                    'theta_sort': math.radians(theta_sort_sl.value)}
-        curves = {mode: screen_curve(n_points.value, fringes.value, mode,
-                                     **_angles)[1]
-                  for mode in ('slit1', 'both', 'slit2', 'observed',
-                               'tunable')}
-        _plus, _minus = screen_curves_by_sign(n_points.value, fringes.value,
-                                              'eraser', **_angles)[1]
-        curves['eraser'] = [a + b for a, b in zip(_plus, _minus)]
-        parts = {'eraser': [('p₂ +', _plus), ('p₂ −', _minus)]}
-        xs = screen_positions(n_points.value)
-    return curves, parts, xs
+    return (main_angles,)
+
+
+@app.cell(hide_code=True)
+def _(exact_sw):
+    # how the live curves are computed: the three-run reconstruction
+    # (instant, exact) unless the switch asks for a run per pixel
+    via = 'pixels' if exact_sw.value else 'fit'
+    return (via,)
 
 
 @app.cell(hide_code=True)
 def _(
-    DiagramWidget,
-    diagram_geometry,
+    MAIN_MODES,
+    current,
+    fringes,
+    main_angles,
+    n_points,
+    screen_curve,
+    screen_positions,
+    via,
+):
+    """The live screen curves: the pixel's path difference is the phase
+    plate's phase and the gate angles come from the sliders. One cell
+    per condition group — the grid's four here, the tunable recorder
+    and the eraser below — so a slider only one group depends on
+    reruns only that group. `via` says whether each curve is the
+    three-run reconstruction or one engine run per pixel; fire and
+    reset always redraw per pixel."""
+    # no spinner here: a transient output in this cell shifts the page,
+    # and the live path is three engine runs per condition
+    curves_main = {mode: screen_curve(n_points.value, fringes.value,
+                                      mode, via=via, **main_angles)[1]
+                   for mode in MAIN_MODES}
+    xs = screen_positions(n_points.value)
+    current.update(n=n_points.value, fringes=fringes.value,
+                   main_angles=dict(main_angles))
+    return curves_main, xs
+
+
+@app.cell(hide_code=True)
+def _(
+    current,
+    fringes,
+    main_angles,
     math,
-    mo,
-    slit_sim,
-    theta_erase_sl,
-    theta_merge_sl,
+    n_points,
+    screen_curve,
     theta_pre_sl,
+    via,
+):
+    current['theta_pre'] = math.radians(theta_pre_sl.value)
+    curve_tunable = screen_curve(
+        n_points.value, fringes.value, 'tunable', via=via,
+        theta_pre=current['theta_pre'], **main_angles)[1]
+    return (curve_tunable,)
+
+
+@app.cell(hide_code=True)
+def _(
+    current,
+    fringes,
+    main_angles,
+    math,
+    n_points,
+    screen_curves_by_sign,
+    theta_erase_sl,
+    via,
+):
+    # the eraser's curve comes split by p2's sign (parts), its total
+    # in curve_eraser
+    current['theta_erase'] = math.radians(theta_erase_sl.value)
+    _plus, _minus = screen_curves_by_sign(
+        n_points.value, fringes.value, 'eraser', via=via,
+        theta_erase=current['theta_erase'], **main_angles)[1]
+    curve_eraser = [a + b for a, b in zip(_plus, _minus)]
+    parts_eraser = [('p₂ +', _plus), ('p₂ −', _minus)]
+    return curve_eraser, parts_eraser
+
+
+@app.cell(hide_code=True)
+def _(DiagramWidget, MODES, diagram_geometry, mo, slit_sim):
+    """One circuit diagram per condition, rendered from the Simulation
+    objects that yield the curves (Sn = slit n, Bn = a block in its
+    place). The widgets are created once, here, at the models' own
+    angles; the per-group cells below push new geometry into them when
+    their sliders move (the widget redraws in place, keeping its view),
+    so nothing else on the page re-renders."""
+    DIAGRAM_WIDTH = {mode: 900 if mode in ('slit1', 'both', 'slit2')
+                     else 1050 for mode in MODES}
+
+    def diagram_geom(mode, angles, labels):
+        # the grid rows size their own frames, and open with the
+        # whole circuit in view (fit) rather than at natural scale
+        _g = diagram_geometry(
+            slit_sim(mode, **angles), has_run=False,
+            angle_overrides={'g_obs': '0°', 'φ': 'φ(x)', **labels})
+        _g['frame_w'] = DIAGRAM_WIDTH[mode]
+        _g['frame_h'] = 330
+        _g['fit'] = True
+        return _g
+
+    diagram_widgets = {mode: DiagramWidget(geometry=diagram_geom(mode, {}, {}))
+                       for mode in MODES}
+    diagrams = {mode: mo.ui.anywidget(w) for mode, w in diagram_widgets.items()}
+    return diagram_geom, diagram_widgets, diagrams
+
+
+@app.cell(hide_code=True)
+def _(
+    MAIN_MODES,
+    diagram_geom,
+    diagram_widgets,
+    main_angles,
+    theta_merge_sl,
     theta_sort_sl,
     theta_split_sl,
 ):
-    """One circuit diagram per condition, rendered from the Simulation
-    objects that yield the curves (Sn = slit n, Bn = a block in its place)."""
-    def _diagram(mode, width):
-        try:
-            _g = diagram_geometry(
-                slit_sim(mode,
-                         theta_s=math.radians(theta_split_sl.value),
-                         theta_merge=math.radians(theta_merge_sl.value),
-                         theta_sort=math.radians(theta_sort_sl.value),
-                         theta_pre=math.radians(theta_pre_sl.value),
-                         theta_erase=math.radians(theta_erase_sl.value)),
-                has_run=False,
-                angle_overrides={
-                    'g_split': f'{theta_split_sl.value:.0f}°',
-                    'g_merge': f'{theta_merge_sl.value:.0f}°',
-                    'g_obs': '0°',
-                    'g_pre': f'{theta_pre_sl.value:.0f}°',
-                    'g_erase': f'{theta_erase_sl.value:.0f}°',
-                    'g_sort': f'{theta_sort_sl.value:.0f}°', 'φ': 'φ(x)'})
-            # the grid rows size their own frames, and open with the
-            # whole circuit in view (fit) rather than at natural scale
-            _g['frame_w'] = width
-            _g['frame_h'] = 330
-            _g['fit'] = True
-            return mo.ui.anywidget(DiagramWidget(geometry=_g))
-        except Exception as exc:  # noqa: BLE001--show, don't crash the app
-            return mo.md(f'_diagram failed: {exc}_')
+    # the shared gate angles: every diagram shows them
+    main_labels = {'g_split': f'{theta_split_sl.value:.0f}°',
+                   'g_merge': f'{theta_merge_sl.value:.0f}°',
+                   'g_sort': f'{theta_sort_sl.value:.0f}°'}
+    for _m in MAIN_MODES:
+        diagram_widgets[_m].geometry = diagram_geom(_m, main_angles,
+                                                   main_labels)
+    return (main_labels,)
 
-    # Grid layout: the circuit fills the row beside the narrower raster.
-    diagrams = {mode: _diagram(mode, 900 if mode in ('slit1', 'both', 'slit2')
-                               else 1050)
-                for mode in ('slit1', 'both', 'slit2', 'observed', 'tunable',
-                             'eraser')}
-    return (diagrams,)
+
+@app.cell(hide_code=True)
+def _(diagram_geom, diagram_widgets, main_angles, main_labels, math, theta_pre_sl):
+    diagram_widgets['tunable'].geometry = diagram_geom(
+        'tunable',
+        {**main_angles, 'theta_pre': math.radians(theta_pre_sl.value)},
+        {**main_labels, 'g_pre': f'{theta_pre_sl.value:.0f}°'})
+    return
+
+
+@app.cell(hide_code=True)
+def _(
+    diagram_geom,
+    diagram_widgets,
+    main_angles,
+    main_labels,
+    math,
+    theta_erase_sl,
+):
+    diagram_widgets['eraser'].geometry = diagram_geom(
+        'eraser',
+        {**main_angles, 'theta_erase': math.radians(theta_erase_sl.value)},
+        {**main_labels, 'g_erase': f'{theta_erase_sl.value:.0f}°'})
+    return
+
+
+@app.cell(hide_code=True)
+def _(
+    MAIN_MODES,
+    current,
+    screen_curve,
+    screen_curves_by_sign,
+    set_panel_curves,
+):
+    def engine_curves():
+        """Every condition's curve from one engine run per pixel at the
+        current settings — what fire particles and reset screens draw,
+        and sample from — pushed into the panels: (curves by mode,
+        parts by mode)."""
+        n, fringes, main_angles = (current['n'], current['fringes'],
+                                   current['main_angles'])
+        theta_pre, theta_erase = current['theta_pre'], current['theta_erase']
+        curves = {mode: screen_curve(n, fringes, mode, via='pixels',
+                                     **main_angles)[1]
+                  for mode in MAIN_MODES}
+        curves['tunable'] = screen_curve(n, fringes, 'tunable', via='pixels',
+                                         theta_pre=theta_pre,
+                                         **main_angles)[1]
+        xs, (plus, minus) = screen_curves_by_sign(
+            n, fringes, 'eraser', via='pixels', theta_erase=theta_erase,
+            **main_angles)
+        curves['eraser'] = [a + b for a, b in zip(plus, minus)]
+        parts = {'eraser': [('p₂ +', plus), ('p₂ −', minus)]}
+        for mode, curve in curves.items():
+            set_panel_curves(mode, xs, curve, parts.get(mode))
+        return curves, parts
+
+    return (engine_curves,)
 
 
 @app.cell(hide_code=True)
 def _(
     MODES,
-    curves,
+    engine_curves,
     fire_btn,
     hit_store,
     mo,
     panel_widgets,
-    parts,
     random,
     sample_hits,
     shots,
     xs,
 ):
     mo.stop(not fire_btn.value)
+    # the engine's per-pixel curves, drawn and fired at
+    with mo.status.spinner(title='running the exact simulations…'):
+        _curves, _parts = engine_curves()
     _rng = random.Random()
     hit_store['seq'] += 1
     for _m in MODES:
-        _new = sample_hits(xs, curves[_m], shots.value, _rng,
-                           parts=(tuple(_ys for _, _ys in parts[_m])
-                                  if _m in parts else None))
+        _new = sample_hits(xs, _curves[_m], shots.value, _rng,
+                           parts=(tuple(_ys for _, _ys in _parts[_m])
+                                  if _m in _parts else None))
         hit_store['hits'][_m].extend(_new)
         panel_widgets[_m].hits_chunk = {
             'seq': hit_store['seq'],
@@ -805,8 +998,11 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(MODES, hit_store, mo, panel_widgets, reset_btn):
+def _(MODES, engine_curves, hit_store, mo, panel_widgets, reset_btn):
     mo.stop(not reset_btn.value)
+    # a reset also redraws the curves from one engine run per pixel
+    with mo.status.spinner(title='running the exact simulations…'):
+        engine_curves()
     hit_store['seq'] += 1
     for _m in MODES:
         hit_store['hits'][_m] = []

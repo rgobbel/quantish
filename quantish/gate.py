@@ -123,6 +123,13 @@ class PhasePlate(DelayGate):
 
     def __init__(self, name, phase:Real=0, source:str='', sink:str=''):
         super().__init__(name, source, sink)
+        self.set_phase(phase)
+
+    def set_phase(self, phase):
+        """Give the plate a new phase — the rotation e^{iφ} it applies.
+        A plate is the one gate whose parameter is meant to be swept
+        (the double slit's pixel phase), so a loaded Simulation can be
+        rerun per value instead of rebuilt per value."""
         self.phase = qify(phase)
         if not zerop(self.phase):
             self.phase_factor = Complex(1).rotate(self.phase)   # e^{iφ}

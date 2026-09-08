@@ -113,10 +113,12 @@
 /* A subhead-style accordion label ('### Details') sits close under
    the prose above it: no heading top margin inside the trigger, and
    the trigger's own top padding trimmed. */
-[data-state] > .markdown.contents > h3 {
+[data-state] > .markdown.contents > h3,
+[data-state] > .markdown.contents > h4 {
     margin-top: 0 !important;
 }
-[data-state]:has(> .markdown.contents > h3) {
+[data-state]:has(> .markdown.contents > h3),
+[data-state]:has(> .markdown.contents > h4) {
     padding-top: 0.25rem !important;
 }
 

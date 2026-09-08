@@ -150,7 +150,12 @@ def slit_sim(mode: str = 'both', theta_s: float = DEFAULT_THETA_S,
 SIGNS = ('+', '-')   # the eraser's readout: p2's final sign
 
 
-@functools.lru_cache(maxsize=1 << 17)
+@functools.cache
+def _model_variables(mode: str) -> frozenset:
+    """The variable names a condition's model file declares."""
+    return frozenset(_model_config(mode)['variables'])
+
+
 def pixel_by_sign(phi: float, mode: str = 'both',
                   theta_s: float = DEFAULT_THETA_S,
                   theta_merge: float | None = None,
@@ -163,9 +168,39 @@ def pixel_by_sign(phi: float, mode: str = 'both',
     Memoized — the engine run is the expensive thing, and slider moves
     revisit the same (phi, angles) points constantly (returning a
     slider to 45° re-renders every curve from cache instead of
-    rerunning the engine n_points times per condition)."""
-    sim = slit_sim(mode, theta_s, phi, theta_merge, theta_sort, theta_pre,
-                   theta_erase)
+    rerunning the engine n_points times per condition). An angle the
+    condition's model has no variable for (θ_pre outside the tunable
+    recorder, θ_erase outside the eraser) is dropped from the cache
+    key, so moving that slider leaves the other conditions' curves
+    cached."""
+    declared = _model_variables(mode)
+    if 'theta_pre' not in declared:
+        theta_pre = 0.0
+    if 'theta_erase' not in declared:
+        theta_erase = math.pi / 4
+    return _pixel_by_sign(phi, mode, theta_s, theta_merge, theta_sort,
+                          theta_pre, theta_erase)
+
+
+@functools.lru_cache(maxsize=64)
+def _condition_sim(mode, theta_s, theta_merge, theta_sort, theta_pre,
+                   theta_erase):
+    """One loaded Simulation per condition and gate-angle setting: the
+    pixels differ only in the phase plate's phase, which set_phase
+    changes in place before each run (a run is repeatable), so a
+    screen costs n_points runs rather than n_points loads and runs."""
+    return slit_sim(mode, theta_s, 0.0, theta_merge, theta_sort, theta_pre,
+                    theta_erase)
+
+
+@functools.lru_cache(maxsize=1 << 17)
+def _pixel_by_sign(phi, mode, theta_s, theta_merge, theta_sort, theta_pre,
+                   theta_erase) -> tuple[float, float]:
+    sim = _condition_sim(mode, theta_s, theta_merge, theta_sort, theta_pre,
+                         theta_erase)
+    if 'φ' in sim.phase_plates:
+        # the right-slit-blocked condition has no plate (and no phi)
+        sim.phase_plates['φ'].set_phase(phi)
     sim.run()
     by_sign = {'+': 0.0, '-': 0.0}
     for point in sim.result_space.index.values():
@@ -195,20 +230,25 @@ def screen_positions(n_points: int) -> list[float]:
     return [-1.0 + 2.0 * i / (n_points - 1) for i in range(n_points)]
 
 
+VIA = ('pixels', 'fit')
+
+
 def screen_curve(n_points: int, fringes: float, mode: str = 'both',
                  theta_s: float = DEFAULT_THETA_S,
                  theta_merge: float | None = None,
                  theta_sort: float = 0.0,
                  theta_pre: float = 0.0,
-                 theta_erase: float = math.pi / 4
-                 ) -> tuple[list[float], list[float]]:
-    """(positions, intensities) across the screen — one engine run per
-    pixel. The right slit's path difference sweeps `fringes` pattern
-    periods over the screen; a blocked slit's wire ends at its block
-    inside the circuit and contributes nothing."""
+                 theta_erase: float = math.pi / 4,
+                 via: str = 'pixels') -> tuple[list[float], list[float]]:
+    """(positions, intensities) across the screen. The right slit's path
+    difference sweeps `fringes` pattern periods over the screen; a
+    blocked slit's wire ends at its block inside the circuit and
+    contributes nothing. via='pixels': one engine run per pixel;
+    via='fit': the exact reconstruction from three runs (see
+    fringe_coefficients)."""
     xs, parts = screen_curves_by_sign(n_points, fringes, mode, theta_s,
                                       theta_merge, theta_sort, theta_pre,
-                                      theta_erase)
+                                      theta_erase, via)
     return xs, [a + b for a, b in zip(*parts)]
 
 
@@ -217,16 +257,58 @@ def screen_curves_by_sign(n_points: int, fringes: float, mode: str = 'both',
                           theta_merge: float | None = None,
                           theta_sort: float = 0.0,
                           theta_pre: float = 0.0,
-                          theta_erase: float = math.pi / 4
+                          theta_erase: float = math.pi / 4,
+                          via: str = 'pixels'
                           ) -> tuple[list[float], tuple[list[float], list[float]]]:
     """(positions, (plus, minus)): the screen intensity split by p2's
     final sign — the eraser's two complementary fringe patterns, whose
-    sum is screen_curve's total."""
+    sum is screen_curve's total. `via` as for screen_curve."""
+    if via not in VIA:
+        raise ValueError(f'via must be one of {VIA}, not {via!r}')
     xs = screen_positions(n_points)
+    if via == 'fit':
+        coeffs = fringe_coefficients(mode, theta_s, theta_merge, theta_sort,
+                                     theta_pre, theta_erase)
+        curves = []
+        for a, b, c in coeffs:
+            curves.append([a + b * math.cos(fringes * math.pi * x)
+                           + c * math.sin(fringes * math.pi * x) for x in xs])
+        return xs, (curves[0], curves[1])
     pairs = [pixel_by_sign(fringes * math.pi * x, mode, theta_s,
                            theta_merge, theta_sort, theta_pre, theta_erase)
              for x in xs]
     return xs, ([a for a, _ in pairs], [b for _, b in pairs])
+
+
+def fringe_coefficients(mode: str = 'both', theta_s: float = DEFAULT_THETA_S,
+                        theta_merge: float | None = None,
+                        theta_sort: float = 0.0, theta_pre: float = 0.0,
+                        theta_erase: float = math.pi / 4
+                        ) -> tuple[tuple[float, float, float], ...]:
+    """The exact screen curve of a condition as a formula: for each sign
+    series, (A, B, C) with intensity(φ) = A + B·cos φ + C·sin φ.
+
+    Why three engine runs suffice: the phase plate is the only element
+    whose action depends on φ, it multiplies a traversing weight by
+    e^{iφ}, and every path through the circuit crosses it at most once
+    (it sits on the right slit's wire; the recorder particle never
+    meets it). So every final configuration-space point's weight is
+    α + β·e^{iφ} with α, β fixed by the gate angles, its probability
+    |α|² + |β|² + 2·Re(ᾱβ·e^{iφ}) is A + B·cos φ + C·sin φ, and so is
+    any sum of them. Runs at φ = 0, π/2, π then give the coefficients:
+    P(0) = A + B, P(π/2) = A + C, P(π) = A − B. The result agrees with a
+    run at every pixel to rounding (tests check it), at the cost of
+    three runs instead of one per pixel — what makes the app's sliders
+    live."""
+    at = [pixel_by_sign(phi, mode, theta_s, theta_merge, theta_sort,
+                        theta_pre, theta_erase)
+          for phi in (0.0, math.pi / 2, math.pi)]
+    coeffs = []
+    for series in range(2):
+        p0, p1, p2 = (at[k][series] for k in range(3))
+        a = (p0 + p2) / 2
+        coeffs.append((a, (p0 - p2) / 2, p1 - a))
+    return tuple(coeffs)
 
 
 def sample_hits(xs: list[float], intensities: list[float], n: int,

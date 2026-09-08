@@ -2958,7 +2958,18 @@ function render({ model, el }) {
   let counts = new Map();
   let cv = null, ctx = null, img = null, titleNode = null;
   let cfg = {};
+  let lines = null, lineScale = null;   // the line area under the screen
   let lastSeq = (model.get('hits_chunk') || {}).seq ?? -1;
+
+  // The curves drawn under the screen: the `curves` trait when set
+  // ({x, y, parts}), else the ones that came with `data`. A curves-
+  // only change redraws the line area and leaves the raster alone —
+  // the screen shows what has landed, whatever the parameters are now.
+  const curves = () => {
+    const c = model.get('curves') || {};
+    return c.x ? c : { x: cfg.curve?.x, y: cfg.curve?.y,
+                       parts: cfg.parts, name: cfg.curve?.name };
+  };
 
   const SCREEN_H = 190, LINE_H = 100, GAP = 4;
   const M = { l: 46, r: 10, t: 26, b: 40 };
@@ -2973,7 +2984,7 @@ function render({ model, el }) {
     // two pixel columns per engine sample: the grain follows the
     // screen-resolution slider
     const pw = cfg.width || 380;
-    const nx = Math.max(1, 2 * ((cfg.curve?.x?.length || 2) - 1));
+    const nx = Math.max(1, 2 * ((curves().x?.length || 2) - 1));
     const ny = Math.max(1, Math.round(SCREEN_H * nx / pw));
     return { pw, nx, ny };
   }
@@ -3048,34 +3059,51 @@ function render({ model, el }) {
     const oy = M.t + SCREEN_H + GAP;
     const { sx, sy } = axes(svg, M, pw, LINE_H, oy, [-1, 1], [0, 1.05],
                             'screen position', 'intensity');
-    svg.appendChild(polyline(cfg.curve.x, cfg.curve.y, sx, sy,
-                             '#4477cc'));
+    lineScale = { sx, sy, oy, pw };
+    lines = h('g', { class: 'qp-lines' });
+    svg.appendChild(lines);
+    drawLines();
+    paint(allHits);
+    refresh();
+  }
+
+  function drawLines() {
+    if (!lines || !lineScale) return;
+    const { sx, sy, oy, pw } = lineScale;
+    const c = curves();
+    lines.innerHTML = '';
+    if (!c.x) return;
+    lines.appendChild(polyline(c.x, c.y, sx, sy, '#4477cc'));
     // grouped conditions: one curve per group in the film's colors,
     // with a small legend at the top right of the line area
-    const parts = cfg.parts || [];
+    const parts = c.parts || [];
     parts.forEach((part, gi) => {
       const col = GROUP_RGB[gi % GROUP_RGB.length];
-      svg.appendChild(polyline(cfg.curve.x, part.y, sx, sy,
-                               `rgb(${col.join(',')})`));
+      lines.appendChild(polyline(c.x, part.y, sx, sy,
+                                 `rgb(${col.join(',')})`));
     });
     if (parts.length) {
       const entries = [...parts.map((part, gi) => [part.name,
                          `rgb(${GROUP_RGB[gi % GROUP_RGB.length].join(',')})`]),
-                       [cfg.curve.name || 'all', '#4477cc']];
+                       [c.name || 'all', '#4477cc']];
       let lx = M.l + pw - 4;
       for (const [name, color] of entries.reverse()) {
         const t = h('text', { x: lx, y: oy + 12, 'text-anchor': 'end',
           'font-size': 10, fill: '#000', 'font-family': 'sans-serif' },
           name);
-        svg.appendChild(t);
+        lines.appendChild(t);
         lx -= 6.2 * name.length + 6;
-        svg.appendChild(h('line', { x1: lx - 16, y1: oy + 9, x2: lx,
+        lines.appendChild(h('line', { x1: lx - 16, y1: oy + 9, x2: lx,
           y2: oy + 9, stroke: color, 'stroke-width': 2 }));
         lx -= 24;
       }
     }
-    paint(allHits);
-    refresh();
+  }
+
+  function curvesChanged() {
+    // same grain: only the lines; a new grain: the raster too
+    const { nx } = dims();
+    if (cv && cv.width === nx) drawLines(); else build();
   }
 
   function chunk() {
@@ -3096,6 +3124,7 @@ function render({ model, el }) {
   }
 
   model.on('change:data', build);
+  model.on('change:curves', curvesChanged);
   model.on('change:hits_chunk', chunk);
   build();
 }
@@ -3184,6 +3213,10 @@ class ScreenPanelWidget(anywidget.AnyWidget):
     _esm = _SCREEN_ESM
     _css = _PLOT_CSS
     data = traitlets.Dict({}).tag(sync=True)
+    # the curves under the screen ({x, y, parts}): a change redraws the
+    # line area only, so the parameters can move without the raster
+    # redisplaying (it rebuilds only when the grain — len(x) — changes)
+    curves = traitlets.Dict({}).tag(sync=True)
     hits_chunk = traitlets.Dict({}).tag(sync=True)
 
 

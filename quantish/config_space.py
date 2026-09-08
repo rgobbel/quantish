@@ -99,7 +99,15 @@ class PCoordinate:
 
     @property
     def key(self):
-        return f'{self.pkey}@{self.position}'
+        # computed once: coordinates never change after creation, and
+        # the key is asked for on every hash, comparison, and index
+        # lookup — building it from the reprs each time was half of an
+        # engine run
+        try:
+            return self._key
+        except AttributeError:
+            self._key = f'{self.pkey}@{self.position}'
+            return self._key
 
 
 class ConfigSpacePoint:
@@ -130,7 +138,13 @@ class ConfigSpacePoint:
 
     @property
     def key(self):
-        return '|'.join(str(coord) for coord in self.coords.values())
+        # computed once (the coordinates are fixed at creation), for the
+        # same reason as PCoordinate.key
+        try:
+            return self._key
+        except AttributeError:
+            self._key = '|'.join(str(coord) for coord in self.coords.values())
+            return self._key
 
     @property
     def probability(self):
@@ -325,6 +339,9 @@ class ConfigSpaceRunner:
         Q = ConfigSpace(points)
         all_points = ConfigSpace()
         for point in points:
+            # a rerun of the same Simulation (a phase plate reset per
+            # screen pixel) starts the initial points' histories afresh
+            point.successors.clear()
             all_points.record(point)
         for step, stage in enumerate(sim.run_stages):
             stage_gates = {gname: sim.gates[gname] for gname in stage}

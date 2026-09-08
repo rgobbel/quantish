@@ -209,3 +209,40 @@ def test_eraser_screen_split_by_sign():
     assert len(center) > 50 and len(dark) > 50
     assert sum(h[2] for h in center) / len(center) < 0.15
     assert sum(1 - h[2] for h in dark) / len(dark) < 0.15
+
+
+def test_reused_simulation_matches_a_fresh_one():
+    """The per-condition Simulation reused across pixels (the phase
+    plate set in place per pixel) gives exactly what a freshly loaded
+    Simulation gives — a run is repeatable and set_phase is complete."""
+    from quantish.double_slit import pixel_by_sign, slit_sim
+    for mode, kw in (('tunable', {'theta_pre': 0.7}),
+                     ('eraser', {'theta_erase': 0.6}), ('both', {}),
+                     ('slit1', {}), ('slit2', {}), ('observed', {})):
+        for phi in (1.3, 0.2, 2.9, 1.3):     # revisits included
+            fresh = slit_sim(mode, phi=phi, **kw)
+            fresh.run()
+            want = sum(float(p.probability)
+                       for p in fresh.result_space.index.values()
+                       if p.coords['p1'].position.origin.gate == 'S')
+            got = sum(pixel_by_sign(phi, mode, **kw))
+            assert abs(got - want) < 1e-12, (mode, phi, got, want)
+
+
+def test_three_run_reconstruction_matches_every_pixel():
+    """via='fit' (three engine runs, A + B cos φ + C sin φ) agrees with
+    one engine run per pixel to rounding — at the ideal angles and at
+    off-ideal ones the app's implementation-level sliders reach."""
+    from quantish.double_slit import screen_curves_by_sign
+    settings = [{},
+                {'theta_s': math.radians(30), 'theta_merge': math.radians(50),
+                 'theta_sort': math.radians(20), 'theta_pre': math.radians(35),
+                 'theta_erase': math.radians(25)}]
+    for kw in settings:
+        for mode in ('both', 'slit1', 'slit2', 'observed', 'tunable',
+                     'eraser'):
+            xs, fit = screen_curves_by_sign(41, 3.0, mode, via='fit', **kw)
+            _, px = screen_curves_by_sign(41, 3.0, mode, via='pixels', **kw)
+            for series in range(2):
+                for x, a, b in zip(xs, fit[series], px[series]):
+                    assert abs(a - b) < 1e-12, (mode, kw, series, x, a, b)
