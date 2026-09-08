@@ -792,7 +792,7 @@ def _(NetworkGraph, NetworkGraphWidget, mo, sim_built):
                 mo.md('_Scroll or pinch to zoom, drag to pan, '
                       'double-click (double-tap) to reset. '
                       'Hover over (or tap) a cell for its values; '
-                      'click a configuration-space point to highlight its '
+                      'click a node to highlight its '
                       'full ancestry and descendancy (shift-click for '
                       'immediate neighbors only), click again to '
                       'clear._'),
@@ -800,8 +800,8 @@ def _(NetworkGraph, NetworkGraphWidget, mo, sim_built):
         except Exception as exc:  # noqa: BLE001 — surface, don't crash the app
             return mo.md(f'_weight evolution graph failed: {exc}_')
 
-    mo.accordion({'#### Weight evolution graphic (configuration-space '
-                  'points × stages)': _()})
+    mo.accordion({'#### Weight evolution graphic (gate output '
+                  'ports × stages)': _()})
     return
 
 

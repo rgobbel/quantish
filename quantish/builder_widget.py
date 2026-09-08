@@ -2686,9 +2686,12 @@ function render({ model, el }) {
         width: Math.max(0, x1 - x0 - 2 * c.sw),
         height: Math.max(0, y1 - y0 - 2 * c.sw), fill: c.fill }));
       const tip = h('title');
-      tip.textContent = `configuration-space point: ${c.cs_point}\n` +
-        (c.role ? `${c.sign}${c.particle} composite amplitude at ${c.port}: ${c.value}\n` : '') +
-        `weight: ${c.weight}   Pr: ${c.pr}`;
+      // the node (a gate output port and what is there), then this
+      // cell's particle: |p@port| its magnitude, over both signs, and
+      // the probability it came from
+      tip.textContent = `${c.cs_point}\n` +
+        (c.port ? `|${c.particle}@${c.port}| = ${c.value}   Pr ${c.pr}`
+                : `${c.particle}: not at this gate`);
       g.appendChild(tip);
       svg.appendChild(g);
       cellEls.push(g);
