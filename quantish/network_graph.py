@@ -277,8 +277,14 @@ class NetworkGraph:
             y1 = y + node_h / 2 - i * band_h
             return x, y1 - band_h, y1  # (x-center, y0, y1)
 
+        # a particle reads as its sign then its name, the configuration
+        # labels' convention ('+p1', '−p2'): the sign is a coordinate,
+        # not a value
+        def signed(name, coord):
+            return f"{'+' if int(coord.sign) >= 0 else '−'}{name}"
+
         point_str = {p: ' '.join(
-            f'{n}@{c.position.endpoint}:{int(c.sign):+d}'
+            f'{signed(n, c)}@{c.position.endpoint}'
             for n, c in p.coords.items()) for step in steps for p in layers[step]}
 
         cells, stripes, arrows, labels = [], [], [], []
@@ -313,6 +319,7 @@ class NetworkGraph:
                 level = to_level(level) if kind == 'cell' else level
                 base = dict(x=xc, y0=y0, y1=y1,
                             particle=pname,
+                            sign=signed('', p.coords[pname]),
                             node=node_id[(ci, p)],
                             cs_point=point_str[p],
                             stroke=stroke, sw=sw,
@@ -324,11 +331,12 @@ class NetworkGraph:
                     cells.append(dict(
                         base,
                         fill=self.cell_color(level, HUES[i % len(HUES)]),
-                        value=f'{value.real:+.4f}{value.imag:+.4f}i'))
+                        # no forced leading '+': a weight is a number, the
+                        # sign shown beside the particle is a coordinate
+                        value=f'{value.real:.4f}{value.imag:+.4f}i'))
                 if mode == 'initial':
-                    sign = '+' if int(p.coords[pname].sign) >= 0 else '−'
                     labels.append(dict(x=xc, y=(y0 + y1) / 2,
-                                       text=f'{pname}{sign}'))
+                                       text=signed(pname, p.coords[pname])))
 
         def add_arrow(x0, y0, x1, y1, src, dst):
             arrows.append(dict(x=x0, y=y0, x2=x1, y2=y1,

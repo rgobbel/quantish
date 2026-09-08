@@ -2670,7 +2670,7 @@ function render({ model, el }) {
         height: Math.max(0, y1 - y0 - 2 * c.sw), fill: c.fill }));
       const tip = h('title');
       tip.textContent = `configuration-space point: ${c.cs_point}\n` +
-        `particle: ${c.particle}\nvalue: ${c.value}\nPr(point): ${c.pr}`;
+        `${c.sign}${c.particle} weight: ${c.value}\nPr(point): ${c.pr}`;
       g.appendChild(tip);
       svg.appendChild(g);
       cellEls.push(g);
