@@ -517,6 +517,13 @@ class Route:
     label_side: str | None = None
 
 
+# Routing trace: set to a list to have alloc_channel append one
+# (gap, link, chosen x, y_low, y_high, stage) tuple per channel choice —
+# stage names which acceptance pass produced it ('clean', 'crossings',
+# 'no-stub-clearance', 'no-spread', 'last-resort'). Off (None) normally.
+ROUTE_TRACE: list | None = None
+
+
 def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
     """Compute polyline paths for every link.
 
@@ -643,6 +650,7 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
     cur_link: list = [None]   # the link being routed, exempt from its own reserve
     horizontal_segments: list[tuple[float, float, float]] = []
     label_zones: list[tuple[float, float, float]] = []
+    stub_lines: list[tuple[float, float, float]] = []   # labeled stubs' own lines
     # who laid each horizontal (its link source), so the two arms of a
     # branching particle may share the stretch leaving the particle:
     # they fork at a channel, and the overlap IS the fork
@@ -666,6 +674,9 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
     # A vertical terminating within this distance of a stub's y reads as a
     # T-junction fusing the wires; farther away it's a clean crossing.
     _TJUNCTION_TOL = 0.10
+    # Two verticals in one channel keep at least this much clear of each
+    # other's ends (rows are 0.8 apart), so no two wires share a corner.
+    _CHANNEL_END_GAP = 0.30
     # Endpoint shrink for interval-interior tests.
     _CORNER_EPS = 0.02
 
@@ -747,6 +758,22 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
     # Minimum visual separation between two channels in the same gap.
     _CHANNEL_MIN_GAP = 0.30
 
+    def exit_on_row(gap: int, y: float) -> bool:
+        """Does an output port of the column at this gap's left send a
+        wire into the gap on row y? Its exit stub will need the gap's
+        left side, so a wire ENTERING a port on that row from this gap
+        must take a channel to the right (hug its destination) — else
+        the two stubs overlap on the row (fig 4.16 of 2026: g1.lower
+        into g4.control vs g1.control out; fig 4.16 of 2006: g2.upper
+        into g4.control vs g3.control out)."""
+        for other in parsed.links:
+            if SEP not in other or L.col_of.get(endpoint_gate(other)) != gap:
+                continue
+            oxy = src_xy(L, other, particles, delays)
+            if oxy is not None and abs(oxy[1] - y) < 0.05:
+                return True
+        return False
+
     def touches_stub_end(cx: float, y_low: float, y_high: float) -> bool:
         """Would a vertical at cx over (y_low, y_high) pass through the
         END of an existing horizontal (a labeled null-input stub, a
@@ -775,6 +802,14 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
             if y_low + 0.08 < sy_ < y_high - 0.08 and sx_lo < cx < sx_hi:
                 n += 1
         return n
+
+    def crosses_stub_line(cx: float, y_low: float, y_high: float) -> bool:
+        """A vertical at cx would run through a labeled stub's own line
+        — never acceptable while any other slot exists (its label's
+        room beside it is a soft crossing, counted above)."""
+        return any(y_low + 0.08 < sy_ < y_high - 0.08
+                   and sx_lo - 0.05 < cx < sx_hi + 0.05
+                   for sy_, sx_lo, sx_hi in stub_lines)
 
     def alloc_channel(gap: int, y_low: float, y_high: float,
                       stub_y: float | None = None,
@@ -809,12 +844,16 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
         used = gap_channels_used.setdefault(gap, [])
         sibling_xs = [ux for ux, _, _ in used
                       if _sibling_arm(channel_owner.get((gap, ux)))]
-        # spans that merely touch at an endpoint (one channel ends where the
-        # other begins) are NOT conflicts — only genuine overlap is; a
-        # sibling arm's channel is the one we WANT to share
+        # Two channels at one x conflict when their spans overlap OR come
+        # within _CHANNEL_END_GAP of touching: a span that ends where
+        # another begins puts both wires' corners on one point, which
+        # reads as a fused junction (fig 4.16 of 2006: g2's upper output
+        # turning right at the very point g3's control output turns up).
+        # A sibling arm's channel is the one we WANT to share.
         conflicts = [
             ux for ux, uy_lo, uy_hi in used
-            if not (y_high < uy_lo + 0.10 or y_low > uy_hi - 0.10)
+            if not (y_high < uy_lo - _CHANNEL_END_GAP
+                    or y_low > uy_hi + _CHANNEL_END_GAP)
             and ux not in sibling_xs
         ] + list(exclude_xs)
         # When spreading, every prior x acts as a soft-conflict for proximity.
@@ -845,9 +884,12 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
                 return True
             return stub_clean(stub_y, cx, stub_to)
 
-        def take(cx: float) -> float:
+        def take(cx: float, stage: str = 'clean') -> float:
             used.append((cx, y_low, y_high))
             channel_owner[(gap, cx)] = cur_link[0][0] if cur_link[0] else None
+            if ROUTE_TRACE is not None:
+                ROUTE_TRACE.append((gap, cur_link[0][0] if cur_link[0] else None,
+                                    round(cx, 3), y_low, y_high, stage))
             return cx
 
         # a sibling arm's channel is shared outright — the fork — unless
@@ -859,34 +901,38 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
         for cx in candidates:
             if not all(abs(cx - cf) >= _CHANNEL_MIN_GAP for cf in proximity_xs):
                 continue
-            if not stub_ok(cx) or touches_stub_end(cx, y_low, y_high):
+            if not stub_ok(cx) or touches_stub_end(cx, y_low, y_high) \
+                    or crosses_stub_line(cx, y_low, y_high):
                 continue
             if channel_crossings(cx, y_low, y_high):
                 continue
             return take(cx)
         # Relaxation 0: allow crossings — the fewest first — keeping stub
-        # clearance and min-gap.
+        # clearance, label clearance, and min-gap.
         for cx in sorted(candidates,
                          key=lambda c: channel_crossings(c, y_low, y_high)):
             if not all(abs(cx - cf) >= _CHANNEL_MIN_GAP for cf in proximity_xs):
                 continue
-            if not stub_ok(cx) or touches_stub_end(cx, y_low, y_high):
+            if not stub_ok(cx) or touches_stub_end(cx, y_low, y_high) \
+                    or crosses_stub_line(cx, y_low, y_high):
                 continue
-            return take(cx)
+            return take(cx, 'crossings')
         # Relaxation 1: drop the stub-clearance constraint, keep min-gap
-        # (a T-junction on a stub end stays off limits).
+        # (a T-junction on a stub end, or a run through a label, stays
+        # off limits).
         for cx in candidates:
             if all(abs(cx - cf) >= _CHANNEL_MIN_GAP for cf in proximity_xs) \
-                    and not touches_stub_end(cx, y_low, y_high):
-                return take(cx)
+                    and not touches_stub_end(cx, y_low, y_high) \
+                    and not crosses_stub_line(cx, y_low, y_high):
+                return take(cx, 'no-stub-clearance')
         # Relaxation 2: drop spread, keep y-conflict avoidance.
         if spread:
             for cx in candidates:
                 if all(abs(cx - cf) >= _CHANNEL_MIN_GAP for cf in conflicts):
-                    return take(cx)
+                    return take(cx, 'no-spread')
         # Last-resort: max distance from conflicts.
         best = max(candidates, key=lambda cx: min((abs(cx - cf) for cf in conflicts), default=10))
-        return take(best)
+        return take(best, 'last-resort')
 
     # Track per-lane usage. The below-base clears group-box bottoms, which
     # protrude GROUP_PAD beyond the lowest gate.
@@ -939,6 +985,7 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
     for points, _, _, _ in stub_specs:
         (ax, ay), (bx, by) = points[0], points[-1]
         add_horizontal(ay, ax, bx)
+        stub_lines.append((ay, min(ax, bx), max(ax, bx)))
         label_zones.append((ay, min(ax, bx) - _LABEL_ROOM,
                             max(ax, bx) + _LABEL_ROOM))
 
@@ -1030,11 +1077,17 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
                 # A vertical spanning more than one row pitch cuts across
                 # intermediate port rows; when it leaves a full gate
                 # column (three port rows, all busy with stubs), turning
-                # as early as possible keeps it clear of them. Delay and
-                # plate columns have no such congestion — their wires
-                # keep hugging the destination.
-                _hug = (sx if y_hi - y_lo > 1.2
-                        and endpoint_gate(src) in L.gate_xy else None)
+                # as early as possible keeps it clear of them. That
+                # applies in the source column's own gap only: farther
+                # along, hugging the destination keeps the entry stub
+                # short and leaves the gap's left side to the exit stubs
+                # of ports on the destination's row (fig 4.16 of 2006:
+                # g2.upper's stub into g4.control vs g3.control's stub
+                # out). Delay and plate columns have no such congestion
+                # — their wires keep hugging the destination.
+                _hug = (sx if y_hi - y_lo > 1.2 and gap == s_col
+                        and endpoint_gate(src) in L.gate_xy
+                        and not exit_on_row(gap, dy) else None)
                 cx = alloc_channel(gap, y_lo, y_hi, stub_y=dy, stub_to=dx,
                                    spread=(gap == -1), exclude_xs=tried,
                                    hug_x=_hug)
@@ -1199,25 +1252,38 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
             return all(stub_clean(yy, xa, xb, exempt_xs=(cx_, d_cx_))
                        for yy, xa, xb in ((sy, sx, cx_), (dy, d_cx_, dx)))
 
-        # Try lane candidates nearest-first; keep the first whose channel
-        # allocations leave both stubs clean. Roll back failed allocations.
+        # Try every lane candidate: allocate its two channels, keep the
+        # lane whose stubs are clean and whose channels cross the fewest
+        # wires (a lane arcing over the diagram beats one that cuts
+        # through two straight wires), nearest first among equals. Each
+        # trial's allocations are rolled back; the winner's are redone.
         lane_y = cx = d_cx = None
-        for ly in valid:
+        best = None
+        for rank, ly in enumerate(valid):
             cx_try = alloc_channel(src_gap, min(sy, ly), max(sy, ly),
                                    stub_y=sy, stub_to=sx,
                                    spread=(src_gap == -1))
             d_cx_try = alloc_channel(dst_gap, min(dy, ly), max(dy, ly),
                                      stub_y=dy, stub_to=dx,
                                      spread=(dst_gap == -1))
-            if stubs_clean(ly, cx_try, d_cx_try):
-                lane_y, cx, d_cx = ly, cx_try, d_cx_try
-                below = lane_y < min(sy, dy)
-                (lanes_below if below else lanes_above).append(
-                    (lane_y, x_span_lo, x_span_hi))
-                break
-            # roll the failed channel allocations back
+            clean = stubs_clean(ly, cx_try, d_cx_try)
+            crossings = (channel_crossings(cx_try, min(sy, ly), max(sy, ly))
+                         + channel_crossings(d_cx_try, min(dy, ly), max(dy, ly)))
             gap_channels_used[dst_gap].pop()
             gap_channels_used[src_gap].pop()
+            if clean and (best is None or (crossings, rank) < best[0]):
+                best = ((crossings, rank), ly)
+        if best is not None:
+            lane_y = best[1]
+            cx = alloc_channel(src_gap, min(sy, lane_y), max(sy, lane_y),
+                               stub_y=sy, stub_to=sx,
+                               spread=(src_gap == -1))
+            d_cx = alloc_channel(dst_gap, min(dy, lane_y), max(dy, lane_y),
+                                 stub_y=dy, stub_to=dx,
+                                 spread=(dst_gap == -1))
+            below = lane_y < min(sy, dy)
+            (lanes_below if below else lanes_above).append(
+                (lane_y, x_span_lo, x_span_hi))
         if lane_y is None:
             # Fall back to a fresh lane (alloc_lane bumps to a new y if
             # needed), accepting best-effort stubs as before.

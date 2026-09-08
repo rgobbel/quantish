@@ -1,8 +1,14 @@
 """Configuration-space point evolution DAG of a simulation.
 
 Each glyph is one configuration-space point: a stack of cells, one per particle
-(hue = particle identity, brightness = magnitude, dark = 0, light = 1;
-fine black diagonal stripes = nothing happened to it). Arrows show
+(hue = particle identity; brightness = the magnitude of that particle's
+COMPOSITE amplitude at its port this step — both signs summed over the
+step's configuration-space points, at the output port of a switch wire
+or at the control port — dark = 0, light = 1; fine black diagonal
+stripes on white = the particle was at no gate this stage). A node's
+label names the particles at the outputs of the stage's gates — a
+particle not in a gate that stage is not mentioned; at the start every
+particle is at ORIGIN. Arrows show
 successor relationships and respect particle identity: they leave only the
 cells of particles that have been active, and land on the same particle's
 cell in the successor.
@@ -10,11 +16,11 @@ cell in the successor.
 Columns, left to right:
 - initial: the configured entry weights, labeled per particle (the hue
   key); arrows leave the cells of the particles the first stage acts on;
-- per stage, a result column — a switch particle's cell shows the
-  magnitude of the component the gate applied, but only when the gate did
-  something (split or controlled reroute; an angle-0 gate with no control
-  is a no-op and stays striped); a particle that passed through a control
-  shows the magnitude of the control input; when a stage gate's control
+- per stage, a result column — a particle was acted on when it was an
+  input to any port of one of the stage's gates: its cell shows its
+  composite amplitude at the output port it left (a switch wire) or at
+  the control port it passed through; a particle at no gate of the
+  stage is striped; when a stage gate's control
   was occupied, the switch-wire cells of the stage's control-wired gates
   carry a thicker border in the controller's hue;
 - a state's history ends with one settled glyph in the column after its
@@ -35,7 +41,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from quantish.config_space import ConfigSpace, GatePort
-from quantish.display import cs_point_sort_key, strip_markdown
+from quantish.display import cs_point_sort_key, port_particle_amps, strip_markdown
 from quantish.simulation import Simulation
 from quantish.qnumber import probability, to_float
 import quantish.qnumber as qn
@@ -124,51 +130,45 @@ class NetworkGraph:
                         found[g] = pname
             return found
 
-        def parent_weight_sum(w):
-            weights = [parent.weight for parent in w.contributions]
-            if not weights:
-                return w.weight
-            total = weights[0]
-            for extra in weights[1:]:
-                total = total + extra
-            return total
+        # Randy's definition (2026-09-08): a particle was ACTED ON at a
+        # gate when it was an input to any of the gate's three ports in
+        # that stage. Its cell's lightness is the magnitude of its
+        # COMPOSITE amplitude at that port — both signs summed over every
+        # configuration-space point of the step — at the output port for
+        # a switch wire, and at the control port (no in/out distinction)
+        # for a control pass-through: the same quantity the circuit
+        # diagram's port boxes report. One lookup per (step, port).
+        composite_cache = {}
 
-        def gate_acted(w, pname):
-            origin = w.coords[pname].position.origin
-            if origin is None or origin.gate not in sim.gates \
-                    or origin.gate in delays:
-                return False
-            if to_float(sim.gates[origin.gate].theta) != 0.0:
-                return True
-            control = GatePort(origin.gate, 'control')
-            return any(c.position.endpoint == control
-                       for parent in w.contributions
-                       for c in parent.coords.values())
+        def composite(step, port):
+            key = (step, port)
+            if key not in composite_cache:
+                composite_cache[key] = port_particle_amps(sim, step, port)
+            return composite_cache[key]
 
         def action_cells(w):
-            """pname -> (kind, level, value) for the point's own action:
-            entry weights for initial points, the stage's effect otherwise.
-            kind is 'cell' or 'striped'; value is the complex behind the
-            level, for tooltips."""
+            """pname -> (kind, level, value, role, port) for the point's
+            own action at this step. kind is 'cell' or 'striped' (the
+            particle was not at any gate of the stage); value is the
+            particle's composite amplitude at its port; role is 'entry'
+            (initial column), 'control', or 'output'."""
             out = {}
             for pname in sorted(w.coords.keys()):
                 if w.step == steps[0]:
                     weight = w.particles.get(pname, 1.0)
                     weight = weight if weight is not None else 1.0
-                    out[pname] = ('cell', self.magnitude(weight), complex(weight))
+                    out[pname] = ('cell', self.magnitude(weight), complex(weight),
+                                  'entry', 'ORIGIN')
                     continue
                 origin = w.coords[pname].position.origin
-                if origin is not None and origin.port == 'control' \
-                        and origin.gate in stage_gates_at(w.step) \
-                        and origin.gate not in delays:
-                    carried = parent_weight_sum(w)
-                    out[pname] = ('cell', self.magnitude(carried), complex(carried))
+                if origin is None or origin.gate not in stage_gates_at(w.step):
+                    out[pname] = ('striped', None, None, None, None)
                     continue
-                component = w.particles.get(pname)
-                if component is not None and gate_acted(w, pname):
-                    out[pname] = ('cell', self.magnitude(component), complex(component))
-                    continue
-                out[pname] = ('striped', None, None)
+                amp = composite(w.step, origin).get(pname)
+                value = complex(amp) if amp is not None else complex(w.weight)
+                role = 'control' if origin.port == 'control' else 'output'
+                out[pname] = ('cell', self.magnitude(value), value, role,
+                              str(origin))
             return out
 
         cells_of = {p: action_cells(p) for step in steps for p in layers[step]}
@@ -177,7 +177,7 @@ class NetworkGraph:
         # linearly into LEVEL_FLOOR…1 (the floor keeps the smallest
         # magnitudes visibly off-black)
         vmax = max((lv for kinds in cells_of.values()
-                    for kind, lv, _v in kinds.values()
+                    for kind, lv, _v, _r, _p in kinds.values()
                     if kind == 'cell' and lv is not None), default=1.0) or 1.0
 
         def to_level(raw):
@@ -283,9 +283,22 @@ class NetworkGraph:
         def signed(name, coord):
             return f"{'+' if int(coord.sign) >= 0 else '−'}{name}"
 
-        point_str = {p: ' '.join(
-            f'{signed(n, c)}@{c.position.endpoint}'
-            for n, c in p.coords.items()) for step in steps for p in layers[step]}
+        def where(p):
+            """The point's label: where its particles are at the OUTPUTS
+            of this stage's gates — a particle not in a gate this stage
+            is simply not mentioned; at the start every particle is at
+            ORIGIN."""
+            if p.step == steps[0]:
+                return ' '.join(f'{signed(n, c)}@ORIGIN'
+                                for n, c in p.coords.items())
+            gates = set(stage_gates_at(p.step))
+            parts = [f'{signed(n, c)}@{c.position.origin}'
+                     for n, c in p.coords.items()
+                     if c.position.origin is not None
+                     and c.position.origin.gate in gates]
+            return ' '.join(parts) if parts else '(in flight)'
+
+        point_str = {p: where(p) for step in steps for p in layers[step]}
 
         cells, stripes, arrows, labels = [], [], [], []
 
@@ -308,8 +321,9 @@ class NetworkGraph:
                                 and origin.port != 'control':
                             control_edges[pname] = edge
             pr = to_float(probability(p.weight))
+            w_c = complex(p.weight)
             for i, pname in enumerate(pnames):
-                kind, level, value = cells_of[p][pname]
+                kind, level, value, role, port = cells_of[p][pname]
                 xc, y0, y1 = cell_rect(ci, p, pname)
                 # a control-swapped cell's own border is the control cue:
                 # thick, in the controlling particle's hue — otherwise the
@@ -323,6 +337,9 @@ class NetworkGraph:
                             node=node_id[(ci, p)],
                             cs_point=point_str[p],
                             stroke=stroke, sw=sw,
+                            role=role or '',
+                            port=port or '',
+                            weight=f'{w_c.real:.4f}{w_c.imag:+.4f}i',
                             pr=f'{pr:.4f}')
                 if kind == 'striped':
                     cells.append(dict(base, fill='#ffffff', value='—'))
@@ -346,6 +363,32 @@ class NetworkGraph:
             xc, y0, y1 = cell_rect(ci, p, pname)
             return (y0 + y1) / 2
 
+        # Arrows are the wires: one per particle that ACTS at a node,
+        # from the cell where that particle last acted (or its entry
+        # cell) to its cell here — spanning the columns it spent in
+        # flight, exactly as the circuit's wire bypasses the stages
+        # between (fig 4.16: g1.upper straight to g2.upper over the
+        # observe/unobserve columns). A particle in flight draws no
+        # arrow of its own. A node no particle acts at (a waiting carry)
+        # keeps a plain node-to-node arrow from its parent so lineage
+        # highlighting stays connected.
+        col_of_point = {p: ci for ci, glyphs in enumerate(col_glyphs)
+                        for p, mode in glyphs if mode in ('initial', 'result')}
+
+        def last_active(parent, n, _seen=None):
+            """The glyph points where particle n last acted on the way
+            to `parent` (inclusive): the parent itself when active there
+            or at the initial column, else its own parents' answers."""
+            if parent.step == steps[0] or is_active(parent, n):
+                return {parent}
+            found = set()
+            for gp in visible_parents(parent):
+                if n in gp.coords:
+                    found |= last_active(gp, n)
+            return found
+
+        drawn = set()
+
         for ci, glyphs in enumerate(col_glyphs):
             for p, mode in glyphs:
                 add_cells(ci, p, mode)
@@ -364,26 +407,29 @@ class NetworkGraph:
                     else:
                         add_arrow(px, py, x, y, (ci - 1, p), (ci, p))
                     continue
+                movers = [n for n in sorted(p.coords.keys()) if is_active(p, n)]
                 for parent in visible_parents(p):
                     if (ci - 1, parent) not in pos:
                         continue
-                    px, py = pos[(ci - 1, parent)]
-                    if parent.step == steps[0]:
-                        # out of the initial column: from the entry cells of
-                        # the particles the first stage acts on
-                        movers = [n for n in sorted(parent.coords.keys())
-                                  if n in p.coords and is_active(p, n)]
-                    else:
-                        movers = [n for n in sorted(parent.coords.keys())
-                                  if n in p.coords and is_active(parent, n)]
-                    if movers:
-                        for n in movers:
-                            add_arrow(px, cell_mid(ci - 1, parent, n),
+                    if not movers:
+                        px, py = pos[(ci - 1, parent)]
+                        add_arrow(px, py, x, y, (ci - 1, parent), (ci, p))
+                        continue
+                    for n in movers:
+                        if n not in parent.coords:
+                            continue
+                        for anc in last_active(parent, n):
+                            cj = col_of_point.get(anc)
+                            if cj is None or (cj, anc) not in pos:
+                                continue
+                            key = (node_id[(cj, anc)], node_id[(ci, p)], n)
+                            if key in drawn:
+                                continue
+                            drawn.add(key)
+                            ax, _ = pos[(cj, anc)]
+                            add_arrow(ax, cell_mid(cj, anc, n),
                                       x, cell_mid(ci, p, n),
-                                      (ci - 1, parent), (ci, p))
-                    else:
-                        add_arrow(px, py, x, y,
-                                  (ci - 1, parent), (ci, p))
+                                      (cj, anc), (ci, p))
 
         return dict(col_labels=col_labels, layer_max=layer_max,
                     n_columns=len(col_labels), band_h=band_h,

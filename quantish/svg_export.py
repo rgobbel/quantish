@@ -46,6 +46,28 @@ def _el(tag, /, text=None, **attrs):
     return f'<{tag}{parts}>{escape(str(text))}</{tag}>'
 
 
+WIRE_CORNER_R = 0.22   # layout units; mirrored in the widget's `rounded`
+
+
+def rounded_path(pts) -> str:
+    """An SVG path through the polyline's points with each corner
+    rounded (a quadratic curve of radius WIRE_CORNER_R, capped by half
+    of either leg), so a wire turning beside another wire's run reads
+    as a turn rather than a crossing."""
+    if len(pts) < 3:
+        return 'M ' + ' L '.join(f'{x:.4g} {y:.4g}' for x, y in pts)
+    d = f'M {pts[0][0]:.4g} {pts[0][1]:.4g}'
+    for i in range(1, len(pts) - 1):
+        (px, py), (bx, by), (nx, ny) = pts[i - 1], pts[i], pts[i + 1]
+        din = math.hypot(bx - px, by - py) or 1
+        dout = math.hypot(nx - bx, ny - by) or 1
+        r = min(WIRE_CORNER_R, din / 2, dout / 2)
+        d += (f' L {bx - (bx - px) / din * r:.4g} {by - (by - py) / din * r:.4g}'
+              f' Q {bx:.4g} {by:.4g}'
+              f' {bx + (nx - bx) / dout * r:.4g} {by + (ny - by) / dout * r:.4g}')
+    return d + f' L {pts[-1][0]:.4g} {pts[-1][1]:.4g}'
+
+
 def diagram_svg(g: dict) -> str:
     """The circuit diagram geometry as standalone SVG (the widget's
     natural scale; the full padded extent, no zoom viewport)."""
@@ -78,9 +100,10 @@ def diagram_svg(g: dict) -> str:
                        stroke='#000000', stroke_width=f'{1 / S:.4g}',
                        stroke_dasharray=f'{3 / S:.4g} {3 / S:.4g}'))
     for seg in g.get('wires', []):
-        pts = ' '.join(f"{p['x']:.4g},{fy(p['y']):.4g}" for p in seg)
-        out.append(_el('polyline', points=pts, fill='none',
-                       stroke=g['wire_color'],
+        # rounded corners, as the widget draws them (WIRE_CORNER_R)
+        out.append(_el('path', d=rounded_path([(p['x'], fy(p['y']))
+                                               for p in seg]),
+                       fill='none', stroke=g['wire_color'],
                        stroke_width=f'{1.3 / S:.4g}'))
     for a in g.get('arrows', []):
         s = 5.4 / S

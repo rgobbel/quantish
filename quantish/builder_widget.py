@@ -2019,9 +2019,26 @@ function render({ model, el }) {
         fill: 'none', stroke: '#000000', 'stroke-width': 1 / S,
         'stroke-dasharray': `${3 / S} ${3 / S}`,
       }));
+    // wires: polylines with softly rounded corners, so a wire turning
+    // beside another wire's run reads as a turn, not a crossing
+    const rounded = (pts) => {
+      const R = 0.22;   // layout units; capped by half of each leg
+      if (pts.length < 3)
+        return 'M ' + pts.map((p) => `${p[0]} ${p[1]}`).join(' L ');
+      let d = `M ${pts[0][0]} ${pts[0][1]}`;
+      for (let i = 1; i < pts.length - 1; i++) {
+        const [px, py] = pts[i - 1], [bx, by] = pts[i], [nx, ny] = pts[i + 1];
+        const din = Math.hypot(bx - px, by - py) || 1;
+        const dout = Math.hypot(nx - bx, ny - by) || 1;
+        const r = Math.min(R, din / 2, dout / 2);
+        d += ` L ${bx - (bx - px) / din * r} ${by - (by - py) / din * r}`
+           + ` Q ${bx} ${by} ${bx + (nx - bx) / dout * r} ${by + (ny - by) / dout * r}`;
+      }
+      return d + ` L ${pts[pts.length - 1][0]} ${pts[pts.length - 1][1]}`;
+    };
     for (const seg of g.wires || [])
-      svg.appendChild(h('polyline', {
-        points: seg.map((p) => `${p.x},${fy(p.y)}`).join(' '),
+      svg.appendChild(h('path', {
+        d: rounded(seg.map((p) => [p.x, fy(p.y)])),
         fill: 'none', stroke: g.wire_color, 'stroke-width': 1.3 / S,
       }));
     for (const a of g.arrows || []) {
@@ -2670,7 +2687,8 @@ function render({ model, el }) {
         height: Math.max(0, y1 - y0 - 2 * c.sw), fill: c.fill }));
       const tip = h('title');
       tip.textContent = `configuration-space point: ${c.cs_point}\n` +
-        `${c.sign}${c.particle} weight: ${c.value}\nPr(point): ${c.pr}`;
+        (c.role ? `${c.sign}${c.particle} composite amplitude at ${c.port}: ${c.value}\n` : '') +
+        `weight: ${c.weight}   Pr: ${c.pr}`;
       g.appendChild(tip);
       svg.appendChild(g);
       cellEls.push(g);

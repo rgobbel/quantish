@@ -118,3 +118,25 @@ def test_branching_arms_share_one_channel(path):
                   if _segments(a.points)[1]]
         assert len(firsts) == 2 and abs(firsts[0] - firsts[1]) < 1e-6, \
             f'{pname}: the arms leave along different channels {firsts}'
+
+
+@pytest.mark.parametrize('path', MODEL_FILES,
+                         ids=[str(p.relative_to(MODELS)) for p in MODEL_FILES])
+def test_no_two_wires_share_a_corner(path):
+    """Two different wires never turn at the same point: two channels
+    that touch end to end put both wires' corners on one spot, which
+    reads as a fused junction (fig 4.16 of 2006, g2.upper vs g3.control)."""
+    _, circuit, L, wires, _ = _routed(path)
+    owners = [_source_of(w, circuit, L) for w in wires]
+    corners = {}
+    for i, w in enumerate(wires):
+        for pt in w.points[1:-1]:
+            key = (round(pt[0], 2), round(pt[1], 2))
+            other = corners.get(key)
+            oi, oj = owners[i], other
+            if other is not None and other != oi:
+                if oi and oj and '.' not in oi and '.' not in oj \
+                        and base_name(oi) == base_name(oj):
+                    continue   # sibling arms fork at a shared corner
+                raise AssertionError(f'wires {oi} and {oj} both turn at {key}')
+            corners[key] = oi
