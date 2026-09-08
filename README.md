@@ -91,7 +91,7 @@ uv run marimo run notebooks/quantish_app.py
 
 This will open a [marimo](https://marimo.io) notebook app, including 
   interactive circuit diagrams, tables showing numeric results, and a few other demos:
-- a way to run a model using Monte Carlo sampling to collect classical-world statistics
+- a way to run a model using Monte Carlo sampling to collect classical-world statistics, in either of two modes — two interpretations sampling the same wave (see below)
 - (for networks that model the full EPR setup) a simulation of a full Bell/CHSH sweep, comparing observed values with analytically-derived expected values from a quantum world, as well as expected values from classical non-quantum physics
 - an interactive weight-split explorer to clarify the effect of weight-splitting in quantish gates
 
@@ -199,7 +199,10 @@ Some useful options (see `--help` for the full list):
 - `--diagram-format png,svg,pdf` — output formats (default `svg`;
   Mermaid always writes its `.mmd` source as well)
 - `--diagram-when both` — circuit diagrams before and/or after the run
-- `--sample --n-samples N` — Monte Carlo sampling of outcomes
+- `--sample --n-samples N` — Monte Carlo sampling of outcomes;
+  `--mc-mode terminal|pilot|both` picks the interpretation (below);
+  `--epr-mode terminal|pilot|hidden` picks the model for the Bell sweep's
+  sampled rates
 - `--epr-stats` — the Bell/CHSH sweep on an EPR model
 - `--set NAME=EXPR` — override a model variable, e.g. `--set theta2=pi/8`
 - `--loglevel debug` — a detailed trace of every gate firing and
@@ -228,6 +231,42 @@ beyond the book's gates, which have only the measurement angle; the
 default of 0 leaves every book figure exactly as printed. The double-slit
 app uses a phase plate to carry each screen pixel's path-length
 difference.
+
+### Monte Carlo: two interpretations of one wave, and a local model
+
+The engine always computes the whole wave — every configuration-space
+point with its weight. Monte Carlo sampling then asks what a single run
+of the experiment looks like, and the answer depends on the
+interpretation, so two samplers are offered on the same models:
+
+- **terminal** draws one final configuration-space point per trial with
+  probability |w|². This is the Everettian "which branch am I in"
+  sampler, and the faithful simulation of a real experiment: interference
+  stays intact until observation and the frequencies converge on the
+  exact values.
+- **pilot** (de Broglie–Bohm) follows one guided trajectory per trial: a
+  single actual configuration advances stage by stage, each stage's
+  transition probabilities fitted to the full wave, so at every stage
+  the configurations are distributed exactly as |w|². It never
+  dead-ends, it matches every prediction, and it is nonlocal — the
+  transition probabilities depend on the whole wave, both branches. Discrete
+  pilot-wave dynamics are not unique (Bell's 1984 formulation is
+  stochastic for that reason; Vink 1993 shows the continuum limit
+  recovers Bohm's deterministic guidance); this implementation picks the
+  maximum-entropy coupling on the edges of the configuration-space
+  graph. The empirical content — walker statistics equal to |w|² at
+  every stage — is common to all such choices.
+The Bell/CHSH sweep offers a third choice that samples no wave at all:
+**hidden**, Bell's local hidden-variable example. Each trial draws one
+hidden angle λ uniformly from [0, π) — the model's only randomness, the
+variable the source hands to both particles — and each detector then
+reads its outcome deterministically from λ and its own angle alone:
+sign cos 2(θ − λ). Its discrepancy converges on the linear law
+2|θ1 − θ2|/π of the classical grid, which saturates Bell's inequality
+and respects the CHSH bound; the quantish wave crosses both. The CLI runs the sweep under one model with
+`--epr-mode`; the quantish app's Monte Carlo section and its Bell/CHSH
+sweep both let you choose several at once and compare the grids and
+verdicts side by side.
 
 ### Tests
 

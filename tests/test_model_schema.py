@@ -39,7 +39,7 @@ def test_schema_rejects_bad_configs():
             lambda c: c.pop('title'),
             lambda c: c.update(unknown_option=True),
             lambda c: c['particles']['p1'].pop('sign'),
-            lambda c: c['particles']['p1'].update(colour='red'),
+            lambda c: c['particles']['p1'].update(color='red'),
             lambda c: c['gates']['g1'].pop('angle'),
             lambda c: c['run_stages'].update(s2='g1'),  # not a list
             lambda c: c.update(symbolic='yes')):        # not a bool

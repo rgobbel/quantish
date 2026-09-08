@@ -23,9 +23,12 @@ variables:
    theta1: '0'
    theta2: '0'
 
-   Qa: 'pi/4'
+   # the Bell/CHSH sweep's default set of measurement angles (0°, 22.5°,
+   # 45°); only their differences matter, and this equal spacing drives
+   # CHSH to 1 + √2
+   Qa: '0'
    Qb: 'pi/8'
-   Qc: '3 * pi/8'
+   Qc: 'pi/4'
 
    Q1: 'pi/6'
 

@@ -200,3 +200,22 @@ button:not([data-state]) { white-space: nowrap; }
     text-decoration: underline;
     text-underline-offset: 0.15em;
 }
+
+/* An explanation whose paragraph introduces a list: the list follows
+   the paragraph closely instead of a full paragraph gap (marimo renders
+   paragraphs as .paragraph spans and gives lists prose margins). */
+.tight-list .paragraph:has(+ ul) { margin-bottom: 0 !important; }
+.tight-list .paragraph + ul { margin-top: 0.3em !important; }
+
+/* Consecutive paragraphs of one explanation sit closer than marimo's
+   prose spacing (the EPR section's opening block). */
+.tight-paragraphs .paragraph + .paragraph,
+.tight-paragraphs .paragraph + ul,
+.tight-paragraphs ul + .paragraph,
+.tight-paragraphs .paragraph + table,
+.tight-paragraphs table + .paragraph { margin-top: 0.5em !important; }
+.tight-paragraphs .paragraph, .tight-paragraphs ul,
+.tight-paragraphs table { margin-bottom: 0 !important; }
+
+/* The sampling-model checkbox rows: each label stays on one line. */
+.mode-boxes label, .mode-boxes .paragraph { white-space: nowrap; }

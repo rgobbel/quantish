@@ -131,10 +131,10 @@ class ConfigSpacePoint:
         # this configuration-space point (None = passed through untouched); display data for
         # the per-particle bands of the weight-evolution graph
         self.particles: dict[str, Optional[Complex]] = {}
-        # True when interference cancelled this configuration-space point's weight to zero: it
+        # True when interference canceled this configuration-space point's weight to zero: it
         # was dropped from the live set but stays in the all-points history
         # so the weight-evolution graph/table can show the cancellation
-        self.cancelled = False
+        self.canceled = False
 
     @property
     def key(self):
@@ -398,7 +398,7 @@ class ConfigSpaceRunner:
                 point.weight = qn.simplify(point.weight)
                 if qn.zerop(point.weight):
                     log.debug(f'   dropping zero-weight point {point.key}')
-                    point.cancelled = True
+                    point.canceled = True
                     # all_points.record(point)
                     Q_next.remove(point)
             # the step's final output, last thing before the total so the

@@ -142,7 +142,7 @@ def pos_sign_lines(sim, pos):
     probs = defaultdict(lambda: defaultdict(lambda: qn.ZERO))
     amps = defaultdict(lambda: qn.Complex(0))
     for point in sim.all_points.index.values():
-        if point.step != step or point.cancelled:
+        if point.step != step or point.canceled:
             continue
         for pname, coord in point.coords.items():
             if coord.position.origin == port:
@@ -194,7 +194,7 @@ def port_summary(sim, step, port, end='origin'):
     probs = defaultdict(lambda: defaultdict(lambda: qn.ZERO))  # pname -> sign -> Σ|w|²
     amps = defaultdict(lambda: qn.Complex(0))  # pname -> Σ of configuration-space point weights
     for point in sim.all_points.index.values():
-        if point.step != step or point.cancelled:
+        if point.step != step or point.canceled:
             continue
         for pname, coord in point.coords.items():
             where = (coord.position.origin if end == 'origin'
@@ -259,7 +259,7 @@ def port_particle_amps(sim, step, port, end='origin'):
     if sim.all_points is None:
         return amps
     for point in sim.all_points.index.values():
-        if point.step != step or point.cancelled:
+        if point.step != step or point.canceled:
             continue
         for pname, coord in point.coords.items():
             where = (coord.position.origin if end == 'origin'

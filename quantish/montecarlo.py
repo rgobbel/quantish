@@ -4,23 +4,34 @@ Replaces the old spacewalk module. Each trial produces one observed outcome,
 as a real-world run of the experiment would; tabulating many trials
 approximates the exact configuration-space point probabilities.
 
-Two sampling modes:
+Two samplers here — two interpretations sampling the same wave — and
+a third model in epr.py that samples no wave at all:
 
 terminal
-    Draw a final configuration-space point with probability |weight|^2 (renormalized). The
-    superposition evolves undisturbed until the end, so interference is
-    fully preserved and observed frequencies converge on point.probability.
-    This is the faithful simulation of a real experiment.
+    Draw a final configuration-space point with probability |weight|^2
+    (renormalized). The superposition evolves undisturbed until the end,
+    so interference is fully preserved and observed frequencies converge
+    on point.probability. The Everettian "which branch am I in" sampler,
+    and the faithful simulation of a real experiment.
 
-path
-    Walk the full quantish state's DAG one stage at a time: from the current
-    configuration-space point, choose a successor with probability proportional to
-    |the amplitude this world contributed to it|^2. Each trial yields a
-    full world-line (a story of the run), but choosing per stage amounts to
-    collapsing at every stage: on circuits where worlds interfere, path
-    statistics legitimately diverge from the exact probabilities.
-    The divergence itself is informative — it measures how much
-    interference matters downstream.
+pilot
+    One guided trajectory per trial, steered by the full wave (de
+    Broglie-Bohm, in the discrete stochastic form of Bell 1984 / Vink
+    1993): at each stage the actual configuration moves to a successor
+    with a probability from a coupling whose marginals are the stage's
+    exact |w|^2 (pilot_transitions), so the walker is distributed as
+    the wave at every stage, never dead-ends, and matches every
+    prediction — nonlocally, since the whole wave steers it. Discrete
+    pilot-wave dynamics are not unique; this picks the maximum-entropy
+    coupling on the DAG's edges.
+
+hidden (epr.sample_hidden_variable, for the Bell/CHSH sweep only)
+    Bell's local hidden-variable example: each trial draws one hidden
+    angle shared by both particles at the source, and each detector
+    reads its outcome from that angle and its own setting alone. Its
+    discrepancy is the linear law 2|θ1 − θ2|/π, which saturates Bell's
+    inequality — the most a local model can do, and the bound the wave
+    crosses.
 """
 import logging
 import random
@@ -54,39 +65,107 @@ def sample_terminal(result_space, n_trials: int, rng: random.Random) -> Counter:
     return Counter(p.key for p in picks)
 
 
-def sample_paths(initial_point, n_steps: int, n_trials: int,
-                 rng: random.Random) -> tuple[Counter, int]:
-    """Walk the world DAG stage by stage, n_trials times.
+def _sinkhorn(kernel: dict, row_mass: dict, col_mass: dict,
+              iters: int = 500, tol: float = 1e-12) -> dict:
+    """Scale a nonnegative kernel on the predecessor->successor edges so
+    its row sums equal each predecessor's |w|^2 and its column sums each
+    successor's |w'|^2 (iterative proportional fitting). The result is a
+    coupling: a joint distribution over (predecessor, successor) whose
+    marginals are the stage's exact probabilities."""
+    coupling = dict(kernel)
+    rows = {i: [e for e in coupling if e[0] is i] for i in row_mass}
+    cols = {j: [e for e in coupling if e[1] is j] for j in col_mass}
+    for _ in range(iters):
+        worst = 0.0
+        for i, edges in rows.items():
+            s = sum(coupling[e] for e in edges)
+            if s > 0:
+                f = row_mass[i] / s
+                for e in edges:
+                    coupling[e] *= f
+        for j, edges in cols.items():
+            s = sum(coupling[e] for e in edges)
+            if s > 0:
+                f = col_mass[j] / s
+                for e in edges:
+                    coupling[e] *= f
+        for i, edges in rows.items():
+            s = sum(coupling[e] for e in edges)
+            worst = max(worst, abs(s - row_mass[i]))
+        if worst < tol:
+            break
+    return coupling
 
-    At each stage the next world is chosen among the current world's
-    successors with probability proportional to |contributed amplitude|^2.
-    Returns (tally of final-world keys, number of dead-ended trials).
-    Trials dead-end only when every successor's weight was cancelled by
-    interference (the contributed amplitude went nowhere observable).
+
+def pilot_transitions(initial_points) -> tuple[list[dict], list[list]]:
+    """Bell-Vink style guidance for the discrete pilot wave.
+
+    For each stage, a transition table P(successor | predecessor) over the
+    live configuration-space points, chosen so that a walker distributed as
+    |w|^2 over the predecessors is distributed as |w'|^2 over the successors
+    (equivariance). The walker therefore tracks the wave exactly, stage by
+    stage, and can never step onto a point whose weight interference has
+    canceled. The discrete pilot wave is not unique; this picks the
+    maximum-entropy coupling on the DAG's edges, seeded with each edge's
+    squared contributed amplitude and fitted to the exact marginals.
+    Returns (per-stage transition tables, per-stage live point lists).
     """
+    live = [p for p in (initial_points if isinstance(initial_points, (list, tuple))
+                        else [initial_points]) if _prob(p.weight) > 0]
+    tables, levels = [], [list(live)]
+    while True:
+        nxt = {}
+        for p in live:
+            for s in p.successors:
+                if s.step == p.step + 1 and _prob(s.weight) > 0:
+                    nxt[id(s)] = s
+        succ = list(nxt.values())
+        if not succ:
+            break
+        row = {p: _prob(p.weight) for p in live}
+        col = {s: _prob(s.weight) for s in succ}
+        kernel = {(p, s): _prob(s.contributions[p])
+                  for p in live for s in succ if p in s.contributions}
+        coupling = _sinkhorn(kernel, row, col)
+        table = {}
+        for (p, s), mass in coupling.items():
+            if mass > 0:
+                table.setdefault(p, []).append((s, mass / row[p]))
+        # the fit is feasible when every live predecessor has a live
+        # successor on its edges — unitarity plus the merge rule should
+        # guarantee it; say so if a model ever breaks it
+        stranded = [p for p in live if p not in table]
+        if stranded:
+            log.warning(f'pilot wave: {len(stranded)} configuration-space '
+                        f'point(s) at step {live[0].step} have no live '
+                        f'successor; guided trajectories from them stop there')
+        tables.append(table)
+        live = succ
+        levels.append(list(live))
+    return tables, levels
+
+
+def sample_pilot(initial_points, n_trials: int, rng: random.Random,
+                 transitions=None) -> Counter:
+    """One pilot-wave trajectory per trial: the wave (all weights, every
+    branch) is computed as usual; a single actual configuration moves along
+    the DAG using pilot_transitions. Never dead-ends. `transitions` (a
+    pilot_transitions result) lets a chunked caller fit the guidance
+    once and draw many times."""
+    tables, levels = (transitions if transitions is not None
+                      else pilot_transitions(initial_points))
+    starts = levels[0]
+    start_w = [_prob(p.weight) for p in starts]
     tally = Counter()
-    dead_ends = 0
-    # a branching model has several starting points: each trial draws
-    # one by its probability, like every later step draws a successor
-    starts = (list(initial_point) if isinstance(initial_point, (list, tuple))
-              else [initial_point])
-    start_weights = [_prob(s.weight) for s in starts]
     for _ in range(n_trials):
-        world = (starts[0] if len(starts) == 1
-                 else rng.choices(starts, weights=start_weights)[0])
-        for _step in range(n_steps):
-            children = [s for s in world.successors if s.step == world.step + 1]
-            weights = [_prob(s.contributions[world]) for s in children
-                       if world in s.contributions]
-            children = [s for s in children if world in s.contributions]
-            if not children or sum(weights) <= 0:
-                dead_ends += 1
-                world = None
+        world = rng.choices(starts, weights=start_w)[0]
+        for table in tables:
+            opts = table.get(world)
+            if not opts:
                 break
-            world = rng.choices(children, weights=weights, k=1)[0]
-        if world is not None:
-            tally[world.key] += 1
-    return tally, dead_ends
+            world = rng.choices([o[0] for o in opts], weights=[o[1] for o in opts])[0]
+        tally[world.key] += 1
+    return tally
 
 
 def log_tally(label: str, tally: Counter, predicted: dict, n_trials: int):
@@ -107,9 +186,9 @@ def log_tally(label: str, tally: Counter, predicted: dict, n_trials: int):
 def run_monte_carlo(sim, n_trials: int, mode: str = 'terminal', seed=None) -> dict:
     """Run Monte Carlo trials against a finished simulation.
 
-    mode: 'terminal', 'path', or 'both'. Returns a dict with the predicted
-    distribution, per-mode tallies, and (for epr_stats models) same/diff
-    counts.
+    mode: 'terminal', 'pilot', or 'both'. Returns a dict with the
+    predicted distribution, per-mode tallies, and (for epr_stats models)
+    same/diff counts.
     """
     if sim.result_space is None:
         sim.run()
@@ -131,18 +210,14 @@ def run_monte_carlo(sim, n_trials: int, mode: str = 'terminal', seed=None) -> di
             results['terminal_epr'] = epr_tally(sim.result_space, tally, two_stage)
             log_epr('terminal', results['terminal_epr'], expected_discrepancy(sim))
 
-    if mode in ('path', 'both'):
-        n_steps = len(sim.run_stages)
-        tally, dead_ends = sample_paths(sim.initial_points, n_steps, n_trials, rng)
-        results['path'] = tally
-        results['path_dead_ends'] = dead_ends
-        log_tally('path sampling (one world-line per trial; collapses at every stage)',
+    if mode in ('pilot', 'both'):
+        tally = sample_pilot(sim.initial_points, n_trials, rng)
+        results['pilot'] = tally
+        log_tally('pilot-wave sampling (one guided trajectory per trial; never dead-ends)',
                   tally, predicted, n_trials)
-        if dead_ends:
-            log.info(f'   {dead_ends} trial(s) dead-ended in fully-cancelled worlds')
-        if sim.config.get('epr_stats'):
-            results['path_epr'] = epr_tally(sim.result_space, tally, two_stage)
-            log_epr('path', results['path_epr'], expected_discrepancy(sim))
+        if getattr(sim, 'epr_stats', False) or two_stage:
+            results['pilot_epr'] = epr_tally(sim.result_space, tally, two_stage)
+            log_epr('pilot', results['pilot_epr'], expected_discrepancy(sim))
 
     return results
 

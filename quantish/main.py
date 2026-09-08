@@ -81,10 +81,15 @@ def main():
                              "YAML (default: the model's own symbolic setting)")
     parser.add_argument('--sample', action='store_true', help='Run multiple trials and collect a histogram of results')
     parser.add_argument('--n-samples', type=int, default=1, help='Run this many sampling trials')
-    parser.add_argument('--mc-mode', choices=['terminal', 'path', 'both'], default='terminal',
+    parser.add_argument('--mc-mode', choices=['terminal', 'pilot', 'both'], default='terminal',
                         help='Monte Carlo sampling mode (with --sample): terminal draws from the '
-                             'final superposition, path walks one world-line per trial')
+                             'final superposition (Everett), pilot walks one wave-guided trajectory '
+                             'per trial (Bohm); both runs both')
     parser.add_argument('--mc-seed', type=int, default=None, help='Monte Carlo RNG seed')
+    parser.add_argument('--epr-mode', choices=['terminal', 'pilot', 'hidden'], default='terminal',
+                        help="Sampling model for the EPR sweep's observed rates (with --sample and "
+                             '--n-samples): the two wave samplers of --mc-mode, or hidden — '
+                             "Bell's local hidden-variable example, which samples no wave")
     parser.add_argument('--epr-stats', action='store_true', help='Run statistics on EPR experiment model (book figure 4.16)')
     parser.add_argument('--sweep', action='store_true',
                         help="Run the model's declared sweep (its `sweep` section) and "
@@ -349,7 +354,7 @@ def main():
                 run_monte_carlo(sim, sim.n_samples, mode=args.mc_mode, seed=args.mc_seed)
                 from quantish.epr import run_epr_experiment, supports_epr
                 if supports_epr(sim):
-                    run_epr_experiment(sim, sim.n_samples, seed=args.mc_seed)
+                    run_epr_experiment(sim, sim.n_samples, seed=args.mc_seed, mode=args.epr_mode)
 
             print(f'log level was {save_ll}, setting to {logging.WARN}')
             log.setLevel(logging.WARN)

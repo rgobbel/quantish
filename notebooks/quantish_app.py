@@ -429,7 +429,7 @@ def _(
             parents = by_step.get(step - 1, [])
             rows = []
             for w in points:
-                out_label = label(w) + (' _(cancelled)_' if w.cancelled else '')
+                out_label = label(w) + (' _(canceled)_' if w.canceled else '')
                 branches = sorted(w.contributions.items(),
                                   key=lambda kv: cs_point_sort_key(sim, kv[0]))
                 if len(branches) == 1:
@@ -455,7 +455,7 @@ def _(
                              ' '.join(math_weight(c) for _, c in branches),
                              out_label, math_weight(w.weight)))
             total = qn.to_float(sum(w.probability for w in points
-                                    if not w.cancelled))
+                                    if not w.canceled))
             # md_table needs a blank line before it; its output starts
             # with one newline, so add the other after the header text
             sections[f'Step {step} — {", ".join(stage)}'] = mo.md(
@@ -535,25 +535,70 @@ def _(
 def _(
     short_label,
     coord_sort_key,
+    SAMPLER_LABELS,
     mc_button,
     mc_cancel,
     mc_job_slot,
+    mc_modes,
     mc_seed,
     mc_tick_get,
     mc_trials,
     mc_trials_text,
     mo,
+    picked_modes,
+    projection,
+    sampling_seconds,
     sim,
 ):
     mc_button      # re-render when a job starts
     mc_tick_get()  # ...and on every worker chunk and at completion
     _explanation = mo.md(r"""
-    Each trial draws one final configuration-space point from the
-    evolved superposition with probability $\lvert w\rvert^2$ — the
-    faithful simulation of a real experiment: interference stays
-    intact until observation, and frequencies converge on the exact
-    values as trials grow.
+    The engine always computes the whole wave: every final
+    configuration-space point with its exact weight. Sampling asks what
+    a **single run** of the experiment looks like. Each trial makes one
+    random draw, whose rule is the interpretation; tallying many trials
+    gives observed frequencies that converge on the exact probabilities
+    as the trial count grows, with a spread of about $1/\sqrt{n}$ from
+    the finite count — the *sampling noise*. Two interpretations of the
+    same wave are offered here:
+
+    - **Terminal (Everett).** *One trial:* one final configuration-space
+      point is drawn from the evolved superposition, with probability
+      $\lvert w\rvert^2$ — "which branch am I in". Converges to the
+      exact probabilities. The faithful simulation of a real experiment:
+      interference stays intact until the observation at the end.
+    - **Pilot wave (Bohm, nonlocal).** *One trial:* one actual
+      configuration starts at the initial configuration-space point
+      and advances one stage at a time. At each stage its next point
+      is drawn from transition probabilities fitted to the wave, so
+      that over many trials the configurations are distributed as
+      $\lvert w\rvert^2$ at every stage. Converges to the exact
+      probabilities, the same as terminal. The difference is that a
+      single trial has one definite configuration at every stage, and
+      the transition probabilities at each stage depend on the whole
+      wave — both branches — which is the model's nonlocality.
+      (Discrete pilot-wave dynamics are not unique; this is the
+      maximum-entropy coupling on the graph's edges, in the stochastic
+      form of Bell 1984 / Vink 1993.)
+
+    A third model, Bell's local hidden-variable example, samples no
+    wave at all; it belongs to the EPR section below, where the
+    comparison is the point.
     """)
+    # .tight-list (css/quantish_app.css): the list follows its lead-in
+    _explanation = mo.Html('<div class="tight-list">' + _explanation.text
+                           + '</div>')
+
+    def _projection():
+        chosen = picked_modes(mc_modes, SAMPLER_LABELS)
+        if sim is None or not chosen:
+            return mo.md('')
+        try:
+            n = max(1, int(mc_trials_text.value.strip()))
+        except ValueError:
+            n = int(mc_trials.value)
+        return mo.md('_Predicted runtime: '
+                     f'{projection(sampling_seconds(sim, chosen, n))}_')
 
     def _progress(_job):
         pct = 100 * _job['progress'] / max(1, _job['total'])
@@ -580,12 +625,10 @@ def _(
                  for p in job_sim.result_space.index.values()}
         sections = []
         if _job['cancel'].is_set():
-            sections.append('_cancelled — partial tallies below_')
-        # terminal first: it is the faithful baseline the path mode's
-        # per-stage collapse is measured against
+            sections.append('_canceled — partial tallies below_')
         for label, note in (
-                ('terminal', 'one draw from the final superposition per trial'),
-                ('path', 'one world-line per trial — collapses at every stage')):
+                ('terminal', 'Everett — one draw from the final superposition per trial'),
+                ('pilot', 'Bohm — one wave-guided trajectory per trial, nonlocal')):
             if label not in results:
                 continue
             n_done = _job['n_done'].get(label, 0)
@@ -630,8 +673,13 @@ def _(
     mo.accordion({'## Monte Carlo Sampling\n\n<span style="font-size:0.85em">Optional sampled trials on top of the exact run above</span>':
         mo.vstack([
             _explanation,
-            mo.hstack([mc_trials, mc_trials_text, mc_seed,
-                       mc_button], wrap=True),
+            mo.hstack([mc_trials, mc_trials_text,
+                       mo.Html('<div class="mode-boxes">' + mo.hstack(
+                           [mo.md('interpretations:'),
+                            *mc_modes.elements.values()],
+                           gap=0.75, align='center').text + '</div>'),
+                       mc_seed, mc_button, _projection()],
+                      wrap=True, align='center'),
             _results_area(),
         ])})
     return
@@ -639,9 +687,12 @@ def _(
 
 @app.cell(hide_code=True)
 def _(
+    SAMPLER_LABELS,
     mc_button,
     mc_job_slot,
+    mc_modes,
     mc_seed,
+    picked_modes,
     mc_tick_set,
     mc_trials,
     mc_trials_text,
@@ -670,7 +721,8 @@ def _(
             _n = max(1, int(mc_trials_text.value.strip()))
         except ValueError:
             _n = int(mc_trials.value)
-        _modes = ['terminal']
+        _modes = picked_modes(mc_modes, SAMPLER_LABELS)
+        mo.stop(not _modes, mo.md('_tick at least one interpretation to sample_'))
         _job = {'cancel': threading.Event(), 'done': False,
                 'progress': 0, 'total': _n * len(_modes),
                 'n_trials': _n, 'modes': _modes, 'sim': sim,
@@ -687,8 +739,9 @@ def _(
                     clock=_time.monotonic):
             import random
             from collections import Counter
-            from quantish.montecarlo import (predicted_distribution,
-                                             sample_paths, sample_terminal)
+            from quantish.montecarlo import (pilot_transitions,
+                                             predicted_distribution,
+                                             sample_pilot, sample_terminal)
             last_bump = 0.0
             try:
                 rng = random.Random(seed)
@@ -698,19 +751,18 @@ def _(
                 done = 0
                 for m in job['modes']:
                     tally = Counter()
-                    dead = 0
                     remaining = job_n
+                    # the pilot wave's guidance is fitted once per job
+                    guidance = (pilot_transitions(job_sim.initial_points)
+                                if m == 'pilot' else None)
                     while remaining and not job['cancel'].is_set():
                         k = min(chunk_size, remaining)
                         if m == 'terminal':
                             tally += sample_terminal(job_sim.result_space,
                                                      k, rng)
                         else:
-                            t, d = sample_paths(job_sim.initial_points,
-                                                len(job_sim.run_stages),
-                                                k, rng)
-                            tally += t
-                            dead += d
+                            tally += sample_pilot(job_sim.initial_points, k,
+                                                  rng, transitions=guidance)
                         remaining -= k
                         done += k
                         job['progress'] = done
@@ -720,8 +772,6 @@ def _(
                             last_bump = clock()
                             bump(lambda v: v + 1)
                     res[m] = tally
-                    if m == 'path':
-                        res['path_dead_ends'] = dead
                     job['n_done'][m] = job_n - remaining
                 job['results'] = res
             except Exception as exc:  # noqa: BLE001 — surface in the display
@@ -746,19 +796,29 @@ def _(
 
 @app.cell(hide_code=True)
 def _(
+    EPR_SAMPLER_LABELS,
     epr_angle_elems,
     epr_button,
+    epr_modes,
     epr_trials,
     epr_view,
+    picked_modes,
+    projection,
+    sampling_seconds,
     mo,
     sim_model,
     supports_epr,
 ):
+    def _tight(md):
+        # .tight-paragraphs (css/quantish_app.css): the section's prose
+        # blocks run with less space between paragraphs and lists
+        return mo.Html('<div class="tight-paragraphs">' + md.text + '</div>')
+
     _content = mo.md(
-        '_The EPR experiment needs a suitable model (e.g. Figure 4.17) '
+        '_The EPR experiment needs a suitable model like the one for Figure 4.17 (fig4.17) '
         'to be loaded above._'
     ) if not supports_epr(sim_model) else mo.vstack([
-        mo.md(r"""
+        _tight(mo.md(r"""
     **What the sweep does:** it re-runs the whole circuit **nine times**,
     once per pair $(\theta_1, \theta_2)$ from the sweep angles
     $\{q_a, q_b, q_c\}$ chosen below — "measuring $p_1$ at $\theta_1$
@@ -768,8 +828,64 @@ def _(
     discrepancy of the two outcomes; the grid then tests **Bell**
     ($d(a,c) \le d(a,b)+d(b,c)$) and **CHSH** ($|S| \le 2$) against the
     intrinsic law $d = \sin^2(\theta_1 - \theta_2)$.
-    """),
-        mo.accordion({'How the fig 4.17 circuit works': mo.md(r"""
+
+    **Exact or sampled.** With trials = 0 (the default) each cell's
+    discrepancy is computed exactly from the cell's final
+    configuration-space points. Setting trials > 0 runs every model chosen
+    under **sampling** for that many trials per cell, and reports one
+    grid and one verdict per model. A sampled discrepancy is the
+    ratio of disagreements to coupled trials, so it fluctuates by about
+    $\tfrac{1}{2}/\sqrt{n}$ around the model's own law; that is the
+    *sampling noise*, and a verdict is called VIOLATED only when the
+    excess clears three times that, *saturated* when it sits within that
+    distance of the bound.
+    """)),
+        mo.accordion({'The sampling models': _tight(mo.md(r"""
+    Every model is random in exactly one place: the draw that makes a
+    trial. Nothing else is random, and the noise in a sampled grid comes
+    only from the finite number of trials.
+
+    - **Terminal (Everett).** *One trial:* draw one final
+      configuration-space point of the cell's exact run, with
+      probability $\lvert w\rvert^2$, and read both detectors' outcomes
+      from it. Converges to the exact grid, $\sin^2\Delta$.
+      On this sweep, it violates Bell and CHSH.
+    - **Pilot wave (Bohm, nonlocal).** *One trial:* start one
+      configuration at the initial configuration-space point and
+      advance it one stage at a time, drawing each stage's next point
+      from transition probabilities fitted to the wave, so that over
+      many trials the configurations are distributed as
+      $\lvert w\rvert^2$ at every stage, and read the outcomes from the
+      final point. Converges to the exact grid, like terminal. On this
+      sweep, it violates Bell and CHSH. The transition probabilities
+      at each stage depend on the whole wave, both branches, which is
+      where the model is nonlocal.
+    - **Local hidden variable (Bell's example).** *One trial:* draw one
+      hidden angle $\lambda$ uniformly from $[0°, 180°)$ — this is the
+      "hidden variable" that the source hands to both particles, and the
+      model's only randomness. Each detector then reads its outcome
+      *deterministically* from $\lambda$ and its own setting
+      $\theta$: *upper* if $\lambda$ is within $45°$ of $\theta$
+      (mod $180°$), else *lower*. No wave and no circuit are involved;
+      nothing passes between the two detectors. Converges to the
+      linear law $2\Delta/\pi$ of the classical grid, since the two
+      readings disagree exactly when $\lambda$ falls within $\Delta$
+      of one of the two boundary lines. On this sweep, it saturates —
+      the Bell excess is $0$ and CHSH is $2$, up to noise.
+
+    The last is Bell's own example (1964), in this circuit's angle
+    convention (the doubled angle matches the law's period of $180°$).
+    It is included because it shows what a local hidden-variable
+    model looks like when run the same way as the wave samplers, cell
+    by cell with the same trial count: its linear law reaches Bell's
+    bound exactly, and by Bell's theorem no local model can go past
+    it. The wave's $\sin^2\Delta$ lies below the line in the oblique
+    cells ($0.146$ against $0.25$ at $22.5°$), and that shortfall is
+    what carries the wave past the bound. The **Classical
+    hidden-variable law** grid and its verdict below show the same
+    saturation exactly, without sampling.
+    """)),
+                      'How the fig 4.17 circuit works': _tight(mo.md(r"""
     Condensed from Gary Drescher's explanation of the revised circuit.
 
     **The splitting rule.** A gate measuring at angle $Q$ splits each
@@ -823,34 +939,39 @@ def _(
     discrepancy rates (barring influence between the two measurements
     themselves — which this circuit's topology, like sufficiently
     distant real-world measurements, rules out).
-    """)}),
-        mo.md(r"""
+    """))}),
+        _tight(mo.md(r"""
     **Choosing the sweep angles.** Only differences matter — the law is
     $\sin^2(\theta_1-\theta_2)$, with period $\pi$ — so the one hard
     constraint is that the three angles be **distinct (mod π)**: equal
     angles make cells compare an angle with itself and the inequalities
     degenerate. Any distinct triple is a valid experiment; whether it
-    *violates* the classical bounds depends on spacing. With equal
+    violates the classical bounds depends on spacing. With equal
     spacing $\delta$, Bell is violated exactly when $0 < \delta < 45°$
-    (largest excess at $\delta = 30°$), and the canonical set
+    (largest excess at $\delta = 30°$), and the default set
     $(0°, 22.5°, 45°)$ drives CHSH to $1{+}\sqrt2 \approx 2.414$.
     A bare number below uses the units selector at the top; anything
     else is read as a symbolic radian expression (`pi/8`, `rad(30)`).
 
-    With trials = 0 (the default) each cell uses only the exact final
-    configuration-space points — fast. Setting trials adds per-cell Monte Carlo sampling on
-    top.
-
-    **Note: Symbolic mode (set above) multiplies the cost**: nine exact symbolic runs
+    **Note: Symbolic mode (settable above in [Custom Model Parameters](#custom-model-parameters)) multiplies the cost**: nine exact symbolic runs
     with non-special angles may take several seconds even at 0 trials.
     Values may be entered here as either symbolic or floating-point expressions.
     Computation will use the selected mode in either case.
 
-    """),
+    """)),
         mo.hstack([epr_angle_elems['qa'], epr_angle_elems['qb'],
                    epr_angle_elems['qc']],
                   justify='start', gap=2, wrap=True),
-        mo.hstack([epr_trials, epr_button], justify='start', wrap=True),
+        mo.hstack([epr_trials,
+                   mo.Html('<div class="mode-boxes">' + mo.hstack(
+                       [mo.md('sampling (when trials > 0):'),
+                        *epr_modes.elements.values()],
+                       gap=0.75, align='center').text + '</div>'),
+                   epr_button,
+                   mo.md('_Predicted runtime: '
+                         f'{projection(sampling_seconds(sim_model, picked_modes(epr_modes, EPR_SAMPLER_LABELS), int(epr_trials.value), cells=9))}_'
+                         if epr_trials.value and picked_modes(epr_modes, EPR_SAMPLER_LABELS) else '')],
+                  justify='start', wrap=True, align='center'),
         epr_view,
     ])
 
@@ -1129,7 +1250,8 @@ async def initialization():
                                          WeightSplitWidget)
     from quantish.display import (coord_sort_key, cs_point_sort_key, gate_io,
                                   short_label, sym_or_float)
-    from quantish.epr import run_epr_experiment, supports_epr
+    from quantish.epr import (run_epr_experiment, supports_epr, verdict,
+                              verdict_slack)
     from quantish.gate import FredkinGate
     from quantish.sweep import run_sweep, sweep_spec, sweep_values
     from quantish.simulation import Simulation
@@ -1171,6 +1293,8 @@ async def initialization():
         supports_epr,
         sweep_spec,
         sweep_values,
+        verdict,
+        verdict_slack,
         yaml,
     )
 
@@ -1602,16 +1726,97 @@ def _(cmath, mo, qn):
 
 
 @app.cell(hide_code=True)
-def _(mo):
+def _(Simulation, mo):
+    # The three sampling interpretations, labeled by what each assumes
+    # (see the Monte Carlo section's explanation); the value is the
+    # engine's mode name
+    SAMPLER_LABELS = {'terminal (Everett)': 'terminal',
+                      'pilot wave (Bohm, nonlocal)': 'pilot'}
+    # the EPR sweep also offers Bell's local hidden-variable example,
+    # which samples no wave: a shared hidden angle and two independent
+    # detector readings (epr.sample_hidden_variable)
+    EPR_SAMPLER_LABELS = {**SAMPLER_LABELS,
+                          "local hidden variable (Bell's example)": 'hidden'}
+    SAMPLER_NAMES = {v: k for k, v in EPR_SAMPLER_LABELS.items()}
+
+    def picked_modes(boxes, labels):
+        """The mode names whose checkboxes are ticked, in the labels'
+        order — the order the results are shown in."""
+        return [labels[k] for k, v in boxes.value.items() if v]
+
+    _calibration = {}
+
+    def sampling_seconds(model_sim, modes, n_trials, cells=1):
+        """A projection of how long a sampling job will take, from a
+        calibration on this circuit: a few hundred trials of each
+        interpretation are timed once per loaded model (and one run of
+        the circuit, for a sweep's per-cell rebuild), then scaled to
+        n_trials × cells. Measured where it will run, so the browser
+        build's slower Python is accounted for."""
+        import random
+        import time
+        from copy import deepcopy
+        from quantish.epr import sample_hidden_variable
+        from quantish.montecarlo import (pilot_transitions, sample_pilot,
+                                         sample_terminal)
+        key = id(model_sim)
+        if key not in _calibration:
+            t0 = time.perf_counter()
+            cfg = deepcopy(model_sim.config)
+            cfg['loglevel'] = 'warning'
+            probe = Simulation(cfg)
+            probe.run()
+            run_cost = time.perf_counter() - t0
+            rng, k, per_trial = random.Random(0), 300, {}
+            t0 = time.perf_counter()
+            sample_terminal(probe.result_space, k, rng)
+            per_trial['terminal'] = (time.perf_counter() - t0) / k
+            t0 = time.perf_counter()
+            guidance = pilot_transitions(probe.initial_points)
+            fit_cost = time.perf_counter() - t0
+            t0 = time.perf_counter()
+            sample_pilot(probe.initial_points, k, rng, transitions=guidance)
+            per_trial['pilot'] = (time.perf_counter() - t0) / k
+            t0 = time.perf_counter()
+            sample_hidden_variable(0.0, 1.0, k, rng)
+            per_trial['hidden'] = (time.perf_counter() - t0) / k
+            _calibration[key] = (run_cost, fit_cost, per_trial)
+        run_cost, fit_cost, per_trial = _calibration[key]
+        secs = (run_cost if cells > 1 else 0.0) * cells
+        for m in modes:
+            secs += cells * (n_trials * per_trial[m]
+                             + (fit_cost if m == 'pilot' else 0.0))
+        return secs
+
+    def projection(secs):
+        if secs < 1:
+            return 'under a second'
+        if secs < 90:
+            return f'about {secs:.0f} s'
+        return f'about {secs / 60:.1f} min'
+
+    return (EPR_SAMPLER_LABELS, SAMPLER_LABELS, SAMPLER_NAMES, picked_modes,
+            projection, sampling_seconds)
+
+
+@app.cell(hide_code=True)
+def _(SAMPLER_LABELS, mo):
     mc_trials = mo.ui.slider(
         steps=[100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000,
                100000, 200000, 500000, 1000000],
         value=20000, label='trials', show_value=True)
     mc_trials_text = mo.ui.text(value='', placeholder='custom trial count')
+    # two interpretations sampling the same wave, labeled by what each
+    # assumes; terminal (the faithful simulation of a real experiment)
+    # is the default
+    # one checkbox per interpretation, in the results' order, none
+    # ticked until the user chooses
+    mc_modes = mo.ui.dictionary({k: mo.ui.checkbox(label=k)
+                                 for k in SAMPLER_LABELS})
     mc_seed = mo.ui.number(value=42, label='seed')
     mc_button = mo.ui.run_button(label='Run Monte Carlo')
     mc_cancel = mo.ui.run_button(label='Cancel')
-    return mc_button, mc_cancel, mc_seed, mc_trials, mc_trials_text
+    return mc_button, mc_cancel, mc_modes, mc_seed, mc_trials, mc_trials_text
 
 
 @app.cell(hide_code=True)
@@ -1641,7 +1846,7 @@ def _(mc_cancel, mc_job_slot):
 @app.cell(hide_code=True)
 def _(base_config, mo, model_vars):
     # Sweep-angle entries, reseeded from the model's qa/qb/qc variables
-    # (or the canonical 0, pi/8, pi/4) when the model or its variables
+    # (or the default 0, pi/8, pi/4) when the model or its variables
     # change. Same input forms as the gate-angle entries: a bare number
     # in the selected units, anything else a symbolic radian expression.
     def _():
@@ -1657,21 +1862,30 @@ def _(base_config, mo, model_vars):
 
 
 @app.cell(hide_code=True)
-def _(mo):
+def _(EPR_SAMPLER_LABELS, mo):
     # Defined independently of sim/mode so a math-mode change or a Run can
     # never reset the user's chosen trial count.
-    epr_trials = mo.ui.slider(0, 50000, step=1000, value=0,
-                              label='trials per cell (0 = exact only)',
-                              show_value=True)
+    epr_trials = mo.ui.slider(
+        steps=[0, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000],
+        value=0, label='trials per cell (0 = exact only)', show_value=True)
+    # the models the sampled cells run under, compared side by side:
+    # the wave samplers show the violation, Bell's hidden-variable
+    # example sits exactly at the classical bound
+    epr_modes = mo.ui.dictionary({k: mo.ui.checkbox(label=k)
+                                  for k in EPR_SAMPLER_LABELS})
     epr_button = mo.ui.run_button(label='Run EPR experiment')
-    return epr_button, epr_trials
+    return epr_button, epr_modes, epr_trials
 
 
 @app.cell(hide_code=True)
 def _(
+    EPR_SAMPLER_LABELS,
     base_env,
     epr_angle_elems,
+    SAMPLER_NAMES,
     epr_button,
+    epr_modes,
+    picked_modes,
     epr_trials,
     math,
     md_table,
@@ -1682,6 +1896,8 @@ def _(
     supports_epr,
     sym_or_float,
     units_pick,
+    verdict,
+    verdict_slack,
 ):
     def _():
         if not supports_epr(sim_model):
@@ -1712,41 +1928,72 @@ def _(
             return mo.md('**sweep angles must be distinct (mod π)** — equal '
                          'angles make cells compare an angle with itself and '
                          'the inequalities degenerate')
-        res = run_epr_experiment(sim_model, n_trials=int(epr_trials.value), seed=1,
-                                 values=values)
+        n = int(epr_trials.value)
+        # one sweep per chosen interpretation (the exact, analytical and
+        # classical grids are the same in each; the observed grid and
+        # its verdict differ — that comparison is the demonstration)
+        modes = picked_modes(epr_modes, EPR_SAMPLER_LABELS) if n else []
+        runs = {m: run_epr_experiment(sim_model, n_trials=n, seed=1,
+                                      values=values, mode=m)
+                for m in modes}
+        # the exact grids come with any run; with no model ticked (or
+        # no trials) one exact run supplies them
+        res = (runs[modes[0]] if modes
+               else run_epr_experiment(sim_model, n_trials=0, values=values))
         labels = list(res['values'].keys())
 
-        def grid_table(getter, fmt='{:.4f}'):
+        def grid_table(getter, grid, fmt='{:.4f}'):
             # exact rates show as such in Symbolic mode when short
             # (sin²(π/8) = 1/2 - √2/4); floats otherwise
             def cell(v):
                 return sym_or_float(v, fmt.format(qn.to_float(v)))
-            rows = [[f'**{l1}**'] + [cell(getter(res['grid'][(l1, l2)]))
+            rows = [[f'**{l1}**'] + [cell(getter(grid[(l1, l2)]))
                                      for l2 in labels]
                     for l1 in labels]
             return md_table([r'$\theta_1 \backslash \theta_2$'] + labels, rows)
 
-        parts = [
-            'sweep angles: ' + ', '.join(
-                f'{k} = {math.degrees(float(v)):.1f}º'
-                for k, v in values.items()),
-            '**observed discrepancy** (sampled: terminal draws from each '
-            'cell&rsquo;s final superposition)'
-            if epr_trials.value else '**exact simulated discrepancy**',
-            grid_table(lambda c: c.get('sampled', c['exact'])),
-            r'**analytical** $\sin^2(\theta_1-\theta_2)$',
-            grid_table(lambda c: c['analytical']),
-            '**classical hidden-variable prediction**',
-            grid_table(lambda c: c['classical']),
-        ]
-        bell, bell_at = res['bell_exact']
-        chsh, chsh_at = res['chsh_exact']
-        parts.append(
-            f'Bell excess (exact): **{bell:+.4f}** at {bell_at} — '
-            f'{"**VIOLATED**" if bell > 1e-9 else "satisfied"}  \n'
-            f'CHSH $|S|$ (exact): **{chsh:.4f}** at {chsh_at} — '
-            f'{"**VIOLATED**" if chsh > 2 + 1e-9 else "satisfied"}')
-        return mo.md('\n\n'.join(parts))
+        def verdicts(tag, r, bell_key, chsh_key, bell_slack, chsh_slack):
+            # a sampled excess needs to clear sampling noise to count;
+            # the words are epr.verdict's (VIOLATED / saturated / satisfied)
+            def word(excess, slack):
+                v = verdict(excess, slack)
+                return f'**{v}**' if v == 'VIOLATED' else v
+            bell, bell_at = r[bell_key]
+            chsh, chsh_at = r[chsh_key]
+            return (f'Bell excess ({tag}): **{bell:+.4f}** at {bell_at} — '
+                    f'{word(bell, bell_slack)}  \n'
+                    f'CHSH $|S|$ ({tag}): **{chsh:.4f}** at {chsh_at} — '
+                    f'{word(chsh - 2, chsh_slack)}')
+
+        # the exact laws first — quantish, analytical (one verdict:
+        # they agree), classical — then one sampled block per model in
+        # the interpretations' fixed order, each a grid and its verdicts
+        parts = ['sweep angles: ' + ', '.join(
+            f'{k} = {math.degrees(float(v)):.1f}º' for k, v in values.items()),
+                 '**Exact quantish simulation** results',
+                 grid_table(lambda c: c['exact'], res['grid']),
+                 r'**Analytical law** $\sin^2(\theta_1-\theta_2)$',
+                 grid_table(lambda c: c['analytical'], res['grid']),
+                 verdicts('exact', res, 'bell_exact', 'chsh_exact', 1e-9, 1e-9),
+                 '**Classical hidden-variable law** — the best a local '
+                 'model can do: it sits exactly on the bound',
+                 grid_table(lambda c: c['classical'], res['grid']),
+                 verdicts('classical law', res, 'bell_classical',
+                          'chsh_classical', 1e-9, 1e-9)]
+        if modes:
+            # a sampled excess must clear sampling noise (3σ) to count
+            bell_slack, chsh_slack = verdict_slack(n)
+            for m in [m for m in SAMPLER_NAMES if m in runs]:
+                name = SAMPLER_NAMES[m]
+                parts += [f'**{name[0].upper()}{name[1:]}** sampled results: '
+                          f'{n:,} trials per cell',
+                          grid_table(lambda c: c['sampled'], runs[m]['grid']),
+                          verdicts('sampled', runs[m],
+                                   'bell', 'chsh', bell_slack, chsh_slack)]
+        # .tight-paragraphs (css/quantish_app.css): headings, grids and
+        # verdicts run as close as the section's prose
+        return mo.Html('<div class="tight-paragraphs">'
+                       + mo.md('\n\n'.join(parts)).text + '</div>')
 
     epr_view = _()
     return (epr_view,)

@@ -104,7 +104,7 @@ class NetworkGraph:
 
         layers = defaultdict(list)
         for p in self.result_space.index.values():
-            if p.cancelled or qn.zerop(p.weight):
+            if p.canceled or qn.zerop(p.weight):
                 continue
             layers[p.step].append(p)
         steps = sorted(layers.keys())

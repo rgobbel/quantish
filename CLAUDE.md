@@ -115,7 +115,8 @@ Configuration is split between:
    identical coordinates merge by adding weights (interference), and
    points whose weights cancel are dropped
 3. **Sampling Mode** (optional): Monte Carlo draws from the final
-   superposition (terminal) or stage-by-stage world-lines (path)
+   superposition (terminal) or walks wave-guided trajectories (pilot);
+   the Bell sweep can also sample Bell's local hidden-variable model
 4. **Output**: final configuration-space points, statistics, and optional
    TikZ/Mermaid/weight-evolution diagrams
 
@@ -176,7 +177,7 @@ Configuration options (usually in defaults.yaml):
 
 3. **Gate Wiring**: Gates have three wires (control, upper, lower). Control determines whether upper/lower outputs are straight or swapped; a delay gate is used via its control wire only and passes particles through unchanged.
 
-4. **Interference**: configuration-space points with identical coordinates merge by adding weights; points whose weights cancel to zero are dropped (and marked `cancelled`).
+4. **Interference**: configuration-space points with identical coordinates merge by adding weights; points whose weights cancel to zero are dropped (and marked `canceled`).
 
 ## File Organization
 
