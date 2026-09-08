@@ -222,8 +222,9 @@ class ConfigSpace:
             return point
         original_weight =  existing.weight
         existing.weight = existing.weight + point.weight
-        log.debug(f'      MERGE {point.key}: '
-                  f'{original_weight.display()} + {point.weight.display()} -> {existing.weight.display()}')
+        if log.isEnabledFor(logging.DEBUG):   # three displays per merge
+            log.debug(f'      MERGE {point.key}: '
+                      f'{original_weight.display()} + {point.weight.display()} -> {existing.weight.display()}')
         existing.predecessors |= point.predecessors
         for pred, contrib in point.contributions.items():
             if pred in existing.contributions:
@@ -363,12 +364,13 @@ class ConfigSpaceRunner:
                 branches = [(successor_tuple,
                              cs_point.weight * qn.prod(x[1] or 1 for x in successor_tuple))
                             for successor_tuple in itertools.product(*per_particle)]
-                controlled = ', '.join(
-                    f'{control_info[g][0]}->{g} Pr {control_info[g][1]:.2f}'
-                    for g in stage_gates if self.control_present(cs_point, g))
-                log.debug(f'   {cs_point.stage_str(stage_gates)} '
-                          f'-> {len(branches)} successor{"" if len(branches) == 1 else "s"}'
-                          f'{" CONTROL: " + controlled if controlled else ""}')
+                if log.isEnabledFor(logging.DEBUG):
+                    controlled = ', '.join(
+                        f'{control_info[g][0]}->{g} Pr {control_info[g][1]:.2f}'
+                        for g in stage_gates if self.control_present(cs_point, g))
+                    log.debug(f'   {cs_point.stage_str(stage_gates)} '
+                              f'-> {len(branches)} successor{"" if len(branches) == 1 else "s"}'
+                              f'{" CONTROL: " + controlled if controlled else ""}')
                 for successor_tuple, weight in branches:
                     # one line per branch, in creation order (per gate,
                     # components c2a, c2b, c3a, c3b): each moved particle

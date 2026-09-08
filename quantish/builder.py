@@ -717,12 +717,37 @@ def config_to_graph(config) -> tuple[dict, list[str]]:
     return graph, notes
 
 
+def section_body(block: str) -> str:
+    """The body of a section block from extract_sections — the lines
+    under its key, de-indented, comments kept; the key line and the
+    comments above it dropped. What the builder's variables editor
+    shows, so a file's variable comments arrive in the editor."""
+    lines = block.splitlines()
+    while lines and not _TOP_KEY.match(lines[0]):
+        lines.pop(0)                    # the leading comment lines
+    if lines:
+        lines.pop(0)                    # the key line itself
+    indents = [len(ln) - len(ln.lstrip()) for ln in lines if ln.strip()]
+    cut = min(indents) if indents else 0
+    return '\n'.join(ln[cut:] if ln.strip() else '' for ln in lines)
+
+
+def variables_block(text: str) -> str:
+    """The variables editor's text as the file's `variables:` section,
+    verbatim (comments included), for config_to_yaml's raw_sections."""
+    body = '\n'.join('  ' + ln if ln.strip() else '' for ln in text.strip().splitlines())
+    return f'variables:\n{body}'
+
+
 def config_to_yaml(config, raw_sections: dict[str, str] | None = None) -> str:
     """The config in the model files' style: block YAML, sections in the
     conventional order, flow mappings for the one-line entries. The
     builder's own sections are regenerated; any other section is
     written from `raw_sections` (extract_sections of the loaded file,
-    comments intact) when present there, else dumped from its value."""
+    comments intact) when present there, else dumped from its value.
+    `variables` is the one regenerated section raw_sections may also
+    supply: the text the user wrote in the builder's variables editor
+    (variables_block), comments and all."""
     def _scalar(v):
         s = str(v)
         return f"'{s.replace(chr(39), chr(39) * 2)}'" \
@@ -778,7 +803,10 @@ def config_to_yaml(config, raw_sections: dict[str, str] | None = None) -> str:
         lines += ['', 'display_strings:']
         for name, ds in config['display_strings'].items():
             lines.append(f'  {name}: {_scalar(ds)}')
-    if config.get('variables'):
+    raw = raw_sections or {}
+    if config.get('variables') and 'variables' in raw:
+        lines += ['', raw['variables'].rstrip()]
+    elif config.get('variables'):
         lines += ['', 'variables:']
         for vname, vval in config['variables'].items():
             lines.append(f'  {vname}: {_scalar(vval)}')
@@ -797,7 +825,6 @@ def config_to_yaml(config, raw_sections: dict[str, str] | None = None) -> str:
     # the extras (config_extras): sections the builder does not know,
     # after the ones it does — verbatim from the loaded file when its
     # text is at hand, else dumped as ordinary block YAML
-    raw = raw_sections or {}
     for key, value in config.items():
         if key in HANDLED_KEYS:
             continue

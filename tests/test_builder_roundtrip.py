@@ -205,3 +205,34 @@ k3: v
                           '  # inner comment\n\n  - b')
     assert s['k2'] == '# trailing comment for k2\n\nk2: {x: 1}'
     assert s['k3'] == 'k3: v'
+
+
+def test_variables_editor_comments_survive_a_save():
+    """Comments a user writes in the builder's variables editor come out
+    in the saved file, and a file's variable comments arrive in the
+    editor: section_body / variables_block round-trip them."""
+    from quantish.builder import section_body, variables_block
+    text = """# leading comment (belongs to the key, not the body)
+variables:
+  # the measurement angles
+  theta1: pi/8   # radians
+  theta2: '30°'
+
+  phi: 0
+"""
+    body = section_body(text.rstrip())
+    assert body == ("# the measurement angles\ntheta1: pi/8   # radians\n"
+                    "theta2: '30°'\n\nphi: 0")
+    assert yaml.safe_load(body) == {'theta1': 'pi/8', 'theta2': '30°',
+                                    'phi': 0}
+    edited = body + "\n# added in the editor\ntheta3: 1  # new"
+    cfg = dict(CONFIG)
+    cfg['variables'] = yaml.safe_load(edited)
+    graph, _ = config_to_graph(cfg)
+    out = graph_to_config(graph, cfg['title'], variables=cfg['variables'])
+    txt = config_to_yaml(out, raw_sections={'variables': variables_block(edited)})
+    assert '  # added in the editor\n  theta3: 1  # new' in txt
+    assert '  theta1: pi/8   # radians' in txt
+    assert yaml.safe_load(txt)['variables'] == cfg['variables']
+    # without the editor text the section is regenerated as before
+    assert '# added' not in config_to_yaml(out)

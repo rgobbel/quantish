@@ -63,9 +63,12 @@ async def initialization():
     from quantish.builder import (angle_degrees, coherence_warnings,
                                   config_extras, config_to_graph,
                                   config_to_yaml, extract_sections,
-                                  graph_to_config, validate_graph,
+                                  graph_to_config, section_body,
+                                  validate_graph, variables_block,
                                   variables_env)
-    from quantish.builder_widget import BuilderWidget, DiagramWidget
+    from quantish.builder_widget import (BuilderWidget, DiagramWidget,
+                                         NetworkGraphWidget)
+    from quantish.network_graph import NetworkGraph
     from quantish.display import (coord_sort_key, cs_point_sort_key,
                                   short_label, sym_or_float)
     from quantish.util import angle_label
@@ -87,6 +90,8 @@ async def initialization():
         BuilderWidget,
         CalcMode,
         DiagramWidget,
+        NetworkGraph,
+        NetworkGraphWidget,
         Simulation,
         WASM_MODE,
         angle_degrees,
@@ -96,6 +101,8 @@ async def initialization():
         config_to_graph,
         config_to_yaml,
         extract_sections,
+        section_body,
+        variables_block,
         coord_sort_key,
         cs_point_sort_key,
         diagram_geometry,
@@ -266,9 +273,9 @@ def _(
     builder_config,
     config_to_yaml,
     file_name,
-    loaded_extras_text,
     mo,
     model_paths,
+    raw_sections,
 ):
     # the File row, in the spirit of a Mac File menu: New, Open a
     # predefined model, Upload one, Save into the local models
@@ -283,7 +290,7 @@ def _(
                                           or not model_paths))
     _download = (
         mo.download(data=config_to_yaml(builder_config,
-                                        raw_sections=loaded_extras_text).encode(),
+                                        raw_sections=raw_sections).encode(),
                     filename=f'{file_name.value}.yaml',
                     label='download')
         if builder_config is not None
@@ -334,12 +341,14 @@ def _(collection_pick, get_file_mode, mo, model_paths, model_upload):
 @app.cell(hide_code=True)
 def _(
     config_to_graph,
+    extract_sections,
     mo,
     model_paths,
     model_pick,
     model_upload,
     new_btn,
     open_go_btn,
+    section_body,
     set_file_mode,
     set_pending,
     upload_go_btn,
@@ -367,7 +376,8 @@ def _(
                                    'links': []},
                          'notes': [], 'title': 'my_network',
                          'file': 'my_network', 'caption': '',
-                         'variables': {}, 'symbolic': None,
+                         'variables': {}, 'variables_text': '',
+                         'symbolic': None,
                          'angle_unit': None, 'model_notes': '',
                          'extras': {}, 'extras_text': {},
                          'source': 'a new empty model'})
@@ -392,6 +402,11 @@ def _(
                      'file': PurePath(source).stem,
                      'caption': config.get('caption') or '',
                      'variables': config.get('variables') or {},
+                     # the file's variables section as written (comments
+                     # kept) seeds the editor; the parsed dict is the
+                     # fallback for files with none
+                     'variables_text': section_body(
+                         extract_sections(text).get('variables', '')),
                      'symbolic': _tri_mode(config),
                      'angle_unit': config.get('angle_unit'),
                      'model_notes': config.get('notes') or '',
@@ -457,9 +472,9 @@ def _(
     builder_config,
     config_to_yaml,
     file_name,
-    loaded_extras_text,
     mo,
     models_top,
+    raw_sections,
     save_btn,
 ):
     # save writes into the local models directory (the web deployment
@@ -471,7 +486,7 @@ def _(
         try:
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_text(config_to_yaml(builder_config,
-                                           raw_sections=loaded_extras_text))
+                                           raw_sections=raw_sections))
         except Exception as exc:  # noqa: BLE001 — show, don't crash the app
             return mo.md(f'**could not save** — {exc}')
         return mo.md('<span style="font-size: 0.9em">saved '
@@ -518,7 +533,8 @@ def _(get_loaded, mo):
             for k, v in (vs or {}).items())
 
     variables_editor = mo.ui.text_area(
-        value=_vars_text(_loaded.get('variables')), rows=6,
+        value=(_loaded.get('variables_text')
+               or _vars_text(_loaded.get('variables'))), rows=6,
         full_width=True,
         placeholder='variable definitions in YAML format')
     # the loaded model's unhandled sections, kept for the save — their
@@ -594,6 +610,7 @@ def _(
     coherence_warnings,
     graph_to_config,
     loaded_extras,
+    loaded_extras_text,
     mo,
     mode_pick,
     model_title,
@@ -601,6 +618,8 @@ def _(
     notes_input,
     unit_pick,
     validate_graph,
+    variables_block,
+    variables_editor,
     variables_env,
 ):
     # The live translation of the canvas: either the list of problems
@@ -666,7 +685,12 @@ def _(
         return mo.md(msg)
 
     _()
-    return (builder_config,)
+    # what the save writes verbatim: the loaded file's unhandled sections
+    # and, when the editor holds variables, its text — comments included
+    raw_sections = dict(loaded_extras_text)
+    if model_vars and variables_editor.value.strip():
+        raw_sections['variables'] = variables_block(variables_editor.value)
+    return builder_config, raw_sections
 
 
 @app.cell(hide_code=True)
@@ -755,6 +779,33 @@ def _(DiagramWidget, diagram_geometry, mo, sim_built):
 
 
 @app.cell(hide_code=True)
+def _(NetworkGraph, NetworkGraphWidget, mo, sim_built):
+    # The weight-evolution graph, as in the main app: configuration-
+    # space points × stages, with the lineage interaction
+    mo.stop(sim_built is None)
+
+    def _():
+        try:
+            _model = NetworkGraph(sim_built.all_points, sim_built).build_model()
+            return mo.vstack([
+                mo.ui.anywidget(NetworkGraphWidget(model=_model)),
+                mo.md('_Scroll or pinch to zoom, drag to pan, '
+                      'double-click (double-tap) to reset. '
+                      'Hover over (or tap) a cell for its values; '
+                      'click a configuration-space point to highlight its '
+                      'full ancestry and descendancy (shift-click for '
+                      'immediate neighbors only), click again to '
+                      'clear._'),
+            ])
+        except Exception as exc:  # noqa: BLE001 — surface, don't crash the app
+            return mo.md(f'_weight evolution graph failed: {exc}_')
+
+    mo.accordion({'#### Weight evolution graphic (configuration-space '
+                  'points × stages)': _()})
+    return
+
+
+@app.cell(hide_code=True)
 def _(cs_point_sort_key, mo, short_label, sim_built, sym_or_float):
     mo.stop(sim_built is None)
 
@@ -765,7 +816,7 @@ def _(cs_point_sort_key, mo, short_label, sim_built, sym_or_float):
             cfg = short_label(sim_built, p)
             w = complex(p.weight)
             # exact forms in Symbolic mode when short, floats otherwise
-            w_txt = sym_or_float(p.weight, f'{w.real:+.4f}{w.imag:+.4f}i')
+            w_txt = sym_or_float(p.weight, f'{w.real:.4f}{w.imag:+.4f}i')
             pr_txt = sym_or_float(p.probability,
                                   f'{float(p.probability):.4f}')
             rows.append(f'| `{cfg}` | {w_txt} | {pr_txt} |')
@@ -778,9 +829,9 @@ def _(cs_point_sort_key, mo, short_label, sim_built, sym_or_float):
 
 
 @app.cell(hide_code=True)
-def _(builder_config, config_to_yaml, loaded_extras_text, mo):
+def _(builder_config, config_to_yaml, mo, raw_sections):
     mo.stop(builder_config is None)
-    _yaml = config_to_yaml(builder_config, raw_sections=loaded_extras_text)
+    _yaml = config_to_yaml(builder_config, raw_sections=raw_sections)
     mo.accordion({'Model YAML': mo.md(f'```yaml\n{_yaml}```')})
     return
 
