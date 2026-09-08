@@ -13,7 +13,9 @@ CompositeKey = namedtuple('CompositeKey', ['name', 'sign'])
 class PKey(CompositeKey):
     __slots__ = ()
     def __repr__(self):
-        return f'{self.name}{self.sign}'
+        # sign first ('+p1'), the convention of every particle display:
+        # the sign is a coordinate, not a modifier of the name
+        return f'{self.sign}{self.name}'
 
 
 class Particle:

@@ -116,6 +116,64 @@ def cs_point_sort_key(sim, point):
     return tuple(sorted(coord_sort_key(sim, c) for c in point.coords.values()))
 
 
+# str(Sign) is '+' or '-'; the numeric spellings are accepted too
+SIGN_MARK = {'+': '+', '-': '−', '1': '+', '+1': '+', '-1': '−'}
+
+
+def pos_sign_lines(sim, pos):
+    """What the circuit diagram writes in a gate output port's box after
+    a run: the particle signs there, each with its probability, and
+    the aggregate — the per-sign view of port_summary, one particle
+    per line pair:
+
+        +p1 0.56  −p1 0.19
+        Σ 0.75 ∠+30º
+
+    A particle present with one sign only takes a single line,
+    '+p1 0.75 ∠+30º'. None when nothing exited there."""
+    parts = pos.split(SEP)
+    if len(parts) != 2:
+        return None
+    gname, gport = parts
+    step = sim.gate_step.get(gname)
+    if step is None or sim.all_points is None:
+        return None
+    port = GatePort(gname, gport)
+    probs = defaultdict(lambda: defaultdict(lambda: qn.ZERO))
+    amps = defaultdict(lambda: qn.Complex(0))
+    for point in sim.all_points.index.values():
+        if point.step != step or point.cancelled:
+            continue
+        for pname, coord in point.coords.items():
+            if coord.position.origin == port:
+                sign = str(coord.sign)
+                probs[pname][sign] = probs[pname][sign] + point.probability
+                amps[pname] = amps[pname] + point.weight
+    if not probs:
+        return None
+    prec = sim.precision
+    max_len = getattr(sim, 'max_symbolic_len', MAX_SYMBOLIC_LEN)
+    lines = []
+    try:
+        for pname in sorted(probs):
+            agg = complex(amps[pname])
+            deg = math.degrees(cmath.phase(agg)) if abs(agg) > 1e-12 else 0.0
+            signed = [f'{SIGN_MARK[sign]}{pname} '
+                      f'{sym_or_float(prob, f"{float(prob):.{prec}f}", max_len)}'
+                      for sign, prob in sorted(probs[pname].items(),
+                                               key=lambda kv: kv[0] != '+')]
+            if len(signed) == 1:
+                lines.append(f'{signed[0]} ∠{deg:+.0f}º')
+                continue
+            total = sym_or_float(qn.probability(amps[pname]),
+                                 f'{abs(agg) ** 2:.{prec}f}', max_len)
+            lines.append('  '.join(signed))
+            lines.append(f'Σ {total} ∠{deg:+.0f}º')
+    except (TypeError, ValueError):
+        return None  # symbolic weights with free symbols
+    return '\n'.join(lines)
+
+
 def port_summary(sim, step, port, end='origin'):
     """Formatted per-particle summary of the amplitudes at `port` over
     the configuration-space points at `step`, one line per particle:
@@ -152,10 +210,12 @@ def port_summary(sim, step, port, end='origin'):
     lines = []
     try:
         for pname in sorted(probs.keys()):
+            # sign first, as the configuration labels write it: '+p1'
             sign_parts = ', '.join(
-                f'{pname}{sign}: '
+                f'{SIGN_MARK[sign]}{pname}: '
                 f'{sym_or_float(prob, f"{float(prob):.{prec}f}", max_len)}'
-                for sign, prob in sorted(probs[pname].items(), reverse=True))
+                for sign, prob in sorted(probs[pname].items(),
+                                         key=lambda kv: kv[0] != '+'))
             agg = complex(amps[pname])
             phase_deg = math.degrees(cmath.phase(agg)) if abs(agg) > 1e-12 else 0.0
             sum_pr = sym_or_float(qn.probability(amps[pname]),
@@ -213,10 +273,10 @@ def port_particle_amps(sim, step, port, end='origin'):
 def amp_value_str(sim, pname, amp):
     """Display block for one particle's summed amplitude at a port:
 
-        p1 +0.75,+0.43i
+        p1 0.75,+0.43i
         Pr: 0.75 (0.56+0.19) ∠+30º
 
-    Line 1: the amplitude as a signed (real, imaginary) pair, the
+    Line 1: the amplitude as a (real, imaginary) pair, the
     imaginary part suffixed i. Line 2: the combined probability, its
     decomposition into real- and imaginary-part contributions, and
     the phase in degrees. (In this circuit family the real part is
@@ -231,7 +291,9 @@ def amp_value_str(sim, pname, amp):
     pr_re = qn.to_float(qn.probability(amp.real))
     pr_im = qn.to_float(qn.probability(amp.imag))
     deg = qn.to_float(amp.phase.degrees)
-    amp_str = sym_or_float(amp, f'{re_v:+.{prec}f},{im_v:+.{prec}f}i',
+    # no forced '+' on the real part: a weight is a number, and a
+    # leading plus would read as a particle sign
+    amp_str = sym_or_float(amp, f'{re_v:.{prec}f},{im_v:+.{prec}f}i',
                            max_len)
     pr_str = sym_or_float(qn.probability(amp), f'{pr:.{prec}f}', max_len)
     return (f'{pname} {amp_str}\n'

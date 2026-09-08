@@ -855,7 +855,7 @@ def _(
         n_points.value, fringes.value, 'eraser', via=via,
         theta_erase=current['theta_erase'], **main_angles)[1]
     curve_eraser = [a + b for a, b in zip(_plus, _minus)]
-    parts_eraser = [('p₂ +', _plus), ('p₂ −', _minus)]
+    parts_eraser = [('+p₂', _plus), ('−p₂', _minus)]
     return curve_eraser, parts_eraser
 
 
@@ -958,7 +958,7 @@ def _(
             n, fringes, 'eraser', via='pixels', theta_erase=theta_erase,
             **main_angles)
         curves['eraser'] = [a + b for a, b in zip(plus, minus)]
-        parts = {'eraser': [('p₂ +', plus), ('p₂ −', minus)]}
+        parts = {'eraser': [('+p₂', plus), ('−p₂', minus)]}
         for mode, curve in curves.items():
             set_panel_curves(mode, xs, curve, parts.get(mode))
         return curves, parts

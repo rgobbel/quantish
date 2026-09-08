@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from quantish.display import pos_value_str
+from quantish.display import pos_sign_lines
 from quantish.simulation import Simulation
 from quantish.util import (base_name, SEP, angle_label, fmt_label,
                            math_to_unicode, parse_position)
@@ -53,13 +53,15 @@ def make_gate_node(sim, gname, inout, wire, mermaid_nodes, show_outputs=True):
     gcontent = f'{gate_fields[wire].label}'
 
     def entry_annotation():
-        # a particle entering the circuit here shows its signed weight in
-        # the port rectangle ('p1 +1.00'); interior ports stay bare, their
-        # values being visible as the upstream gate's outputs
+        # a particle entering the circuit here shows its sign and weight
+        # in the port rectangle ('+p1 1.00'); interior ports stay bare,
+        # their values being visible as the upstream gate's outputs
         src = sim.sources.get(position)
         if src is not None and SEP not in src and src in sim.particles:
-            weight = qn.to_float(sim.particles[src].weight.real)
-            return f'\n{src} {weight:+.{sim.precision}f}'
+            particle = sim.particles[src]
+            sign = '+' if qn.to_float(particle.sign) >= 0 else '-'
+            weight = qn.to_float(particle.weight.real)
+            return f'\n{sign}{src} {weight:.{sim.precision}f}'
         return ''
 
     if inout == 'in':
@@ -69,7 +71,7 @@ def make_gate_node(sim, gname, inout, wire, mermaid_nodes, show_outputs=True):
         content = f'{gcontent}{entry_annotation()}'
         src = sim.sources.get(position)
         if show_outputs and src is not None and SEP in src:
-            src_value = pos_value_str(sim, src)
+            src_value = pos_sign_lines(sim, src)
             if src_value is not None:
                 content = f'{gcontent}:\n{src_value}'
         make1(graph_node_id, content)
@@ -78,7 +80,7 @@ def make_gate_node(sim, gname, inout, wire, mermaid_nodes, show_outputs=True):
         # TODO(roadmap: Mermaid after-diagrams): mark the sampled/selected
         # output once port values come from final-world marginals.
         selected = False
-        out_value_str = pos_value_str(sim, out_pos) if show_outputs else None
+        out_value_str = pos_sign_lines(sim, out_pos) if show_outputs else None
         cs = '' if not show_outputs else (out_value_str
                                           if out_value_str is not None else 'None')
         # sinks only exist for ports that actually carry a value
@@ -92,7 +94,7 @@ def make_gate_node(sim, gname, inout, wire, mermaid_nodes, show_outputs=True):
         else:
             make1(graph_node_id, f'{gcontent}', bold=selected)
     elif inout == '':
-        out_value_str = pos_value_str(sim, position) if show_outputs else None
+        out_value_str = pos_sign_lines(sim, position) if show_outputs else None
         occupied = out_value_str is not None
         cs = '' if not show_outputs else (out_value_str if occupied else 'None')
         if (show_outputs and position not in sim.links.keys() and occupied):
@@ -179,7 +181,7 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
         particle_node = pmd.Node(id=pname, shape='stadium-shape')
         # name + sign only; the weight shows at the entry port instead
         psign = '+' if qn.to_float(particle.sign) >= 0 else '-'
-        particle_node.content = f'{pname}{psign}'
+        particle_node.content = f'{psign}{pname}'
         mermaid_nodes[pname] = particle_node
         diag.add_nodes([particle_node])
 

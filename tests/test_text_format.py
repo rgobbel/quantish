@@ -93,3 +93,68 @@ def test_short_labels_show_pass_through_gates_bare():
     # a real Fredkin gate keeps its port letter
     assert any('g_obs' in tok and tok[-1] in 'ul'
                for label in labels for tok in label.split()), labels
+
+
+def test_port_boxes_show_particle_signs():
+    """After a run, a gate output port's box lines name the particle
+    signs there, sign first, with their probabilities; a particle of
+    one sign takes a single line with the phase."""
+    from pathlib import Path
+
+    import yaml
+    from addict import Dict as Addict
+
+    from quantish.config_space import GatePort
+    from quantish.display import port_summary, pos_sign_lines
+    from quantish.qnumber import CalcMode
+    from quantish.simulation import Simulation
+
+    models = Path(__file__).resolve().parents[1] / 'models'
+    with open(models / 'gr2026' / 'fig4.04.yaml') as f:
+        cfg = yaml.safe_load(f)
+    cfg['loglevel'] = 'warning'
+    CalcMode.default('Float')
+    sim = Simulation(Addict(cfg))
+    sim.run()
+    gate = sim.run_order[0]
+    lines = {port: pos_sign_lines(sim, f'{gate}.{port}')
+             for port in ('upper', 'lower')}
+    assert any(lines.values()), lines
+    for block in filter(None, lines.values()):
+        for ln in block.split('\n'):
+            assert ln[0] in '+−Σ', ln
+    seen = ' '.join(filter(None, lines.values()))
+    assert '+p1' in seen and '−p1' in seen      # the four-way split
+    summary = port_summary(sim, 1, GatePort(gate, 'upper'))
+    assert summary is None or summary.lstrip()[0] in '+−'
+
+
+def test_mermaid_after_run_shows_signs(tmp_path):
+    """The after-run Mermaid diagram writes particle signs, sign first,
+    in its port blocks (and renders at all — the path has no other
+    test)."""
+    import re
+    from pathlib import Path
+
+    import yaml
+    from addict import Dict as Addict
+
+    from quantish import mermaid_diagram
+    from quantish.qnumber import CalcMode
+    from quantish.simulation import Simulation
+
+    models = Path(__file__).resolve().parents[1] / 'models'
+    with open(models / 'defaults.yaml') as f:
+        cfg = yaml.safe_load(f)
+    with open(models / 'gr2026' / 'fig4.10.yaml') as f:
+        cfg.update(yaml.safe_load(f))
+    cfg['loglevel'] = 'warning'
+    CalcMode.default('Float')
+    sim = Simulation(Addict(cfg))
+    sim.run()
+    out = tmp_path / 'fig4.10.mmd'
+    mermaid_diagram.diagram(sim, out, True)
+    txt = out.read_text()
+    assert '+p1 1.00' in txt                 # the entry annotation
+    assert re.search(r'[+−]p1 0\.\d\d', txt)   # a per-sign port line
+    assert not re.search(r'\bp\d[+-]', txt)   # no trailing-sign spelling

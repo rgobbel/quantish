@@ -15,7 +15,7 @@ import re
 from bisect import bisect_right
 import textwrap
 
-from quantish.display import pos_value_str, strip_markdown
+from quantish.display import pos_sign_lines, pos_value_str, strip_markdown
 from quantish.tikz_diagram import (CONTROL_HALF_W, GATE_WIDTH, PORT_DY,
                                    PORT_IN_DX, PORT_OUT_DX, PORT_W,
                                    WIRE_STUB_LEN,
@@ -151,10 +151,23 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
         return (round(x, 3), round(y, 3))
 
     def value_lines(pos):
+        # what a port's box shows after a run: the particle signs there
+        # with their probabilities (pos_sign_lines)
+        if not has_run:
+            return []
+        block = pos_sign_lines(sim, pos)
+        return [] if block is None else [_sub(ln) for ln in block.split('\n')]
+
+    def tip_lines(pos):
+        # the hover detail: the summed amplitude and its probability
+        # breakdown (pos_value_str), then the sign lines
         if not has_run:
             return []
         block = pos_value_str(sim, pos)
-        return [] if block is None else [_sub(ln) for ln in block.split('\n')]
+        if block is None:
+            return []
+        amp, *rest = block.split('\n')
+        return [_sub(amp), _sub('\n'.join(rest + value_lines(pos)))]
 
     def measure(lines, min_w):
         h = 2 * PORT_PAD + LINE_H * max(1, len(lines))
@@ -193,17 +206,20 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
         vals = value_lines(pos) if pos else []
         hidden = [name, entry] if entry else [name]
         if vals:
-            return [name] + vals, vals, hidden
+            return [name] + vals, tip_lines(pos), hidden
         return hidden, [], hidden
 
     def entry_annotation(pos):
-        # a particle entering the circuit here shows its signed weight,
-        # as in the Mermaid diagrams
+        # a particle entering the circuit here shows its sign and its
+        # weight ('+p₁ 1.00'), as in the Mermaid diagrams — the sign is
+        # a coordinate and goes first; the weight is a number
         src = sim.sources.get(pos)
         if src is not None and SEP not in src and src in sim.particles:
             import quantish.qnumber as qn
-            w = qn.to_float(sim.particles[src].weight.real)
-            return f'{_sub(src)} {w:+.{sim.precision}f}'
+            particle = sim.particles[src]
+            sign = '+' if qn.to_float(particle.sign) >= 0 else '−'
+            w = qn.to_float(particle.weight.real)
+            return f'{sign}{_sub(src)} {w:.{sim.precision}f}'
         return None
 
     # gates: header (name, angle, compass), ports, dotted X, frame
@@ -352,7 +368,7 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
         if _mates:
             _cy = min(f[1] for f in _mates) - 0.45 - h / 2
         emit_box(fx(dx_), _cy, w, h, lines, DELAY_FILL, DELAY_STROKE,
-                 corner=3, tip=value_lines(pos), shown=[_dline])
+                 corner=3, tip=tip_lines(pos), shown=[_dline])
         if _druns:
             # emit_box appended one text for the (bold) name line and,
             # in the values view with values, one more for the rest

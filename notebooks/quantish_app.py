@@ -915,7 +915,8 @@ def _(
               for x in res['x']]
         var, obs, grp = spec['variable'], spec['observe'], spec.get('group_by')
         # series names carry the grouping particle ('p2 +', 'p2 −')
-        names = {lab: f"{grp['particle']} {lab}" if grp else lab
+        # series names carry the grouping particle, sign first ('+p2')
+        names = {lab: f"{lab}{grp['particle']}" if grp else lab
                  for lab in res['series']}
         palette = ['#4c78a8', '#f58518', '#54a24b', '#e45756', '#72b7b2',
                    '#b279a2', '#ff9da6', '#9d755d']
@@ -1542,14 +1543,15 @@ def _(cmath, mo, qn):
                 return sympy.latex(expr)
         wc = complex(w)
         real, imag = wc.real, wc.imag
+        # a weight is a number: no forced leading '+' (that reads as a
+        # particle sign); '-' only when negative, '+' only between parts
         parts = []
         if abs(real) > 1e-12:
-            sign = '-' if real < 0 else '+'
-            parts.append(f'{sign}{abs(round(real, 2))}')
+            parts.append(f'{"-" if real < 0 else ""}{abs(round(real, 2))}')
         if abs(imag) > 1e-12:
-            sign = '-' if imag < 0 else '+'
-            parts.append(f' {sign}{abs(imag):.{prec}g}i')
-        return ''.join(parts) if parts else f'{0.00:+.2f}'
+            joiner = ('-' if imag < 0 else '+') if parts else ('-' if imag < 0 else '')
+            parts.append(f'{" " if parts else ""}{joiner}{abs(imag):.{prec}g}i')
+        return ''.join(parts) if parts else '0.00'
 
     def math_weight(w, prec=4) -> str:
         # latex_weight wrapped as inline math. Whitespace is normalized
