@@ -36,7 +36,6 @@ def _(mo):
       the Clauser–Horne–Shimony–Holt (CHSH) inequality
     - a Weight-split Explorer, to show concretely the effects of various inputs to quantish Fredkin gates
     """)
-    return
 
 
 @app.cell(hide_code=True)
@@ -48,6 +47,7 @@ async def build_stamp(mo, sys):
     if sys.platform == 'emscripten':
         try:
             import json as _json
+
             from pyodide.http import pyfetch as _pyfetch
             _v = _json.loads(await (await _pyfetch(
                 f'{mo.notebook_location()}/public/version.json')).string())
@@ -56,7 +56,6 @@ async def build_stamp(mo, sys):
             _stamp = ''
     mo.md(f'<span style="font-size: 0.8em; color: #444">{_stamp}</span>') \
         if _stamp else None
-    return
 
 
 @app.cell(hide_code=True)
@@ -82,7 +81,6 @@ def _(WASM_MODE, mo):
 
     {_closing}
     """)
-    return
 
 
 @app.cell(hide_code=True)
@@ -96,7 +94,7 @@ def _(
     model_rescan,
     model_upload,
 ):
-    model_rescan  # dependency: pressing the button re-globs the directory
+    model_rescan  # noqa: B018 — dependency: pressing the button re-globs the directory
 
     def _():
         collection = collection_pick.value
@@ -185,11 +183,10 @@ def _(
         ] +
         ([mo.hstack([show_values], justify='start')]
          if sim is not None else []), align='stretch')
-    return
 
 
 @app.cell(hide_code=True)
-def _(build_sim, mo, mode_pick, model_pick, run_btn):
+def _(build_sim, inexact_note, mo, mode_pick, model_pick, run_btn):
     # Gated on the button. Rather than mo.stop (whose descendants all
     # display "this cell wasn't run because an ancestor was stopped"),
     # sim is None until the button is pressed, and each results cell
@@ -267,7 +264,6 @@ def _(NetworkGraph, NetworkGraphWidget, mo, sim):
 
     mo.accordion({'### Weight evolution graphic '
                   '(gate output ports × stages)': _()})
-    return
 
 
 @app.cell(hide_code=True)
@@ -329,7 +325,6 @@ def _(
         'Gate angle and '
         'calculation mode settings for the current model</span>':
             mo.vstack([_explanation, _()])})
-    return
 
 
 @app.cell(hide_code=True)
@@ -339,6 +334,7 @@ def _(
     coord_sort_key,
     cs_point_sort_key,
     gate_io,
+    math_prob,
     math_weight,
     md_table,
     mo,
@@ -528,7 +524,6 @@ def _(
         _marginals(),
         _gate_io_table(),
     ])})
-    return
 
 
 @app.cell(hide_code=True)
@@ -550,7 +545,7 @@ def _(
     sampling_seconds,
     sim,
 ):
-    mc_button      # re-render when a job starts
+    mc_button      # noqa: B018 — re-render when a job starts
     mc_tick_get()  # ...and on every worker chunk and at completion
     _explanation = mo.md(r"""
     The engine always computes the whole wave: every final
@@ -681,7 +676,6 @@ def _(
                       wrap=True, align='center'),
             _results_area(),
         ])})
-    return
 
 
 @app.cell(hide_code=True)
@@ -738,9 +732,13 @@ def _(
                     clock=_time.monotonic):
             import random
             from collections import Counter
-            from quantish.montecarlo import (pilot_transitions,
-                                             predicted_distribution,
-                                             sample_pilot, sample_terminal)
+
+            from quantish.montecarlo import (
+                pilot_transitions,
+                predicted_distribution,
+                sample_pilot,
+                sample_terminal,
+            )
             last_bump = 0.0
             try:
                 rng = random.Random(seed)
@@ -790,7 +788,6 @@ def _(
             mc_tick_set(lambda v: v + 1)
         else:
             mo.Thread(target=_worker, daemon=True).start()
-    return
 
 
 @app.cell(hide_code=True)
@@ -982,7 +979,6 @@ def _(
                   '<span style="font-size:0.85em">Sweep the measurement '
                   'angles of an EPR-capable model and test the Bell and '
                   'CHSH inequalities</span>': _content})
-    return
 
 
 @app.cell(hide_code=True)
@@ -1120,7 +1116,6 @@ def _(mo, sweep_button, sweep_decl, sweep_points, sweep_problem, sweep_view):
                   'model across a range of one variable — for models '
                   'that declare a sweep, such as the double-slit '
                   'circuits</span>': _()})
-    return
 
 
 @app.cell(hide_code=True)
@@ -1142,7 +1137,6 @@ def _(mo, ws_components, ws_sign, ws_theta, ws_view, ws_wmag, ws_wphase):
                   wrap=True),
         ws_view,
     ])})
-    return
 
 
 @app.cell(hide_code=True)
@@ -1153,7 +1147,6 @@ def _(EDITOR_UI, mo):
     mo.Html('<div style="text-align: center; color: #000; '
             'font-size: 1.6em; padding: 1.5em 0 1em;">&#8258;</div>'
             ) if not EDITOR_UI else None
-    return
 
 
 @app.cell(hide_code=True)
@@ -1163,7 +1156,6 @@ def _(EDITOR_UI, mo):
     mo.md(r"""
     ## Loaded Configuration Details
     """) if EDITOR_UI else None
-    return
 
 
 @app.cell(hide_code=True)
@@ -1171,7 +1163,6 @@ def _(EDITOR_UI, mo, model_pick, sim):
     # editor-only section: hidden with its heading in `marimo run`
     mo.stop(sim is None or not EDITOR_UI)
     mo.accordion({str(model_pick.value.stem): mo.accordion(sim.__dict__, multiple=True, lazy=True)})
-    return
 
 
 @app.cell(hide_code=True)
@@ -1181,7 +1172,6 @@ def _(EDITOR_UI, mo):
     mo.md(r"""
     ## Support Code
     """) if EDITOR_UI else None
-    return
 
 
 @app.cell(hide_code=True)
@@ -1203,12 +1193,11 @@ async def initialization():
     # imports), and materialize models/ into the virtual filesystem so
     # the Path-based model browsing below works unchanged.
     if sys.platform == 'emscripten':
-        import json as _json
-
         # dynamic import: a literal `import micropip` makes server-side
         # marimo install a mock micropip meta-path finder whose globals
         # die with the notebook session, breaking all later imports
         import importlib
+        import json as _json
         micropip = importlib.import_module('micropip')
         from pyodide.http import pyfetch
         _base = str(mo.notebook_location())
@@ -1246,19 +1235,26 @@ async def initialization():
     logging.basicConfig(level=logging.WARNING)
     logging.getLogger('quantish').setLevel(logging.WARNING)
 
+    from quantish.builder_widget import (
+        DiagramWidget,
+        LinePlotWidget,
+        NetworkGraphWidget,
+        WeightSplitWidget,
+    )
     from quantish.config_space import GatePort
     from quantish.diagram_layout import diagram_geometry
-    from quantish.builder_widget import (DiagramWidget, LinePlotWidget,
-                                         NetworkGraphWidget,
-                                         WeightSplitWidget)
-    from quantish.display import (coord_sort_key, cs_point_sort_key, gate_io,
-                                  short_label, sym_or_float)
-    from quantish.epr import (run_epr_experiment, supports_epr, verdict,
-                              verdict_slack)
+    from quantish.display import (
+        coord_sort_key,
+        cs_point_sort_key,
+        gate_io,
+        short_label,
+        sym_or_float,
+    )
+    from quantish.epr import run_epr_experiment, supports_epr, verdict, verdict_slack
     from quantish.gate import FredkinGate
-    from quantish.sweep import run_sweep, sweep_spec, sweep_values
-    from quantish.simulation import Simulation
     from quantish.network_graph import NetworkGraph
+    from quantish.simulation import Simulation
+    from quantish.sweep import run_sweep, sweep_spec, sweep_values
 
     REPO_DIR = Path(__file__).resolve().parents[1]
     WASM_MODE = sys.platform == 'emscripten'
@@ -1293,9 +1289,11 @@ async def initialization():
         qn,
         run_epr_experiment,
         run_sweep,
+        short_label,
         supports_epr,
         sweep_spec,
         sweep_values,
+        sym_or_float,
         verdict,
         verdict_slack,
         yaml,
@@ -1350,12 +1348,11 @@ def _(
         last_collection_set('uploads')
 
     _()
-    return
 
 
 @app.cell(hide_code=True)
 def _(MODELS_TOP, last_collection_get, last_collection_set, mo, model_rescan):
-    model_rescan  # dependency: pressing the button re-scans the directory
+    model_rescan  # noqa: B018 — dependency: pressing the button re-scans the directory
 
     def _():
         options = sorted(d.name for d in MODELS_TOP.iterdir()
@@ -1433,7 +1430,7 @@ def _(mo, sim):
     # all there is before that). Depending on sim recreates the switch
     # at every run, so a run always opens in the values view no matter
     # where the switch was left.
-    sim
+    sim  # noqa: B018 — dependency: a run rebuilds the switch
     show_values = mo.ui.switch(value=True, label='show values')
     return (show_values,)
 
@@ -1503,7 +1500,7 @@ def _(mo, variables_editor, yaml):
             if v is None:
                 return {}, None
             if not isinstance(v, dict):
-                raise ValueError('expected name: expression lines')
+                raise TypeError('expected name: expression lines')
             return {str(k): val for k, val in v.items()}, None
         except Exception as exc:  # noqa: BLE001 — show, don't crash
             return {}, f'variables not parseable — {exc}'
@@ -1623,7 +1620,7 @@ def _(
                     rad = float(qn.qify(txt, base_env))  # symbolic expression (may use model variables), radians
                     angles_set({**angles_get(),
                                 g: {'deg': math.degrees(rad), 'expr': txt}})
-                except Exception:  # noqa: BLE001 — unparseable: keep previous value
+                except Exception:  # noqa: BLE001, S110 — unparseable: keep previous value
                     pass
             return cb
 
@@ -1759,9 +1756,9 @@ def _(Simulation, mo):
         import random
         import time
         from copy import deepcopy
+
         from quantish.epr import sample_hidden_variable
-        from quantish.montecarlo import (pilot_transitions, sample_pilot,
-                                         sample_terminal)
+        from quantish.montecarlo import pilot_transitions, sample_pilot, sample_terminal
         key = id(model_sim)
         if key not in _calibration:
             t0 = time.perf_counter()
@@ -1855,7 +1852,6 @@ def _(mc_cancel, mc_job_slot):
         _job = mc_job_slot.get('job')
         if _job is not None and not _job['done']:
             _job['cancel'].set()
-    return
 
 
 @app.cell(hide_code=True)
@@ -1991,8 +1987,8 @@ def _(
                  r'**Analytical law** $\sin^2(\theta_1-\theta_2)$',
                  grid_table(lambda c: c['analytical'], res['grid']),
                  verdicts('exact', res, 'bell_exact', 'chsh_exact', 1e-9, 1e-9),
-                 '**Classical hidden-variable law** — the best a local '
-                 'model can do: it sits exactly on the bound',
+                 ('**Classical hidden-variable law** — the best a local '
+                  'model can do: it sits exactly on the bound'),
                  grid_table(lambda c: c['classical'], res['grid']),
                  verdicts('classical law', res, 'bell_classical',
                           'chsh_classical', 1e-9, 1e-9)]
@@ -2001,8 +1997,8 @@ def _(
             bell_slack, chsh_slack = verdict_slack(n)
             for m in [m for m in SAMPLER_NAMES if m in runs]:
                 name = SAMPLER_NAMES[m]
-                parts += [f'**{name[0].upper()}{name[1:]}** sampled results: '
-                          f'{n:,} trials per cell',
+                parts += [(f'**{name[0].upper()}{name[1:]}** sampled results: '
+                           f'{n:,} trials per cell'),
                           grid_table(lambda c: c['sampled'], runs[m]['grid']),
                           verdicts('sampled', runs[m],
                                    'bell', 'chsh', bell_slack, chsh_slack)]
@@ -2113,7 +2109,6 @@ def _(ws_native, ws_sel_get, ws_sel_set):
             ws_sel_set(tuple(_nsel))
 
     _()
-    return
 
 
 @app.cell(hide_code=True)
