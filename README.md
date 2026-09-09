@@ -4,7 +4,7 @@
 
 This is a simulation of "quantish" physics, as described in Chapter 4 of *Good and
 Real: Demystifying Paradoxes from Physics to Ethics* (Gary L. Drescher, MIT
-Press, 2006). The quantish universe is a toy analogue of quantum mechanics, in which
+Press, 2006). The quantish universe is a toy analog of quantum mechanics, in which
 "particles" with complex-valued weights flow through a network of Fredkin
 gates, splitting into weighted superpositions of classical states. Every classical state (or _world_) is a point in a configuration space. A configuration space has $2p$ dimensions, where $p$ is the number of particles defined in one specific model. Each quantish particle has, at any moment, a _position_ and a _sign_. We designate a particle's sign as _plus_ or _minus_ (though this could also be thought of as any other two-valued aspect, such as left- or right-handed spin). As described in the book, we can set up models that demonstrate several quantum phenomena, including interference as shown in the classic double-slit experiment, up to the EPR-Bell experiment, in which apparently nonlocal interactions take place, without hidden variables.
 
