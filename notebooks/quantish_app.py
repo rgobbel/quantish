@@ -334,10 +334,14 @@ def _(
     coord_sort_key,
     cs_point_sort_key,
     gate_io,
+    html_table,
     math_prob,
     math_weight,
+    md_cell,
     md_table,
     mo,
+    particle_names,
+    particle_tokens,
     phase_deg,
     qn,
     sim,
@@ -354,8 +358,12 @@ def _(
         # per-particle components the gate applied (cos²θ, ±i·sinθcosθ, sin²θ),
         # the branch amplitude, and the output configuration-space point's total weight. Where
         # branch w ≠ point w, interfering branches merged into that configuration-space point.
+        pnames = particle_names(sim)
+
         def label(p):
-            return f'`{short_label(sim, p)}`'
+            # one cell per particle (particle-name order), each the
+            # abbreviated position; the header names the particle
+            return [f'`{tok}`' for _, tok in particle_tokens(sim, p)]
 
         # the product sign, in a math serif so it doesn't read as a
         # gateway glyph, with the explanation on hover
@@ -417,47 +425,53 @@ def _(
         for step in sorted(by_step):
             points = sorted(by_step[step], key=lambda p: cs_point_sort_key(sim, p))
             if step == 0:
-                sections['Step 0 — initial configuration-space point'] = mo.md(md_table(
-                    ['configuration-space point', 'weight $w$'],
-                    [(label(w), math_weight(w.weight)) for w in points]))
+                sections['Step 0 — initial configuration-space point'] = mo.md(html_table(
+                    [('configuration-space point', pnames), ('weight $w$', None)],
+                    [label(w) + [math_weight(w.weight)] for w in points], md_cell))
                 continue
             stage = sim.run_stages[step - 1]
             parents = by_step.get(step - 1, [])
             rows = []
+            n = len(pnames)
             for w in points:
-                out_label = label(w) + (' _(canceled)_' if w.canceled else '')
+                out_label = label(w)
+                if w.canceled:
+                    out_label = out_label[:-1] + [out_label[-1] + ' _(canceled)_']
                 branches = sorted(w.contributions.items(),
                                   key=lambda kv: cs_point_sort_key(sim, kv[0]))
                 if len(branches) == 1:
                     parent, contrib = branches[0]
-                    rows.append((label(parent),
+                    rows.append(label(parent) + [
                                  ', '.join(controlled_gates(parent, stage)) or '∅',
                                  math_weight(parent.weight),
                                  particle_cell(w, parent, contrib),
-                                 math_weight(contrib), out_label,
-                                 math_weight(w.weight)))
+                                 math_weight(contrib)] + out_label + [
+                                 math_weight(w.weight)])
                     continue
                 # a merged output: its weight belongs to the SUM of the
                 # branches, not to each branch — blank the output columns
                 # on branch rows and close the group with a merged row
                 # showing the addition
                 for parent, contrib in branches:
-                    rows.append((label(parent),
+                    rows.append(label(parent) + [
                                  ', '.join(controlled_gates(parent, stage)) or '∅',
                                  math_weight(parent.weight),
                                  particle_cell(w, parent, contrib),
-                                 math_weight(contrib), '', ''))
-                rows.append(('**merged**', '', '', '',
-                             ' '.join(math_weight(c) for _, c in branches),
-                             out_label, math_weight(w.weight)))
+                                 math_weight(contrib), ('', n), ''])
+                rows.append([('**merged**', n), '', '', '',
+                             ' '.join(math_weight(c) for _, c in branches)]
+                            + out_label + [math_weight(w.weight)])
             total = qn.to_float(sum(w.probability for w in points
                                     if not w.canceled))
             # md_table needs a blank line before it; its output starts
             # with one newline, so add the other after the header text
             sections[f'Step {step} — {", ".join(stage)}'] = mo.md(
-                control_header(stage, parents) + '\n' +
-                md_table(['input configuration-space point', 'control', '$w_{in}$', 'particles',
-                          'branch $w$', 'output configuration-space point', '$w_{out}$'], rows) +
+                control_header(stage, parents) + '\n\n' +
+                html_table([('input configuration-space point', pnames),
+                            ('control', None), ('$w_{in}$', None),
+                            ('particles', None), ('branch $w$', None),
+                            ('output configuration-space point', pnames),
+                            ('$w_{out}$', None)], rows, md_cell) +
                 f'\n\ntotal probability after step: {total:.6f}')
         return mo.accordion({'### Weight evolution table (configuration-space points)':
                              mo.accordion(sections, multiple=True, lazy=True)})
@@ -466,16 +480,17 @@ def _(
         # Worlds sorted canonically: gate (in evaluation order), then port
         # (upper before lower), then sign (+ before −); the configuration
         # label's coordinates are reordered to match.
-        rows = [(
-            f'`{short_label(sim, p)}`',
+        # weights and probabilities at one fixed precision (three
+        # decimals); the phase is an angle, which gets at most two
+        rows = [[f'`{tok}`' for _, tok in particle_tokens(sim, p)] + [
             math_weight(p.weight, prec=3),
-            math_prob(p.probability),
-            f'${phase_deg(p.weight):+.1f}º$',
-        ) for p in sorted(sim.result_space.index.values(),
+            math_prob(p.probability, prec=3),
+            f'${phase_deg(p.weight):.2f}º$',
+        ] for p in sorted(sim.result_space.index.values(),
                           key=lambda p: cs_point_sort_key(sim, p))]
-        return mo.accordion({'### Final configuration-space points\n': mo.md(md_table(
-            ['configuration', 'weight $w$', r'$\lvert w\rvert^2$', 'phase'],
-            rows))})
+        return mo.accordion({'### Final configuration-space points\n': mo.md(html_table(
+            [('configuration', particle_names(sim)), ('weight $w$', None),
+             (r'$\lvert w\rvert^2$', None), ('phase', None)], rows, md_cell))})
 
     def _marginals():
         # Marginal in the statistics sense: each row sums |w|² over every
@@ -531,6 +546,7 @@ def _(
     short_label,
     coord_sort_key,
     SAMPLER_LABELS,
+    html_table,
     mc_button,
     mc_cancel,
     mc_job_slot,
@@ -540,6 +556,8 @@ def _(
     mc_trials,
     mc_trials_text,
     mo,
+    particle_names,
+    particle_tokens,
     picked_modes,
     projection,
     sampling_seconds,
@@ -612,11 +630,12 @@ def _(
         results = _job['results']
         job_sim = _job['sim']
         pred = results['predicted']
-        # compact row labels: the same short-config form the final-points
-        # table uses, looked up from the terminal points (raw keys are
-        # unreadably long for multi-particle models)
-        short = {p.key: short_label(job_sim, p)
-                 for p in job_sim.result_space.index.values()}
+        # compact row labels: one abbreviated position per particle, the
+        # form the final-points table uses, looked up from the terminal
+        # points (raw keys are unreadably long for multi-particle models)
+        pnames = particle_names(job_sim)
+        tokens = {p.key: [tok for _, tok in particle_tokens(job_sim, p)]
+                  for p in job_sim.result_space.index.values()}
         sections = []
         if _job['cancel'].is_set():
             sections.append('_canceled — partial tallies below_')
@@ -635,22 +654,20 @@ def _(
                 freq = tally.get(key, 0) / n_done
                 tvd += abs(freq - pred.get(key, 0.0))
                 bare = key.split(':')[0]
-                label_str = short.get(bare, bare[:60].replace('|', ' '))
-                rows.append((f'<code>{_esc(label_str)}</code>',
-                             tally.get(key, 0),
-                             f'{freq:.4f}', f'{pred.get(key, 0.0):.4f}'))
+                toks = tokens.get(bare, [bare[:60].replace('|', ' ')] + [''] * (len(pnames) - 1))
+                rows.append([f'<code>{_esc(t)}</code>' for t in toks] + [
+                             str(tally.get(key, 0)),
+                             f'{freq:.4f}', f'{pred.get(key, 0.0):.4f}'])
             # an HTML table (markdown tables cannot span columns): the
-            # two frequency columns share a group heading
-            head = ('<thead><tr><th></th><th></th>'
-                    '<th colspan="2" style="text-align: center">'
-                    'frequencies</th></tr>'
-                    '<tr><th>point</th><th>count</th><th>observed</th>'
-                    '<th>analytical</th></tr></thead>')
-            body = ''.join('<tr>' + ''.join(f'<td>{c}</td>' for c in r)
-                           + '</tr>' for r in rows)
+            # particle columns share the 'point' heading, the two
+            # frequency columns share theirs
+            table = html_table([('configuration-space point', pnames),
+                                ('count', None),
+                                ('frequencies', ['observed', 'analytical'])],
+                               rows)
             sections.append(f'**{label}** — {note}; {n_done:,} trials, '
                             f'total variation distance {tvd / 2:.4f}\n\n'
-                            f'<table>{head}<tbody>{body}</tbody></table>')
+                            + table)
         return mo.md('\n\n'.join(sections))
 
     from html import escape as _esc
@@ -1247,6 +1264,9 @@ async def initialization():
         coord_sort_key,
         cs_point_sort_key,
         gate_io,
+        html_table,
+        particle_names,
+        particle_tokens,
         short_label,
         sym_or_float,
     )
@@ -1284,8 +1304,11 @@ async def initialization():
         cs_point_sort_key,
         diagram_geometry,
         gate_io,
+        html_table,
         math,
         mo,
+        particle_names,
+        particle_tokens,
         qn,
         run_epr_experiment,
         run_sweep,
@@ -1649,7 +1672,7 @@ def _(
 
 @app.cell(hide_code=True)
 def _(cmath, mo, qn):
-    def latex_weight(w, prec=4, max_len=40) -> str:
+    def latex_weight(w, prec=3, max_len=40) -> str:
         # In Symbolic mode, render the exact sympy expression as LaTeX —
         # unless its plain-text form is longer than max_len characters
         # (the display.sym_or_float policy): complex models and awkward
@@ -1666,18 +1689,16 @@ def _(cmath, mo, qn):
             if len(str(expr)) <= max_len and not qn.inexact(expr):
                 return sympy.latex(expr)
         wc = complex(w)
-        real, imag = wc.real, wc.imag
-        # a weight is a number: no forced leading '+' (that reads as a
-        # particle sign); '-' only when negative, '+' only between parts
-        parts = []
-        if abs(real) > 1e-12:
-            parts.append(f'{"-" if real < 0 else ""}{abs(round(real, 2))}')
-        if abs(imag) > 1e-12:
-            joiner = ('-' if imag < 0 else '+') if parts else ('-' if imag < 0 else '')
-            parts.append(f'{" " if parts else ""}{joiner}{abs(imag):.{prec}g}i')
-        return ''.join(parts) if parts else '0.00'
+        # always the full pair re±im·i at exactly prec decimals (0 is
+        # 0.0000+0.0000i): every weight in a column has the same shape,
+        # so right-aligned cells line their decimal points up. No forced
+        # leading '+' on the real part — that would read as a particle
+        # sign; the sign between the parts is the imaginary part's
+        real = 0.0 if abs(wc.real) < 1e-12 else wc.real     # no '-0.0000'
+        imag = 0.0 if abs(wc.imag) < 1e-12 else wc.imag
+        return f'{real:.{prec}f}{imag:+.{prec}f}i'
 
-    def math_weight(w, prec=4) -> str:
+    def math_weight(w, prec=3) -> str:
         # latex_weight wrapped as inline math. Whitespace is normalized
         # because markdown doesn't recognize '$ x$' (leading space) as
         # math — symbolic LaTeX often leads with '- \frac{...}'.
@@ -1709,6 +1730,14 @@ def _(cmath, mo, qn):
                 return f'${sympy.latex(expr)}$'
         return f'${float(pr):.{prec}f}$'
 
+    def md_cell(text: str) -> str:
+        # html_table's cell renderer: markdown/math cells go through the
+        # markdown renderer (its arithmatex spans are typeset in the
+        # browser); plain cells are passed straight through
+        if any(ch in text for ch in '$`*_<'):
+            return mo.md(text).text
+        return text
+
     def md_table(headers, rows) -> str:
         # NB: markdown needs a blank line before a table, and literal '|'
         # inside cells (configuration-space point keys use it as a separator) must be escaped
@@ -1722,7 +1751,8 @@ def _(cmath, mo, qn):
         return '\n'.join(lines)
 
     _ = mo.md('')  # helpers only
-    return inexact_note, latex_weight, math_prob, math_weight, md_table, phase_deg
+    return (inexact_note, latex_weight, math_prob, math_weight, md_cell,
+            md_table, phase_deg)
 
 
 @app.cell(hide_code=True)

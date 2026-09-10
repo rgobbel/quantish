@@ -85,6 +85,72 @@ def pass_through_names(sim) -> set:
             | set(getattr(sim, 'pass_through_gates', ())))
 
 
+def particle_names(sim) -> list:
+    """The model's particle names in name order — p1, p2, …, p10 (a
+    natural sort, so p10 follows p9) — the column order of every table
+    that shows one abbreviated position per particle."""
+    def natural(name):
+        return [int(t) if t.isdigit() else t for t in re.split(r'(\d+)', name)]
+    return sorted(sim.particles, key=natural)
+
+
+def particle_tokens(sim, point) -> list:
+    """The point's abbreviated position per particle, in particle-name
+    order (particle_names): [(name, token)], the token being
+    short_config's form for that coordinate — '+g2u', '-g3c', '+S' for
+    a pass-through gate — or '—' for a particle absent from the point.
+    One token per table column, so a header row can name the particle
+    each belongs to."""
+    bare = pass_through_names(sim)
+    tokens = []
+    for name in particle_names(sim):
+        coord = point.coords.get(name)
+        if coord is None:
+            tokens.append((name, '—'))
+            continue
+        port = coord.position.origin or coord.position.endpoint
+        if port is None:
+            tokens.append((name, f'{coord.sign}?'))
+        elif port.gate in bare:
+            tokens.append((name, f'{coord.sign}{port.gate}'))
+        else:
+            tokens.append((name, f'{coord.sign}{port.gate}{(port.port or "c")[0]}'))
+    return tokens
+
+
+def html_table(head_groups, rows, render=str) -> str:
+    """An HTML table with a two-row header. head_groups is a list of
+    (label, subheaders): a group with subheaders spans them (the label
+    above, the subheaders below — 'configuration' over 'p1 p2 p3'); a
+    group with subheaders None is one column spanning both header rows.
+    Each row is a sequence of cells; a cell may be (text, colspan).
+    `render` turns a cell's text into HTML (an app passes its markdown
+    renderer, so cells may carry math). Cells are right-aligned: with
+    every number in a column at one fixed precision and one shape, the
+    decimal points line up down the column."""
+    top, sub = [], []
+    for label, subheaders in head_groups:
+        if subheaders is None:
+            top.append(f'<th rowspan="2" style="text-align: right">'
+                       f'{render(str(label))}</th>')
+        else:
+            top.append(f'<th colspan="{len(subheaders)}" '
+                       f'style="text-align: center">{render(str(label))}</th>')
+            sub += [f'<th style="text-align: right">{render(str(h))}</th>'
+                    for h in subheaders]
+    head = f'<thead><tr>{"".join(top)}</tr><tr>{"".join(sub)}</tr></thead>'
+    body = []
+    for row in rows:
+        cells = []
+        for c in row:
+            text, span = (c if isinstance(c, tuple) else (c, 1))
+            attrs = f' colspan="{span}"' if span > 1 else ''
+            cells.append(f'<td{attrs} style="text-align: right">'
+                         f'{render(str(text))}</td>')
+        body.append('<tr>' + ''.join(cells) + '</tr>')
+    return f'<table>{head}<tbody>{"".join(body)}</tbody></table>'
+
+
 def short_label(sim, point) -> str:
     """The point's compact configuration label in canonical coordinate
     order, e.g. '+g2c +g3u +S' — pass-through gates without a port
@@ -163,12 +229,12 @@ def pos_sign_lines(sim, pos):
                       for sign, prob in sorted(probs[pname].items(),
                                                key=lambda kv: kv[0] != '+')]
             if len(signed) == 1:
-                lines.append(f'{signed[0]} ∠{deg:+.0f}º')
+                lines.append(f'{signed[0]} ∠{deg:.0f}º')
                 continue
             total = sym_or_float(qn.probability(amps[pname]),
                                  f'{abs(agg) ** 2:.{prec}f}', max_len)
             lines.append('  '.join(signed))
-            lines.append(f'Σ {total} ∠{deg:+.0f}º')
+            lines.append(f'Σ {total} ∠{deg:.0f}º')
     except (TypeError, ValueError):
         return None  # symbolic weights with free symbols
     return '\n'.join(lines)
@@ -220,7 +286,7 @@ def port_summary(sim, step, port, end='origin'):
             phase_deg = math.degrees(cmath.phase(agg)) if abs(agg) > 1e-12 else 0.0
             sum_pr = sym_or_float(qn.probability(amps[pname]),
                                   f'{abs(agg) ** 2:.{prec}f}', max_len)
-            lines.append(f'{sign_parts}\nΣ: {sum_pr} ∠{phase_deg:+.0f}º')
+            lines.append(f'{sign_parts}\nΣ: {sum_pr} ∠{phase_deg:.0f}º')
     except (TypeError, ValueError):
         return None  # symbolic weights with free symbols
     return '\n'.join(lines)
@@ -297,7 +363,7 @@ def amp_value_str(sim, pname, amp):
                            max_len)
     pr_str = sym_or_float(qn.probability(amp), f'{pr:.{prec}f}', max_len)
     return (f'{pname} {amp_str}\n'
-            f'Pr: {pr_str} ({pr_re:.{prec}f}+{pr_im:.{prec}f}) ∠{deg:+.0f}º')
+            f'Pr: {pr_str} ({pr_re:.{prec}f}+{pr_im:.{prec}f}) ∠{deg:.0f}º')
 
 
 def pos_value_str(sim, pos):

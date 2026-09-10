@@ -51,28 +51,39 @@ async def initialization():
     if str(_repo) not in sys.path:
         sys.path.insert(0, str(_repo))
 
-    import quantish.qnumber as qn
     from quantish.qnumber import CalcMode
 
     CalcMode.default('Float')
 
-    import copy
+
     import yaml
 
+    from quantish.builder import (
+        angle_degrees,
+        coherence_warnings,
+        config_extras,
+        config_to_graph,
+        config_to_yaml,
+        extract_sections,
+        graph_to_config,
+        section_body,
+        validate_graph,
+        variables_block,
+        variables_env,
+    )
+    from quantish.builder_widget import BuilderWidget, DiagramWidget, NetworkGraphWidget
     from quantish.diagram_layout import diagram_geometry
-    from quantish.builder import (angle_degrees, coherence_warnings,
-                                  config_extras, config_to_graph,
-                                  config_to_yaml, extract_sections,
-                                  graph_to_config, section_body,
-                                  validate_graph, variables_block,
-                                  variables_env)
-    from quantish.builder_widget import (BuilderWidget, DiagramWidget,
-                                         NetworkGraphWidget)
+    from quantish.display import (
+        coord_sort_key,
+        cs_point_sort_key,
+        html_table,
+        particle_names,
+        particle_tokens,
+        sym_or_float,
+    )
     from quantish.network_graph import NetworkGraph
-    from quantish.display import (coord_sort_key, cs_point_sort_key,
-                                  short_label, sym_or_float)
-    from quantish.util import angle_label
     from quantish.simulation import Simulation
+    from quantish.util import angle_label
 
     # the model library, for loading an existing model into the
     # builder: the repo's models/ directory, or the frozen copy
@@ -107,7 +118,11 @@ async def initialization():
         cs_point_sort_key,
         diagram_geometry,
         graph_to_config,
+        html_table,
         mo,
+        particle_names,
+        particle_tokens,
+        sym_or_float,
         model_paths,
         models_top,
         validate_graph,
@@ -210,7 +225,6 @@ def _(mo):
     mo.vstack([_intro, mo.accordion({
         '### Documentation\n\n<span style="font-size:0.85em">'
         'under the fold</span>': _doc})], align='stretch')
-    return
 
 
 @app.cell(hide_code=True)
@@ -222,6 +236,7 @@ async def build_stamp(mo, sys):
     if sys.platform == 'emscripten':
         try:
             import json as _json
+
             from pyodide.http import pyfetch as _pyfetch
             _v = _json.loads(await (await _pyfetch(
                 f'{mo.notebook_location()}/public/version.json')).string())
@@ -230,7 +245,6 @@ async def build_stamp(mo, sys):
             _stamp = ''
     mo.md(f'<span style="font-size: 0.8em; color: #444">{_stamp}</span>') \
         if _stamp else None
-    return
 
 
 @app.cell(hide_code=True)
@@ -312,7 +326,6 @@ def _(get_file_mode, open_btn, set_file_mode, upload_btn):
                           else 'upload')
 
     _()
-    return
 
 
 @app.cell(hide_code=True)
@@ -340,6 +353,7 @@ def _(collection_pick, get_file_mode, mo, model_paths, model_upload):
 
 @app.cell(hide_code=True)
 def _(
+    config_extras,
     config_to_graph,
     extract_sections,
     mo,
@@ -419,7 +433,6 @@ def _(
         return None
 
     _load()
-    return
 
 
 @app.cell(hide_code=True)
@@ -464,7 +477,6 @@ def _(confirm_load_btn, get_pending, keep_canvas_btn, set_loaded, set_pending):
             set_pending(None)
 
     _()
-    return
 
 
 @app.cell(hide_code=True)
@@ -493,7 +505,6 @@ def _(
                      f'**{dest}**</span>')
 
     _()
-    return
 
 
 @app.cell(hide_code=True)
@@ -702,7 +713,6 @@ def _(caption_input, mo, notes_input, variables_editor):
         notes_input,
         mo.md('<span style="font-size: 0.9em">**variables**</span>'),
         variables_editor], align='stretch')})
-    return
 
 
 @app.cell(hide_code=True)
@@ -775,7 +785,6 @@ def _(DiagramWidget, diagram_geometry, mo, sim_built):
             return mo.md(f'_circuit diagram failed: {exc}_')
 
     _()
-    return
 
 
 @app.cell(hide_code=True)
@@ -802,30 +811,32 @@ def _(NetworkGraph, NetworkGraphWidget, mo, sim_built):
 
     mo.accordion({'#### Weight evolution graphic (gate output '
                   'ports × stages)': _()})
-    return
 
 
 @app.cell(hide_code=True)
-def _(cs_point_sort_key, mo, short_label, sim_built, sym_or_float):
+def _(cs_point_sort_key, html_table, mo, particle_names, particle_tokens, sim_built, sym_or_float):
     mo.stop(sim_built is None)
 
     def _():
         rows = []
         for p in sorted(sim_built.result_space.index.values(),
                         key=lambda p: cs_point_sort_key(sim_built, p)):
-            cfg = short_label(sim_built, p)
             w = complex(p.weight)
-            # exact forms in Symbolic mode when short, floats otherwise
-            w_txt = sym_or_float(p.weight, f'{w.real:.4f}{w.imag:+.4f}i')
+            # exact forms in Symbolic mode when short, floats otherwise;
+            # every number at the same fixed precision
+            w_txt = sym_or_float(p.weight, f'{w.real:.3f}{w.imag:+.3f}i')
             pr_txt = sym_or_float(p.probability,
-                                  f'{float(p.probability):.4f}')
-            rows.append(f'| `{cfg}` | {w_txt} | {pr_txt} |')
-        return mo.md('\n'.join(
-            ['', '| configuration | weight | probability |',
-             '|---|---|---|'] + rows))
+                                  f'{float(p.probability):.3f}')
+            rows.append([f'`{tok}`' for _, tok in particle_tokens(sim_built, p)]
+                        + [w_txt, pr_txt])
+        # one column per particle under a 'configuration' heading that
+        # names each; cells with markdown go through the renderer
+        return mo.md(html_table(
+            [('configuration', particle_names(sim_built)), ('weight', None),
+             ('probability', None)], rows,
+            lambda t: mo.md(t).text if any(ch in t for ch in '$`*') else t))
 
     _()
-    return
 
 
 @app.cell(hide_code=True)
@@ -833,7 +844,6 @@ def _(builder_config, config_to_yaml, mo, raw_sections):
     mo.stop(builder_config is None)
     _yaml = config_to_yaml(builder_config, raw_sections=raw_sections)
     mo.accordion({'Model YAML': mo.md(f'```yaml\n{_yaml}```')})
-    return
 
 
 if __name__ == "__main__":
