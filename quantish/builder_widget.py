@@ -1580,7 +1580,9 @@ function render({ model, el }) {
 
   function editNode(grp, target) {
     const copy = JSON.parse(JSON.stringify(graph()));
-    const onName = target?.dataset?.name !== undefined;
+    // the name is drawn as tspans (subscripted digits), so the pointer
+    // target is usually a tspan inside the named text: look outward
+    const onName = !!target?.closest?.('[data-name]');
     if (grp.dataset.gate) {
       if (onName || isDelay(copy.gates[grp.dataset.gate])) {
         renameGate(copy, grp.dataset.gate);
@@ -1707,12 +1709,14 @@ function render({ model, el }) {
       lastPort = { key: ikey, t: ev.timeStamp };
       // fall through: a single press on an in-port drags the node
     }
-    // a stage / diagram-group box label: double-click renames
-    if (t.dataset && t.dataset.grouplabel !== undefined) {
-      const gkey = `${t.dataset.groupkind}:${t.dataset.grouplabel}`;
+    // a stage / diagram-group box label: double-click renames (the
+    // label's digits are subscript tspans, so look outward for it)
+    const glab = t.closest?.('[data-grouplabel]');
+    if (glab) {
+      const gkey = `${glab.dataset.groupkind}:${glab.dataset.grouplabel}`;
       if (lastDown.key === gkey && ev.timeStamp - lastDown.t < 400) {
         lastDown = { key: null, t: 0 };
-        renameGroup(t.dataset.groupkind, t.dataset.grouplabel);
+        renameGroup(glab.dataset.groupkind, glab.dataset.grouplabel);
       } else {
         lastDown = { key: gkey, t: ev.timeStamp };
       }
