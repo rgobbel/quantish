@@ -2,7 +2,11 @@ import csv
 import logging
 import subprocess
 import time
-from argparse import ArgumentParser, BooleanOptionalAction, ArgumentDefaultsHelpFormatter
+from argparse import (
+    ArgumentDefaultsHelpFormatter,
+    ArgumentParser,
+    BooleanOptionalAction,
+)
 from collections import defaultdict
 from pathlib import Path
 
@@ -10,11 +14,11 @@ import yaml
 from addict import Dict as Addict
 
 import quantish.qnumber as qn
+from quantish.mermaid_diagram import diagram, mmdc_cmd
+from quantish.network_graph import NetworkGraph
 from quantish.qnumber import CalcMode
 from quantish.simulation import Simulation
 from quantish.util import QLogger, flat_list, show_points
-from quantish.mermaid_diagram import diagram, mmdc_cmd
-from quantish.network_graph import NetworkGraph
 
 log = None
 
@@ -94,6 +98,10 @@ def main():
     parser.add_argument('--sweep', action='store_true',
                         help="Run the model's declared sweep (its `sweep` section) and "
                              "log the table; with --csv-output also writes <name>_sweep.csv")
+    parser.add_argument('--qubits', action='store_true',
+                        help='Compile the model to a qubit circuit (quantish/qubit_circuit.py): log '
+                             'the qubit map and a drawing, simulate it, and check its final '
+                             'configuration-space points against the engine run')
     parser.add_argument('--full-stats', action='store_true', help='Include particle names and probabilities in results')
     args = parser.parse_args()
     # append rather than with_suffix: model names like fig4.17 have a
@@ -132,7 +140,7 @@ def main():
     CalcMode.default('Symbolic' if symbolic else 'Float')
     if args.loglevel is not None:
         loglevel = args.loglevel.upper()
-    elif 'loglevel' in config.keys():
+    elif 'loglevel' in config:
         loglevel = config.loglevel.upper()
     else:
         loglevel = logging.INFO
@@ -153,12 +161,12 @@ def main():
     log.info(f'QUANTISH PHYSICS SIMULATION STARTING: {config["title"]} at {time.asctime()}')
     log.info(f"{'SYMBOLIC' if symbolic else 'FLOATING POINT'} MODE")
     if log.getEffectiveLevel() == logging.DEBUG:
-        log.debug(f'ARGS:')
+        log.debug('ARGS:')
         for k, v in args.__dict__.items():
             if k[0] != '_':
                 log.debug(f'   {k}: {v}')
         log.debug('')
-        log.debug(f'CONFIG:')
+        log.debug('CONFIG:')
         for k, v in config_dict.items():
             log.debug(f'   {k}: {v}')
     has_run = False
@@ -212,8 +220,9 @@ def main():
             for fmt in sorted(file_formats):
                 out = mmd_path.with_suffix('.' + fmt)
                 log.info(f'Writing {out}')
+                # a failed render is reported by mmdc itself; the run goes on
                 subprocess.run(mmdc_cmd() + ['-i', mmd_path, '-o', out]
-                               + (['--pdfFit'] if fmt == 'pdf' else []))
+                               + (['--pdfFit'] if fmt == 'pdf' else []), check=False)
         if 'tikz' in kinds and when != 'after':
             # structure only — identical before and after, so drawn once
             from quantish.tikz_diagram import render_from_simulation
@@ -349,6 +358,27 @@ def main():
                               csv_path=(f'{args.csv_output}_sweep.csv'
                                         if args.csv_output else None))
 
+            if args.qubits:
+                from quantish.qubit_circuit import compile_qubits
+                circuit = compile_qubits(sim)
+                log.info(' ')
+                log.info(f'QUBIT CIRCUIT: {circuit.n_qubits} qubits, {len(circuit.ops)} operations')
+                for name, pq in circuit.particles.items():
+                    flags = ', '.join(circuit.qubit_names[f] for f in pq.flags)
+                    log.info(f'   {name}: sign {circuit.qubit_names[pq.sign]}, position '
+                             f'{circuit.qubit_names[pq.x]}' + (f', flags {flags}' if flags else ''))
+                for line in circuit.draw().splitlines():
+                    log.info('   ' + line)
+                try:
+                    got = circuit.final_points()
+                    engine = {p.key: complex(p.weight) for p in result_space.index.values()}
+                    worst = max([abs(got.get(k, 0) - engine.get(k, 0))
+                                 for k in set(got) | set(engine)] or [0.0])
+                    log.info(f'   simulated statevector vs engine: {len(got)} final points, '
+                             f'max |Δ weight| = {worst:.2e}')
+                except (TypeError, ValueError) as exc:
+                    log.info(f'   statevector check skipped (symbolic weights): {exc}')
+
             if config.sample and sim.n_samples > 0:
                 from quantish.montecarlo import run_monte_carlo
                 run_monte_carlo(sim, sim.n_samples, mode=args.mc_mode, seed=args.mc_seed)
@@ -356,8 +386,8 @@ def main():
                 if supports_epr(sim):
                     run_epr_experiment(sim, sim.n_samples, seed=args.mc_seed, mode=args.epr_mode)
 
-            print(f'log level was {save_ll}, setting to {logging.WARN}')
-            log.setLevel(logging.WARN)
+            print(f'log level was {save_ll}, setting to {logging.WARNING}')
+            log.setLevel(logging.WARNING)
             if 'graph' in kinds:
                 from quantish.svg_export import network_graph_svg
                 graph_svg = network_graph_svg(

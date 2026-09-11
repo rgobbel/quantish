@@ -204,6 +204,8 @@ Some useful options (see `--help` for the full list):
   `--epr-mode terminal|pilot|hidden` picks the model for the Bell sweep's
   sampled rates
 - `--epr-stats` — the Bell/CHSH sweep on an EPR model
+- `--qubits` — compile the model to a qubit circuit, draw it, and check
+  the circuit's statevector against the engine (see *Quantish as qubits*)
 - `--set NAME=EXPR` — override a model variable, e.g. `--set theta2=pi/8`
 - `--loglevel debug` — a detailed trace of every gate firing and
   configuration-space point split, with checkable weight arithmetic
@@ -267,6 +269,50 @@ and respects the CHSH bound; the quantish wave crosses both. The CLI runs the sw
 `--epr-mode`; the quantish app's Monte Carlo section and its Bell/CHSH
 sweep both let you choose several at once and compare the grids and
 verdicts side by side.
+
+### Quantish as qubits
+
+A quantish circuit is a qubit circuit. A particle is two qubits — its
+sign (|0⟩ plus, |1⟩ minus) and its position (|0⟩ upper wire, |1⟩
+lower) — and a gate at measurement angle θ with no control particle
+present is
+
+    U(θ) = Rx(−2θ) on sign · CNOT(sign → position) · Rx(+2θ) on sign
+
+the sign measured in the basis rotated by θ, with the position wire
+recording the outcome: the parallel component passes straight, the
+perpendicular component crosses over. The four split components of
+§4.2.3 are the entries of that rotated CNOT. A control particle present
+swaps straight and cross, which is one more NOT on the position,
+conditioned on the control particle's position; a phase plate is a
+phase conditioned on position; a branching start is a Ry rotation. A
+configuration-space point is a computational basis state, its weight
+the amplitude, and interference is two paths landing on the same basis
+state.
+
+`quantish/qubit_circuit.py` compiles a loaded model into that circuit
+(`compile_qubits`), allocating one extra flag qubit per particle
+wherever a resting or diverging component would otherwise collide with
+a gate's outputs, and simulates it with a small numpy statevector
+simulator. `tests/test_qubit_circuit.py` checks every model in
+`models/`: the decoded statevector equals the engine's final
+configuration-space points to 1e-9. `--qubits` on the CLI logs the
+qubit map, a text drawing, and that check for one model. Figure 4.17
+compiles to six qubits and twelve two-qubit gates, all Rx and CNOT.
+Nothing here needs Qiskit; `QubitCircuit.to_qiskit()` builds a
+`QuantumCircuit` when Qiskit is installed, which is how a quantish
+circuit reaches a real device.
+
+Two facts follow. The book's gate set is *monomial in the Hadamard
+basis*: every gate, seen with every qubit rotated by H, is a
+permutation with phases, so a quantish run is one Hadamard sandwich
+around reversible classical logic and phases — the IQP family, which
+includes Fredkin-gate reversible computation and Bell-violating
+correlations but not a mid-circuit Hadamard, so not Shor's algorithm.
+A phase plate is diagonal in the computational basis rather than the
+Hadamard one, and with phase plates the gate set generates the full
+unitary group on two coupled particles: quantish plus phase plates is
+universal.
 
 ### Tests
 
