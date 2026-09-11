@@ -16,15 +16,16 @@ alternatives, each weighted by the parent configuration-space point's
 weight times the product of the chosen components.
 """
 
-import logging
 import itertools
+import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Final, Iterable, Optional, Self, Union, Dict
+from typing import Final, Self
 
 import quantish.qnumber as qn
 from quantish.gate import FredkinGate
-from quantish.qnumber import Complex, probability
 from quantish.particle import PKey
+from quantish.qnumber import Complex, probability
 from quantish.util import SEP, Sign
 
 log = logging.getLogger('quantish')
@@ -36,8 +37,8 @@ log = logging.getLogger('quantish')
 # for 'GatePort' objects doesn't apply to a 'GatePort' object").
 @dataclass
 class GatePort:
-    gate: Optional[str] = None
-    port: Optional[str] = None
+    gate: str | None = None
+    port: str | None = None
     def __repr__(self):
         if self.gate is None and self.port is None:
             return 'NOWHERE'
@@ -54,8 +55,8 @@ NOWHERE: Final[GatePort] = GatePort(None, None)
 @dataclass
 class Position:
     # origin and endpoint are each a GatePort or None
-    origin: Optional[GatePort] = None
-    endpoint: Optional[GatePort] = None
+    origin: GatePort | None = None
+    endpoint: GatePort | None = None
     def __repr__(self):
         if self.origin is None and self.endpoint is None:
             return 'ABSENT'
@@ -115,8 +116,9 @@ class ConfigSpacePoint:
     PCoordinate to every particle, plus the single complex weight of that
     point."""
 
-    def __init__(self, step: int, coords: Union[dict, Iterable[PCoordinate]], weight,
-                 predecessors: set[Self] = None, successors: set[Self] = None):
+    def __init__(self, step: int, coords: dict | Iterable[PCoordinate], weight,
+                 predecessors: set[Self] | None = None,
+                 successors: set[Self] | None = None):
         if not isinstance(coords, dict):
             coords = {c.name: c for c in coords}
         self.step = step
@@ -130,7 +132,7 @@ class ConfigSpacePoint:
         # the split component each particle took in the step that created
         # this configuration-space point (None = passed through untouched); display data for
         # the per-particle bands of the weight-evolution graph
-        self.particles: dict[str, Optional[Complex]] = {}
+        self.particles: dict[str, Complex | None] = {}
         # True when interference canceled this configuration-space point's weight to zero: it
         # was dropped from the live set but stays in the all-points history
         # so the weight-evolution graph/table can show the cancellation
@@ -273,7 +275,7 @@ class ConfigSpaceRunner:
         return GatePort(*parts) if len(parts) == 2 else GatePort(parts[0], None)
 
     def particle_splits(self, cs_point: ConfigSpacePoint, pname: str,
-                        stage_gates: Dict[str, FredkinGate]) -> list[tuple[PCoordinate, Optional[Complex]]]:
+                        stage_gates: dict[str, FredkinGate]) -> list[tuple[PCoordinate, Complex | None]]:
         """Split components for one particle of one configuration-space point in the current
         stage, as (new coordinate, weight component) pairs. A component of
         None means the weight is unchanged (passthrough)."""
@@ -354,7 +356,8 @@ class ConfigSpaceRunner:
                 # (run_stages order), so the cartesian product enumerates
                 # successors gate by gate, each gate's four components in
                 # the book's order c2a, c2b, c3a, c3b
-                def stage_rank(pname):
+                def stage_rank(pname, cs_point=cs_point, stage=stage,
+                               stage_gates=stage_gates):
                     endpoint = cs_point.coords[pname].position.endpoint
                     gate = endpoint.gate if endpoint is not None else None
                     return (stage.index(gate) if gate in stage_gates else len(stage),

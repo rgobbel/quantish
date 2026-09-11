@@ -10,7 +10,6 @@ svg_to_png / svg_to_pdf).
 import math
 from xml.sax.saxutils import escape
 
-
 # Sub/superscript runs as tspans shifted with dy, mirroring the
 # widget's appendRuns: WebKit (Safari, every iPhone browser) ignores a
 # percentage baseline-shift and lands subscripts as superscripts, so
@@ -78,10 +77,10 @@ def diagram_svg(g: dict) -> str:
     def fy(y):
         return y1 - y
 
-    out = [f'<svg xmlns="http://www.w3.org/2000/svg" '
-           f'viewBox="{x0:g} 0 {W:g} {H:g}" '
-           f'width="{W * S:g}" height="{H * S:g}" '
-           f'font-family="sans-serif">',
+    out = [(f'<svg xmlns="http://www.w3.org/2000/svg" '
+            f'viewBox="{x0:g} 0 {W:g} {H:g}" '
+            f'width="{W * S:g}" height="{H * S:g}" '
+            f'font-family="sans-serif">'),
            _el('rect', x=f'{x0:g}', y='0', width=f'{W:g}',
                height=f'{H:g}', fill='#ffffff')]
     stadiums = [dict(s, fill=g['value_fill'], stroke=g['value_stroke'])
@@ -116,11 +115,11 @@ def diagram_svg(g: dict) -> str:
                       f"rotate({a['angle']:g})"))
     for tx in g.get('texts', []):
         for k, line in enumerate(tx['lines']):
-            attrs = dict(x=f"{tx['x']:.4g}",
-                         y=f"{fy(tx['y'] - k * g['line_h']) + BASELINE_CENTER * tx['size'] / S:.4g}",
-                         text_anchor='middle',
-                         font_size=f"{tx['size'] / S:.4g}",
-                         font_weight=tx['weight'], fill=tx['color'])
+            attrs = {'x': f"{tx['x']:.4g}",
+                         'y': f"{fy(tx['y'] - k * g['line_h']) + BASELINE_CENTER * tx['size'] / S:.4g}",
+                         'text_anchor': 'middle',
+                         'font_size': f"{tx['size'] / S:.4g}",
+                         'font_weight': tx['weight'], 'fill': tx['color']}
             runs = (tx.get('runs') or [None] * len(tx['lines']))[k]
             if runs and any(lvl for _, lvl in runs):
                 spans = ''.join(script_spans(runs, tx['size'] / S))
@@ -165,9 +164,9 @@ def network_graph_svg(m: dict) -> str:
     def py(y):
         return T + (y_hi - y) * px_y
 
-    out = [f'<svg xmlns="http://www.w3.org/2000/svg" '
-           f'viewBox="0 0 {W:g} {T + H:g}" width="{W:g}" '
-           f'height="{T + H:g}" font-family="sans-serif">',
+    out = [(f'<svg xmlns="http://www.w3.org/2000/svg" '
+            f'viewBox="0 0 {W:g} {T + H:g}" width="{W:g}" '
+            f'height="{T + H:g}" font-family="sans-serif">'),
            _el('rect', x='0', y='0', width=f'{W:g}', height=f'{T + H:g}',
                fill='#ffffff')]
     for i, line in enumerate(title_lines):

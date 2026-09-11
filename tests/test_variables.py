@@ -3,7 +3,6 @@ import unittest
 
 from addict import Dict as Addict
 
-import quantish.qnumber as qn
 from quantish.qnumber import CalcMode, qify, reserved_name
 from quantish.simulation import Simulation
 
@@ -111,8 +110,9 @@ class TestThetaRebinding(unittest.TestCase):
         CalcMode.default('Float')
 
     def fig417_theta_convention(self):
-        import yaml
         from pathlib import Path
+
+        import yaml
         models = Path(__file__).resolve().parents[1] / 'models'
         with open(models / 'defaults.yaml') as f:
             cfg = yaml.safe_load(f)

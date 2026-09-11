@@ -87,6 +87,7 @@ class TestEPRConventions(unittest.TestCase):
         # Bell's three-angle inequality is violated by 1/2 − 2·sin²(π/8),
         # and CHSH reaches 1 + √2 on the default set {0, π/8, π/4}.
         import math
+
         from quantish.epr import run_epr_experiment
         sim = run_sim('gr2026/fig4.17')
         results = run_epr_experiment(sim, n_trials=0)

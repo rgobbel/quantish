@@ -1,16 +1,24 @@
+import re
+import time
+from collections import namedtuple
 from pathlib import Path
 
-from quantish.display import pos_sign_lines
-from quantish.simulation import Simulation
-from quantish.util import (base_name, SEP, angle_label, fmt_label,
-                           math_to_unicode, parse_position)
-import quantish.qnumber as qn
 import python_mermaid.diagram as pmd
 import python_mermaid.link as pml
 import python_mermaid.node as pm
-from collections import namedtuple
-import re
-import time
+
+import quantish.qnumber as qn
+from quantish.display import pos_sign_lines
+from quantish.simulation import Simulation
+from quantish.util import (
+    SEP,
+    angle_label,
+    base_name,
+    fmt_label,
+    math_to_unicode,
+    parse_position,
+)
+
 
 def mmdc_cmd():
     """The mermaid-cli command, with our puppeteer config when present.
@@ -84,7 +92,7 @@ def make_gate_node(sim, gname, inout, wire, mermaid_nodes, show_outputs=True):
         cs = '' if not show_outputs else (out_value_str
                                           if out_value_str is not None else 'None')
         # sinks only exist for ports that actually carry a value
-        if (show_outputs and out_pos not in sim.links.keys()
+        if (show_outputs and out_pos not in sim.links
                 and out_value_str is not None):
             sink_nodes += [make1(f'{position}_SINK',
                                  f'{gcontent}:\n{out_value_str}',
@@ -97,7 +105,7 @@ def make_gate_node(sim, gname, inout, wire, mermaid_nodes, show_outputs=True):
         out_value_str = pos_sign_lines(sim, position) if show_outputs else None
         occupied = out_value_str is not None
         cs = '' if not show_outputs else (out_value_str if occupied else 'None')
-        if (show_outputs and position not in sim.links.keys() and occupied):
+        if (show_outputs and position not in sim.links and occupied):
             sink_nodes += [make1(f'{position}_SINK',
                                  f'{gcontent}:\n{out_value_str}',
                                  shape='stadium-shape')]
@@ -200,7 +208,7 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
             gate = sim.gates[gname]
             if is_delay(gname):
                 gate_inout = f'{gate.name}{SEP}control'
-                if has_run and gate_inout not in sim.links.keys():
+                if has_run and gate_inout not in sim.links:
                     sink_node_id = f'{gate_inout}_SINK'
                     sink_node = pmd.Node(sink_node_id, gate.name, shape='stadium-shape')
                     mermaid_nodes[sink_node_id] = sink_node
@@ -249,7 +257,7 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
             ctrl_gate_node = mermaid_nodes[gate_name]
         else:
             ctrl_gate_node = mermaid_nodes[control_pos]
-        if control_pos in sim.sources.keys():
+        if control_pos in sim.sources:
             ctrl_source_name = sim.sources[control_pos]
             ctrl_source_parts = parse_position(ctrl_source_name)
             if type(ctrl_source_parts) is str:
@@ -258,11 +266,10 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
                     ctrl_input_node, ctrl_gate_node,
                     message=wire_label(ctrl_source_name)))
         dest_node = None
-        if control_pos in sim.links.keys():
+        if control_pos in sim.links:
             dest = sim.links[control_pos]
             dest_parts = parse_position(dest)
             dest_gate_name, dest_wire = dest_parts
-            dest_gate = sim.gates[dest_gate_name]
             if is_delay(dest_gate_name):
                 dest_node = mermaid_nodes[dest_gate_name]
             else:
@@ -284,7 +291,7 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
             for inout in ('in', 'out'):
                 switch_node_id = f'{switch_pos}_{inout}'
                 switch_node = mermaid_nodes[switch_node_id]
-                if inout == 'in' and switch_pos in sim.sources.keys():
+                if inout == 'in' and switch_pos in sim.sources:
                     switch_input = sim.sources[switch_pos]
                     input_pos = parse_position(switch_input)
                     if type(input_pos) is str:
@@ -294,11 +301,10 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
                             message=wire_label(switch_input)))
                 elif inout == 'out':
                     dest_node = None
-                    if switch_pos in sim.links.keys():
+                    if switch_pos in sim.links:
                         dest = sim.links[switch_pos]
                         dest_parts = parse_position(dest)
                         dest_gate_name, dest_wire = dest_parts
-                        dest_gate = sim.gates[dest_gate_name]
                         if is_delay(dest_gate_name):
                             dest_node = mermaid_nodes[dest_gate_name]
                         else:

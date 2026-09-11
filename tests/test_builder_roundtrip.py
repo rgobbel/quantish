@@ -3,9 +3,13 @@ calculation mode, and degree-marked angle specs all survive
 config -> graph -> config -> YAML -> config unchanged."""
 import yaml
 
-from quantish.builder import (angle_degrees, config_to_graph,
-                              config_to_yaml, graph_to_config,
-                              validate_graph)
+from quantish.builder import (
+    angle_degrees,
+    config_to_graph,
+    config_to_yaml,
+    graph_to_config,
+    validate_graph,
+)
 
 CONFIG = {
     'title': 'Round trip',

@@ -16,7 +16,6 @@ from addict import Dict as Addict
 REPO_DIR = Path(__file__).resolve().parents[1]
 MODELS_DIR = REPO_DIR / 'models'
 
-import quantish.qnumber as qn
 from quantish.qnumber import CalcMode
 
 N_TRIALS = 20000
@@ -71,8 +70,11 @@ class TestMonteCarlo(unittest.TestCase):
         # its walk crosses the stage where the points merge. This also
         # guards the per-edge contribution data the pilot coupling is
         # fitted from.
-        from quantish.montecarlo import (predicted_distribution,
-                                           sample_pilot, sample_terminal)
+        from quantish.montecarlo import (
+            predicted_distribution,
+            sample_pilot,
+            sample_terminal,
+        )
         sim = run_sim('gr2026/fig4.12')
         predicted = predicted_distribution(sim.result_space)
         terminal = sample_terminal(sim.result_space, N_TRIALS, random.Random(SEED))
@@ -140,6 +142,7 @@ class TestPilotWave(unittest.TestCase):
         # full sweep saturates Bell's inequality (excess ≈ 0, never
         # positive beyond noise) and respects CHSH (|S| ≤ 2)
         import math
+
         from quantish.epr import run_epr_experiment, run_pair
         sim = self.run_with('gr2026/fig4.17')
         for t1, t2 in (('pi/4', 'pi/8'), ('pi/8', '3*pi/8'),

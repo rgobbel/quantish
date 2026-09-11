@@ -208,7 +208,7 @@ def validate_graph(graph, variables=None,
                 problems.append(f'wire label {key}: {pname} does not go '
                                 f'to {dst}')
             continue
-        end = str(key)[1:] if str(key).startswith('>') else str(key)
+        end = str(key).removeprefix('>')
         eg, ew = _endpoint(end, gates)
         if eg is None and end not in particles:
             problems.append(f'wire label {key}: no such wire or port')
@@ -611,7 +611,7 @@ def config_to_graph(config) -> tuple[dict, list[str]]:
         row_count[col] += 1
         gd = {'x': 170 + col * 200, 'y': 40 + row * 150}
 
-        def _keep(field, spec, resolved_deg):
+        def _keep(field, spec, resolved_deg, name=name):
             # the original spec survives verbatim — variable references
             # included, now that the variables travel with the model;
             # only a spec even the variables can't explain falls back
@@ -793,8 +793,7 @@ def config_to_yaml(config, raw_sections: dict[str, str] | None = None) -> str:
             opts += f", phase: {g['phase']}"
         lines.append(f"  {name}: {{{opts}}}")
     if config.get('delay_gates'):
-        lines += ['', f"delay_gates: "
-                      f"[{', '.join(config['delay_gates'])}]"]
+        lines += ['', f"delay_gates: [{', '.join(config['delay_gates'])}]"]
     if config.get('phase_plates'):
         lines += ['', 'phase_plates:']
         for name, spec in config['phase_plates'].items():

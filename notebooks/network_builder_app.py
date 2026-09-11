@@ -347,7 +347,7 @@ def _(collection_pick, get_file_mode, mo, model_paths, model_upload):
     elif _mode == 'upload':
         _row = mo.hstack([model_upload, upload_go_btn],
                          justify='start', gap=0.75, wrap=True)
-    _row
+    _row  # noqa: B018 — the cell's output
     return model_pick, open_go_btn, upload_go_btn
 
 
@@ -591,13 +591,13 @@ def _(mo, variables_editor, yaml):
             if v is None:
                 return {}, None
             if not isinstance(v, dict):
-                raise ValueError('expected a name: expression mapping')
+                raise TypeError('expected a name: expression mapping')
             return {str(k): val for k, val in v.items()}, None
         except Exception as exc:  # noqa: BLE001 — show, don't crash
             return {}, mo.md(f'**variables not parseable** — {exc}')
 
     model_vars, _err = _()
-    _err
+    _err  # noqa: B018 — the cell's output
     return (model_vars,)
 
 
@@ -607,7 +607,7 @@ def _(BuilderWidget, get_loaded, mo):
     builder_widget = (BuilderWidget(graph=_loaded['graph']) if _loaded
                       else BuilderWidget())
     builder = mo.ui.anywidget(builder_widget)
-    builder
+    builder  # noqa: B018 — the cell's output
     return builder, builder_widget
 
 
@@ -719,7 +719,7 @@ def _(caption_input, mo, notes_input, variables_editor):
 def _(builder_config, mo):
     run_network_btn = mo.ui.run_button(label='▶ Run network',
                                        disabled=builder_config is None)
-    run_network_btn
+    run_network_btn  # noqa: B018 — the cell's output
     return (run_network_btn,)
 
 
@@ -759,7 +759,7 @@ def _(Addict, CalcMode, Simulation, builder_config, mo, run_network_btn):
             f'point(s), total probability {total:.6f}' + note)
 
     sim_built, _msg = _build()
-    _msg
+    _msg  # noqa: B018 — the cell's output
     return (sim_built,)
 
 

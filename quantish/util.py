@@ -1,16 +1,11 @@
 import logging
 import re
+import sys
+from collections.abc import Iterable
 from enum import IntEnum
-from typing import Iterable
+from logging import StreamHandler
 
 import networkx as nx
-from quantish.qnumber import isq, issym
-import sympy as sym
-import cmath as cm
-import math as m
-from sympy import N
-from logging import StreamHandler
-import sys
 
 SEP = '.'
 
@@ -298,7 +293,7 @@ BRANCH_MARK = '|2'
 
 def base_name(src: str) -> str:
     """The particle behind a link source, second-arm mark stripped."""
-    return src[:-len(BRANCH_MARK)] if src.endswith(BRANCH_MARK) else src
+    return src.removesuffix(BRANCH_MARK)
 
 
 def simplify_graph(links):
@@ -306,13 +301,13 @@ def simplify_graph(links):
     for source_pos, dest_pos in links.items():
         source_parts = source_pos.split(SEP)
         dest_parts = dest_pos.split(SEP)
-        dest_gate, dest_wire = dest_parts
+        dest_gate, _ = dest_parts
         if len(source_parts) == 1:
             source_type = 'particle'
             source = base_name(source_pos)
         else:
             source_type = 'gate'
-            source_gate, source_wire = source_parts
+            source_gate, _ = source_parts
             source = source_gate
         if source not in slinks:
             slinks.add_node(source, qtype=source_type)

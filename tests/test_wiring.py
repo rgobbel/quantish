@@ -3,7 +3,6 @@ import unittest
 
 from addict import Dict as Addict
 
-import quantish.qnumber as qn
 from quantish.qnumber import CalcMode
 from quantish.simulation import Simulation
 

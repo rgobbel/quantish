@@ -2,9 +2,8 @@
 import math
 import unittest
 
-import quantish.qnumber as qn
-from quantish.qnumber import CalcMode
 from quantish.double_slit import pixel_probability, screen_curve
+from quantish.qnumber import CalcMode
 
 
 class TestDoubleSlit(unittest.TestCase):
@@ -54,6 +53,7 @@ def test_symbolic_phase_plate_runs():
 
     import yaml
     from addict import Dict as Addict
+
     from quantish.qnumber import CalcMode, Real
     from quantish.simulation import Simulation
     models = Path(__file__).resolve().parents[1] / 'models'
@@ -83,6 +83,7 @@ def test_conditions_come_from_their_model_files():
 
     import yaml
     from addict import Addict
+
     from quantish.double_slit import MODEL_FILES, MODES, slit_config
     from quantish.simulation import Simulation
 
@@ -137,6 +138,7 @@ def test_eraser_complementary_fringes():
 
     import yaml
     from addict import Dict as Addict
+
     from quantish.qnumber import CalcMode
     from quantish.simulation import Simulation
 
@@ -186,8 +188,8 @@ def test_eraser_screen_split_by_sign():
     import random
 
     import pytest
-    from quantish.double_slit import (pixel_by_sign, sample_hits,
-                                      screen_curves_by_sign)
+
+    from quantish.double_slit import pixel_by_sign, sample_hits, screen_curves_by_sign
     for phi in (0.0, math.pi / 3, math.pi / 2, math.pi):
         plus, minus = pixel_by_sign(phi, 'eraser')
         assert abs(plus - 0.5 * math.cos(phi / 2) ** 2) < 1e-9

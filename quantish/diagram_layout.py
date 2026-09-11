@@ -13,16 +13,28 @@ outside any gate.
 import math
 import re
 from bisect import bisect_right
-import textwrap
 
-from quantish.display import pos_sign_lines, pos_value_str, strip_markdown
-from quantish.tikz_diagram import (CONTROL_HALF_W, GATE_WIDTH, PORT_DY,
-                                   PORT_IN_DX, PORT_OUT_DX, PORT_W,
-                                   WIRE_STUB_LEN,
-                                   compute_layout, route_wires,
-                                   spec_from_simulation)
-from quantish.util import (angle_label, fmt_label, math_runs,
-                           math_to_unicode, unicode_runs, SEP)
+from quantish.display import pos_sign_lines, pos_value_str
+from quantish.tikz_diagram import (
+    CONTROL_HALF_W,
+    GATE_WIDTH,
+    PORT_DY,
+    PORT_IN_DX,
+    PORT_OUT_DX,
+    PORT_W,
+    WIRE_STUB_LEN,
+    compute_layout,
+    route_wires,
+    spec_from_simulation,
+)
+from quantish.util import (
+    SEP,
+    angle_label,
+    fmt_label,
+    math_runs,
+    math_to_unicode,
+    unicode_runs,
+)
 
 # The palette. Edit these hex values and save; the app picks the change
 # up on the next ▶ Run (module autoreload). Input (particle) and output
@@ -183,21 +195,21 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
             shown = lines
         tip = list(tip) if show_values else []
         pr = tip[1] if len(tip) > 1 else ''
-        boxes.append(dict(x=cx - w / 2, x2=cx + w / 2,
-                          y=cy - h / 2, y2=cy + h / 2,
-                          fill=fill, stroke=stroke, corner=corner,
-                          amp=tip[0] if tip else '',
-                          pr=pr.removeprefix('Pr: ')))
+        boxes.append({'x': cx - w / 2, 'x2': cx + w / 2,
+                          'y': cy - h / 2, 'y2': cy + h / 2,
+                          'fill': fill, 'stroke': stroke, 'corner': corner,
+                          'amp': tip[0] if tip else '',
+                          'pr': pr.removeprefix('Pr: ')})
         # a multi-line block anchors on its first line: shift up so
         # the whole block centers in the box. The name line is bold;
         # value lines (if any) follow in a separate normal-weight block.
         top_y = cy + (len(shown) - 1) * LINE_H / 2
-        texts.append(dict(x=cx, y=top_y, lines=[shown[0]], size=10,
-                          color='#2b3442', weight='bold'))
+        texts.append({'x': cx, 'y': top_y, 'lines': [shown[0]], 'size': 10,
+                          'color': '#2b3442', 'weight': 'bold'})
         if len(shown) > 1:
-            texts.append(dict(x=cx, y=top_y - LINE_H,
-                          lines=shown[1:], size=10,
-                          color='#333333', weight='normal'))
+            texts.append({'x': cx, 'y': top_y - LINE_H,
+                          'lines': shown[1:], 'size': 10,
+                          'color': '#333333', 'weight': 'normal'})
 
     def port_lines(name, pos=None, entry=None):
         # full lines (for sizing and the values view), the hover tip,
@@ -235,8 +247,8 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
         # value blocks spread the rows
         KH = 1 + (KY - 1) * 0.5
         _gline, _gruns = display_text(gname)
-        _gtx = dict(x=cx, y=top - 0.24 * KH, lines=[_gline],
-                    size=13, color='#222222', weight='bold')
+        _gtx = {'x': cx, 'y': top - 0.24 * KH, 'lines': [_gline],
+                    'size': 13, 'color': '#222222', 'weight': 'bold'}
         if _gruns:
             _gtx['runs'] = [_gruns]
         texts.append(_gtx)
@@ -250,8 +262,8 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
             angle_text += ', φ ' + _sub(
                 angle_label(_phspec, float(_gph.degrees), '°',
                             variables=sim.config.get('variables') or {}))
-        texts.append(dict(x=cx, y=top - 0.60 * KH, lines=[angle_text],
-                          size=10, color='#777777', weight='normal'))
+        texts.append({'x': cx, 'y': top - 0.60 * KH, 'lines': [angle_text],
+                          'size': 10, 'color': '#777777', 'weight': 'normal'})
         deg = float(gdata.get('deg', 0.0))
         # compass needle: just to the right of the gate name, anchored
         # to the name's own position so it sits identically before and
@@ -259,12 +271,12 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
         ccx = cx + 0.115 * (len(_gline) + 1) / 2 + 0.45
         ccy = top - 0.24 * KH
         dx_c, dy_c = math.cos(math.radians(deg)), math.sin(math.radians(deg))
-        wires.append([dict(route=f'{gname}~c', order=0,
-                           x=ccx - 0.26 * dx_c, y=ccy - 0.26 * dy_c),
-                      dict(route=f'{gname}~c', order=1,
-                           x=ccx + 0.26 * dx_c, y=ccy + 0.26 * dy_c)])
-        arrows.append(dict(x=ccx + 0.26 * dx_c, y=ccy + 0.26 * dy_c,
-                           angle=(90 - deg) % 360))
+        wires.append([{'route': f'{gname}~c', 'order': 0,
+                           'x': ccx - 0.26 * dx_c, 'y': ccy - 0.26 * dy_c},
+                      {'route': f'{gname}~c', 'order': 1,
+                           'x': ccx + 0.26 * dx_c, 'y': ccy + 0.26 * dy_c}])
+        arrows.append({'x': ccx + 0.26 * dx_c, 'y': ccy + 0.26 * dy_c,
+                           'angle': (90 - deg) % 360})
 
         clines, ctip, chid = port_lines(
             'control', pos=f'{gname}{SEP}control',
@@ -308,9 +320,9 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
         # the gate frame wraps header and ports with an even margin
         bottom = top + PORT_DY['lower'] * KY - low_h / 2 - 0.3
         frames[gname] = (left, bottom, right, top)
-        boxes.insert(0, dict(x=left, x2=right, y=bottom, y2=top,
-                             fill=GATE_FILL, stroke=GATE_STROKE, corner=4,
-                             amp='', pr=''))
+        boxes.insert(0, {'x': left, 'x2': right, 'y': bottom, 'y2': top,
+                             'fill': GATE_FILL, 'stroke': GATE_STROKE, 'corner': 4,
+                             'amp': '', 'pr': ''})
         # dotted X between the switch port columns, box edge to box edge
         uy = top + PORT_DY['upper'] * KY
         ly = top + PORT_DY['lower'] * KY
@@ -320,8 +332,8 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
             for i, (ya, yb) in enumerate(((uy, uy), (ly, ly),
                                           (uy, ly), (ly, uy))):
                 dots.append([
-                    dict(route=f'{gname}~x{i}', order=0, x=xin, y=ya),
-                    dict(route=f'{gname}~x{i}', order=1, x=xout, y=yb)])
+                    {'route': f'{gname}~x{i}', 'order': 0, 'x': xin, 'y': ya},
+                    {'route': f'{gname}~x{i}', 'order': 1, 'x': xout, 'y': yb}])
 
     # delay / pass-through boxes
     for dname, (dx_, dy_) in L.delay_xy.items():
@@ -383,15 +395,15 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
             _ncy = _cy + (len(lines) - 1) * LINE_H / 2
             _dxc, _dyc = (math.cos(math.radians(_deg)),
                           math.sin(math.radians(_deg)))
-            wires.append([dict(route=f'{dname}~c', order=0,
-                               x=_ncx - 0.22 * _dxc,
-                               y=_ncy - 0.22 * _dyc),
-                          dict(route=f'{dname}~c', order=1,
-                               x=_ncx + 0.22 * _dxc,
-                               y=_ncy + 0.22 * _dyc)])
-            arrows.append(dict(x=_ncx + 0.22 * _dxc,
-                               y=_ncy + 0.22 * _dyc,
-                               angle=(90 - _deg) % 360))
+            wires.append([{'route': f'{dname}~c', 'order': 0,
+                               'x': _ncx - 0.22 * _dxc,
+                               'y': _ncy - 0.22 * _dyc},
+                          {'route': f'{dname}~c', 'order': 1,
+                               'x': _ncx + 0.22 * _dxc,
+                               'y': _ncy + 0.22 * _dyc}])
+            arrows.append({'x': _ncx + 0.22 * _dxc,
+                               'y': _ncy + 0.22 * _dyc,
+                               'angle': (90 - _deg) % 360})
         edge_clip[clip_key(fx(dx_ - CONTROL_HALF_W), dy_ * KY)] = fx(dx_) - w / 2
         edge_clip[clip_key(fx(dx_ + CONTROL_HALF_W), dy_ * KY)] = fx(dx_) + w / 2
         # wires still aim at the layout row's y; steer their endpoints
@@ -419,12 +431,12 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
         pw = 2 * PORT_PAD + CHAR_W * (len(label) + 1)
         ph = 2 * PORT_PAD + LINE_H
         cx, cy = fx(px), py * KY
-        boxes.append(dict(x=cx - pw / 2, x2=cx + pw / 2,
-                          y=cy - ph / 2, y2=cy + ph / 2,
-                          fill=PARTICLE_FILL, stroke=VALUE_STROKE,
-                          corner=int(ph * scale / 2), amp='', pr=''))
-        _ptx = dict(x=cx, y=cy, lines=[label],
-                    size=11, color='#333333', weight='bold')
+        boxes.append({'x': cx - pw / 2, 'x2': cx + pw / 2,
+                          'y': cy - ph / 2, 'y2': cy + ph / 2,
+                          'fill': PARTICLE_FILL, 'stroke': VALUE_STROKE,
+                          'corner': int(ph * scale / 2), 'amp': '', 'pr': ''})
+        _ptx = {'x': cx, 'y': cy, 'lines': [label],
+                    'size': 11, 'color': '#333333', 'weight': 'bold'}
         if _pruns:
             _ptx['runs'] = [[(('+' if sign > 0 else '−'), 0)] + _pruns]
         texts.append(_ptx)
@@ -467,9 +479,9 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
                 stub_end = fx(gx + GATE_WIDTH + WIRE_STUB_LEN)
                 cy = gy * KY + PORT_DY[wname] * KY
                 blob_left = stub_end + 0.1
-                blob = dict(x=blob_left, x2=blob_left + w,
-                            y=cy - h / 2, y2=cy + h / 2,
-                            corner=int(h * scale / 2))
+                blob = {'x': blob_left, 'x2': blob_left + w,
+                            'y': cy - h / 2, 'y2': cy + h / 2,
+                            'corner': int(h * scale / 2)}
                 reserved.append(blob)
                 if not show_blobs:
                     continue
@@ -484,20 +496,20 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
                     else:
                         raw = fx(gx + PORT_OUT_DX)
                     px0 = edge_clip.get(clip_key(raw, cy), raw)
-                    wires.append([dict(route=f'{pos}~blob', order=0,
-                                       x=px0, y=cy),
-                                  dict(route=f'{pos}~blob', order=1,
-                                       x=blob_left, y=cy)])
-                    arrows.append(dict(x=blob_left - 0.10, y=cy, angle=90))
+                    wires.append([{'route': f'{pos}~blob', 'order': 0,
+                                       'x': px0, 'y': cy},
+                                  {'route': f'{pos}~blob', 'order': 1,
+                                       'x': blob_left, 'y': cy}])
+                    arrows.append({'x': blob_left - 0.10, 'y': cy, 'angle': 90})
                 bx = stub_end + 0.1 + w / 2
                 shown = lines if show_values else [wname]
                 top_y = cy + (len(shown) - 1) * LINE_H / 2
-                texts.append(dict(x=bx, y=top_y, lines=[wname], size=10,
-                                  color='#2b3442', weight='bold'))
+                texts.append({'x': bx, 'y': top_y, 'lines': [wname], 'size': 10,
+                                  'color': '#2b3442', 'weight': 'bold'})
                 if show_values:
-                    texts.append(dict(x=bx, y=top_y - LINE_H, lines=vals,
-                                      size=10, color='#333333',
-                                      weight='normal'))
+                    texts.append({'x': bx, 'y': top_y - LINE_H, 'lines': vals,
+                                      'size': 10, 'color': '#333333',
+                                      'weight': 'normal'})
 
     # wires, arrowheads, wire labels (scaled by KX/KY)
     CHAMFER = 0.12
@@ -535,7 +547,7 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
         if last in delay_y_new:
             # incoming wire: run at the source's level, drop down left
             # of the column's frames (outside the stage box), then in
-            new_y, old_y, safe_l, _ = delay_y_new[last]
+            new_y, _, safe_l, _ = delay_y_new[last]
             p0, pe = pts[0], pts[-1]
             pts = ([p0] +
                    ([] if abs(p0[1] - new_y) < 1e-6 else
@@ -544,7 +556,7 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
         if first in delay_y_new:
             # outgoing wire: leave at box level, rise right of the
             # frames, then continue at the destination's level
-            new_y, old_y, _, safe_r = delay_y_new[first]
+            new_y, _, _, safe_r = delay_y_new[first]
             p0, pe = pts[0], pts[-1]
             pts = ([(p0[0], new_y)] +
                    ([] if abs(pe[1] - new_y) < 1e-6 else
@@ -603,15 +615,15 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
                 rounded.append((p2x, p2y))
             rounded.append(pts[-1])
             pts = rounded
-        wires.append([dict(route=f'w{i}', order=j, x=x, y=y)
+        wires.append([{'route': f'w{i}', 'order': j, 'x': x, 'y': y}
                       for j, (x, y) in enumerate(pts)])
         # arrowhead: tip meets the boundary, so back its center off a bit
         (x1, y1), (x2, y2) = pts[-2], pts[-1]
         seg = math.hypot(x2 - x1, y2 - y1) or 1.0
         ux, uy = (x2 - x1) / seg, (y2 - y1) / seg
         ang = math.degrees(math.atan2(uy, ux))
-        arrows.append(dict(x=x2 - 0.10 * ux, y=y2 - 0.10 * uy,
-                           angle=(90 - ang) % 360))
+        arrows.append({'x': x2 - 0.10 * ux, 'y': y2 - 0.10 * uy,
+                           'angle': (90 - ang) % 360})
         if r.label:
             if r.label_at is not None:
                 lx, ly = r.label_at
@@ -634,22 +646,22 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
                 _, lx, ly = best
                 lx = fx(lx)
                 ly *= KY
-            texts.append(dict(x=lx, y=ly + 0.22,
-                              lines=[math_to_unicode(r.label)], size=10,
-                              color='#222222', weight='normal',
-                              runs=[math_runs(r.label)]))
+            texts.append({'x': lx, 'y': ly + 0.22,
+                              'lines': [math_to_unicode(r.label)], 'size': 10,
+                              'color': '#222222', 'weight': 'normal',
+                              'runs': [math_runs(r.label)]})
 
     # stage boxes and labels, wrapping the frames as actually drawn
     # small enough that adjacent stage boxes (e.g. a delay-only stage
     # like the double-slit's slits/phase next to a gate stage) never
     # overlap their neighbors
     for label, gx1, gy1, gx2, gy2 in stage_rects:
-        boxes.insert(0, dict(x=gx1, x2=gx2, y=gy1, y2=gy2,
-                             fill=STAGE_FILL, stroke=STAGE_STROKE,
-                             corner=6, amp='', pr=''))
-        texts.append(dict(x=(gx1 + gx2) / 2, y=gy2 + 0.28,
-                          lines=[_sub(label)],
-                          size=11, color='#888888', weight='normal'))
+        boxes.insert(0, {'x': gx1, 'x2': gx2, 'y': gy1, 'y2': gy2,
+                             'fill': STAGE_FILL, 'stroke': STAGE_STROKE,
+                             'corner': 6, 'amp': '', 'pr': ''})
+        texts.append({'x': (gx1 + gx2) / 2, 'y': gy2 + 0.28,
+                          'lines': [_sub(label)],
+                          'size': 11, 'color': '#888888', 'weight': 'normal'})
 
     # every text with unicode sub/superscript glyphs gains runs, so
     # the renderers draw ALL scripts as shifted tspans — one style for
@@ -674,8 +686,8 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
         x0, x1 = min(x0, p['x']), max(x1, p['x'])
         y0, y1 = min(y0, p['y']), max(y1, p['y'])
     pad = 0.4
-    return dict(boxes=boxes, texts=texts, wires=wires, arrows=arrows,
-                dots=dots, stadiums=stadiums, line_h=LINE_H,
-                wire_color=WIRE_COLOR, value_fill=VALUE_FILL,
-                value_stroke=VALUE_STROKE, scale=scale,
-                x0=x0 - pad, y0=y0 - pad, x1=x1 + pad, y1=y1 + pad)
+    return {'boxes': boxes, 'texts': texts, 'wires': wires, 'arrows': arrows,
+                'dots': dots, 'stadiums': stadiums, 'line_h': LINE_H,
+                'wire_color': WIRE_COLOR, 'value_fill': VALUE_FILL,
+                'value_stroke': VALUE_STROKE, 'scale': scale,
+                'x0': x0 - pad, 'y0': y0 - pad, 'x1': x1 + pad, 'y1': y1 + pad}

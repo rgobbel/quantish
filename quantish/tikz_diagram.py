@@ -32,8 +32,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from quantish.util import base_name, SEP, angle_label
-
+from quantish.util import SEP, angle_label, base_name
 
 # --------------------------------------------------------------------------
 # Input shim: the structure the renderer reads, built from a Simulation.
@@ -58,7 +57,7 @@ class DiagramSpec:
     topology: dict              # {'parsed': ParsedShim, 'topo': {...}, 'engine_steps': [...]}
 
 
-def spec_from_simulation(sim, fig: str = None) -> DiagramSpec:
+def spec_from_simulation(sim, fig: str | None = None) -> DiagramSpec:
     """Build a DiagramSpec from a quantish Simulation.
 
     Columns (engine steps) are the topological generations of the simplified
@@ -88,9 +87,9 @@ def spec_from_simulation(sim, fig: str = None) -> DiagramSpec:
 
     gates = {gname: {'angle': angle_text(gname),
                      'deg': float(sim.fredkin_gates[gname].theta.degrees)}
-             for gname in sim.fredkin_gates.keys()
+             for gname in sim.fredkin_gates
              if gname not in sim.pass_through_gates}
-    particles = {pname: {} for pname in sim.particles.keys()}
+    particles = {pname: {} for pname in sim.particles}
 
     # The renderer needs only each particle's sign, for its circle label.
     # (The quantish_gld original also derived per-port wire names here;
@@ -627,9 +626,7 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
                 continue
             if bx1 <= lo:
                 lo = bx2
-            elif bx2 >= hi:
-                hi = bx1
-            elif bx1 - lo >= hi - bx2:
+            elif bx2 >= hi or bx1 - lo >= hi - bx2:
                 hi = bx1
             else:
                 lo = bx2
@@ -983,7 +980,7 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
     # end, so it never counts as a T-junction
     _LABEL_ROOM = 0.55
     for points, _, _, _ in stub_specs:
-        (ax, ay), (bx, by) = points[0], points[-1]
+        (ax, ay), (bx, _) = points[0], points[-1]
         add_horizontal(ay, ax, bx)
         stub_lines.append((ay, min(ax, bx), max(ax, bx)))
         label_zones.append((ay, min(ax, bx) - _LABEL_ROOM,
@@ -1049,8 +1046,7 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
         candidate_gaps = []
         if s_col is not None and d_col is not None:
             start = max(-1, s_col)
-            for g in range(start, d_col):
-                candidate_gaps.append(g)
+            candidate_gaps.extend(range(start, d_col))
         for gap in candidate_gaps:
             x_lo, x_hi = gap_x_range(gap)
             if x_lo > dx - 0.2 or x_hi < sx + 0.2:
@@ -1170,7 +1166,7 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
         candidate_ys.append(lane_above_base)
         candidate_ys.append(lane_below_base)
 
-        def clear_of_boxes(ly: float) -> bool:
+        def clear_of_boxes(ly: float, x_span_lo=x_span_lo, x_span_hi=x_span_hi) -> bool:
             """Reject lane ys that run along a group-box border (or through
             its title band) anywhere in this wire's x-span."""
             for gb in boxes_geom:
@@ -1184,7 +1180,8 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
 
         _GATE_LANE_CLEAR = 0.45
 
-        def clear_of_gate_frames(ly: float) -> bool:
+        def clear_of_gate_frames(ly: float, skip_set=skip_set, x_span_lo=x_span_lo,
+                                 x_span_hi=x_span_hi, _GATE_LANE_CLEAR=_GATE_LANE_CLEAR) -> bool:
             """Reject lane ys that skim along a gate frame's top or bottom
             edge anywhere in this wire's x-span (its own src/dst gates
             excepted — port stubs legitimately run next to those)."""
@@ -1205,7 +1202,7 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
         # _LANE_STEP tolerance keeps two near-but-not-identical lane-y
         # candidates (e.g. one at -1.55, another at -1.60 from a different
         # candidate-source) from being rendered as visibly-overlapping lines.
-        def lane_y_free(ly: float) -> bool:
+        def lane_y_free(ly: float, x_span_lo=x_span_lo, x_span_hi=x_span_hi) -> bool:
             for uy, ux_lo, ux_hi in lanes_above + lanes_below:
                 if abs(uy - ly) >= _LANE_STEP - 0.02:
                     continue
@@ -1238,7 +1235,8 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
         y_content_lo = min((gb['y_bot'] for gb in boxes_geom),
                            default=L.bounds[1])
 
-        def lane_cost(ly: float) -> float:
+        def lane_cost(ly: float, sy=sy, dy=dy, y_content_hi=y_content_hi,
+                      y_content_lo=y_content_lo) -> float:
             cost = abs(sy - ly) + abs(dy - ly)
             if ly > y_content_hi or ly < y_content_lo:
                 cost += 4.0
@@ -1246,7 +1244,7 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
 
         valid.sort(key=lane_cost)
 
-        def stubs_clean(ly: float, cx_: float, d_cx_: float) -> bool:
+        def stubs_clean(ly: float, cx_: float, d_cx_: float, sy=sy, sx=sx, dy=dy, dx=dx) -> bool:
             # both port stubs must be clean (see stub_clean), with this
             # route's own two channels exempt
             return all(stub_clean(yy, xa, xb, exempt_xs=(cx_, d_cx_))
@@ -1646,7 +1644,7 @@ def _run_pdflatex(tex_source: str, tmp_dir: Path) -> Path | None:
         result = subprocess.run(
             ['pdflatex', '-interaction=nonstopmode', '-halt-on-error',
              '-output-directory', str(tmp_dir), str(tex_path)],
-            capture_output=True, timeout=20,
+            capture_output=True, timeout=20, check=False,   # failure read off the output below
         )
     except subprocess.TimeoutExpired:
         print("circuits_diagram: pdflatex timed out", file=sys.stderr)
@@ -1758,7 +1756,7 @@ def render_diagram(circuit: Circuit, dpi: int = 150,
     if cached.exists():
         try:
             return Image.open(cached).copy()
-        except Exception:
+        except Exception:  # noqa: BLE001 — best-effort cache/render I/O: any failure just means no image
             cached.unlink(missing_ok=True)
 
     img = compile_tex(tex, dpi=dpi)
@@ -1768,7 +1766,7 @@ def render_diagram(circuit: Circuit, dpi: int = 150,
     try:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         img.save(cached)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — best-effort cache/render I/O: any failure just means no image
         print(f"circuits_diagram: cache save failed: {exc}", file=sys.stderr)
 
     return img
@@ -1804,7 +1802,7 @@ def render_diagram_svg(circuit: Circuit,
     if not cached.exists():
         try:
             CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — best-effort cache/render I/O: any failure just means no image
             print(f"circuits_diagram: cache dir failed: {exc}", file=sys.stderr)
             return None
         if not compile_tex_to_file(tex, cached):
@@ -1812,7 +1810,7 @@ def render_diagram_svg(circuit: Circuit,
     try:
         # the stem's tail is the per-diagram TeX hash — a stable id tag
         return _uniquify_svg_ids(cached.read_text(encoding='utf-8'), stem[-10:])
-    except Exception:
+    except Exception:  # noqa: BLE001 — best-effort cache/render I/O: any failure just means no image
         cached.unlink(missing_ok=True)
         return None
 
@@ -1846,7 +1844,7 @@ def render_diagram_to_file(circuit: Circuit, out_path: Path | str,
         return False
     try:
         img.save(out_path)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — best-effort cache/render I/O: any failure just means no image
         print(f"circuits_diagram: save to {out_path} failed: {exc}", file=sys.stderr)
         return False
     return True

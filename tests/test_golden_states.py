@@ -31,7 +31,6 @@ GOLDEN_PATH = Path(__file__).parent / 'golden_states.json'
 
 sys.path.insert(0, str(REPO_DIR))
 
-import quantish.qnumber as qn
 from quantish.qnumber import CalcMode
 
 WEIGHT_TOLERANCE = 1e-9

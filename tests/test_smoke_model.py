@@ -3,13 +3,13 @@ name, a phase plate, a delay gate sharing its stage with a full gate,
 mixed degree-marked angles, a display_string, and a stage named
 exactly after its one gate. It must run, validate, and lay out
 without the regressions it was built to catch."""
+from itertools import pairwise
 from pathlib import Path
 
 import yaml
 from addict import Dict as Addict
 
-from quantish.diagram_layout import (DELAY_FILL, GATE_FILL,
-                                     STAGE_FILL, diagram_geometry)
+from quantish.diagram_layout import DELAY_FILL, GATE_FILL, STAGE_FILL, diagram_geometry
 from quantish.model_schema import validate_model
 from quantish.qnumber import CalcMode
 from quantish.simulation import Simulation
@@ -95,7 +95,7 @@ def test_smoke_layout():
                  and b['x'] < dcx < b['x2']
                  and b['y'] < (d1['y'] + d1['y2']) / 2 < b['y2'])
     for seg in g['wires']:
-        for a, b in zip(seg, seg[1:]):
+        for a, b in pairwise(seg):
             vertical = (abs(a['x'] - b['x']) < 1e-6
                         and abs(a['y'] - b['y']) > 0.1)
             if not vertical:

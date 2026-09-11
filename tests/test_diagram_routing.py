@@ -8,6 +8,7 @@ reads as a T-junction fusing the two), and a branching particle's two
 arms leave it along one shared channel (the fork). Crossings through
 the interior of another wire are allowed: they are sometimes
 unavoidable and always read as crossings."""
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -33,7 +34,6 @@ def _routed(path):
     circuit = tk.spec_from_simulation(sim)
     L = tk.compute_layout(circuit)
     routes = tk.route_wires(circuit, L)
-    links = list(circuit.topology['parsed'].links.items())
     # route_wires yields the links' routes in its own (sorted) order and
     # appends the labeled stubs; recover each route's link by endpoints
     stubs = list(tk.labeled_stubs(circuit, L))
@@ -44,7 +44,7 @@ def _routed(path):
 def _segments(points):
     """(horizontal, vertical) segment lists of a polyline."""
     hs, vs = [], []
-    for (x1, y1), (x2, y2) in zip(points, points[1:]):
+    for (x1, y1), (x2, y2) in pairwise(points):
         if abs(y1 - y2) < 1e-9:
             hs.append((y1, min(x1, x2), max(x1, x2)))
         elif abs(x1 - x2) < 1e-9:

@@ -1,15 +1,29 @@
 import logging
 from collections import defaultdict
-from addict import Dict as Addict
+
 import networkx as nx
-from quantish.particle import Particle
-from quantish.gate import DelayGate, FredkinGate, PhasePlate
-from quantish.config_space import (Position, GatePort, PCoordinate,
-                                     ConfigSpacePoint, ConfigSpaceRunner)
+from addict import Dict as Addict
+
 import quantish.qnumber as qn
-from quantish.qnumber import qify, Complex
-from quantish.util import (BRANCH_MARK, SEP, WIRES, base_name, flat_list,
-                           simplify_graph, log_seq)
+from quantish.config_space import (
+    ConfigSpacePoint,
+    ConfigSpaceRunner,
+    GatePort,
+    PCoordinate,
+    Position,
+)
+from quantish.gate import DelayGate, FredkinGate, PhasePlate
+from quantish.particle import Particle
+from quantish.qnumber import Complex, qify
+from quantish.util import (
+    BRANCH_MARK,
+    SEP,
+    WIRES,
+    base_name,
+    flat_list,
+    log_seq,
+    simplify_graph,
+)
 
 log = logging.getLogger('quantish')
 
@@ -217,7 +231,7 @@ class Simulation:
                 parts = end.split(SEP)
                 if len(parts) == 2:
                     ports_used[parts[0]].add(parts[1])
-        self.pass_through_gates = {g for g in self.gates.keys()
+        self.pass_through_gates = {g for g in self.gates
                                    if ports_used.get(g) == {'control'}}
 
     def log_model(self, loglevel):
@@ -230,7 +244,7 @@ class Simulation:
                 [[str(self.gates[gate]) for gate in gates]
                  for gates in [stage for stage in self.run_stages]],
                 loglevel, enum_items=True)
-        linkages = [f'{str(n)} -> {", ".join(list(self.simplified_links.successors(n))) or "NULL"}'
+        linkages = [f'{n!s} -> {", ".join(list(self.simplified_links.successors(n))) or "NULL"}'
                     for n in nx.topological_sort(self.simplified_links)]
         log_seq('downstream links', linkages, loglevel)
 
@@ -307,7 +321,7 @@ class Simulation:
                 problems.append(
                     f"display_strings entry '{dname}' names no declared "
                     f"gate, delay gate, phase plate, or particle")
-        for pname in config.particles.keys():
+        for pname in config.particles:
             if pname not in self.links:
                 problems.append(
                     f"particle '{pname}' is not linked to any gate input")
@@ -326,7 +340,7 @@ class Simulation:
 
     def load_elements(self, config):
         links = self.links
-        log.debug(f'links:')
+        log.debug('links:')
         for k, v in links.items():
             log.debug(f'   {k}: {v}')
         log.debug(' ')
@@ -389,7 +403,7 @@ class Simulation:
         # honors angle_unit for plain numbers
         for ppname, ppspec in dict(config.get('phase_plates', {})).items():
             if isinstance(ppspec, dict):
-                raise ValueError(
+                raise ValueError(  # noqa: TRY004 — model errors are ValueErrors (tests rely on it)
                     f"phase plate '{ppname}' should map straight to its "
                     f"phase spec ({ppname}: phi), not a mapping "
                     f"(found keys: {sorted(ppspec.keys())})")

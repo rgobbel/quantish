@@ -48,13 +48,13 @@ DEFAULT_VALUES = {'qa': '0', 'qb': 'pi/8', 'qc': 'pi/4'}
 
 
 def is_two_stage(sim) -> bool:
-    return 'g7' in sim.gates.keys() and 'g8' in sim.gates.keys()
+    return 'g7' in sim.gates and 'g8' in sim.gates
 
 
 def expected_discrepancy(sim):
     """The intrinsic sin²-law discrepancy for the sim's gate angles, or
     None when the circuit lacks the EPR structure (g5/g6)."""
-    if 'g5' not in sim.gates.keys() or 'g6' not in sim.gates.keys():
+    if 'g5' not in sim.gates or 'g6' not in sim.gates:
         return None
     total = sim.gates['g5'].theta + sim.gates['g6'].theta
     if is_two_stage(sim):

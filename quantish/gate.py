@@ -1,8 +1,7 @@
 import logging
 
-import quantish.qnumber as qn
-from quantish.qnumber import qify, Complex, Real, I, PI, zerop
-from quantish.util import Sign, OTHER
+from quantish.qnumber import PI, Complex, I, Real, qify, zerop
+from quantish.util import OTHER, Sign
 
 log = logging.getLogger('quantish')
 

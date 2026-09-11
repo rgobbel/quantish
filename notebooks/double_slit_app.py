@@ -74,19 +74,26 @@ async def initialization():
 
     import logging
 
-    import quantish.qnumber as qn
     from quantish.qnumber import CalcMode
 
     CalcMode.default('Float')
     logging.basicConfig(level=logging.WARNING)
     logging.getLogger('quantish').setLevel(logging.WARNING)
 
+    from quantish.builder_widget import (
+        DiagramWidget,
+        LinePlotWidget,
+        ScreenPanelWidget,
+    )
     from quantish.diagram_layout import diagram_geometry
-    from quantish.builder_widget import (DiagramWidget, LinePlotWidget,
-                                         ScreenPanelWidget)
-    from quantish.double_slit import (DEFAULT_THETA_S, sample_hits,
-                                      screen_curve, screen_curves_by_sign,
-                                      screen_positions, slit_sim)
+    from quantish.double_slit import (
+        DEFAULT_THETA_S,
+        sample_hits,
+        screen_curve,
+        screen_curves_by_sign,
+        screen_positions,
+        slit_sim,
+    )
 
     WASM_MODE = sys.platform == 'emscripten'
     EDITOR_UI = (_wasm_editor if WASM_MODE
@@ -143,7 +150,6 @@ def _(mo):
     particle's landing point is drawn from exact world-amplitudes
     computed by the quantish engine.
     """)
-    return
 
 
 @app.cell(hide_code=True)
@@ -155,6 +161,7 @@ async def build_stamp(mo, sys):
     if sys.platform == 'emscripten':
         try:
             import json as _json
+
             from pyodide.http import pyfetch as _pyfetch
             _v = _json.loads(await (await _pyfetch(
                 f'{mo.notebook_location()}/public/version.json')).string())
@@ -163,7 +170,6 @@ async def build_stamp(mo, sys):
             _stamp = ''
     mo.md(f'<span style="font-size: 0.8em; color: #444">{_stamp}</span>') \
         if _stamp else None
-    return
 
 
 @app.cell
@@ -175,7 +181,6 @@ def _(mo):
 
     This application is a demonstration of the double-slit phenomenon in the quantish framework.
     """)
-    return
 
 
 @app.cell(hide_code=True)
@@ -351,7 +356,6 @@ def _(DEFAULT_THETA_S, math, mo):
         mo.accordion({'### Where the interference happens': _where}),
         mo.accordion({'### How each curve is computed': _curves}),
     ])})
-    return
 
 
 @app.cell(hide_code=True)
@@ -359,7 +363,6 @@ def _(mo):
     mo.md(r"""
     ## Simulation controls
     """)
-    return
 
 
 @app.cell(hide_code=True)
@@ -509,7 +512,6 @@ def _(mo):
     each particle's own superposed worlds interfere (in $x$) before it
     lands, one particle at a time.
     """)})])
-    return
 
 
 @app.cell(hide_code=True)
@@ -521,19 +523,16 @@ def _(MAIN_MODES, curves_main, set_panel_curves, xs):
     # θ erase) leaves the other panels untouched.
     for _m in MAIN_MODES:
         set_panel_curves(_m, xs, curves_main[_m])
-    return
 
 
 @app.cell(hide_code=True)
 def _(curve_tunable, set_panel_curves, xs):
     set_panel_curves('tunable', xs, curve_tunable)
-    return
 
 
 @app.cell(hide_code=True)
 def _(curve_eraser, parts_eraser, set_panel_curves, xs):
     set_panel_curves('eraser', xs, curve_eraser, parts_eraser)
-    return
 
 
 @app.cell(hide_code=True)
@@ -548,7 +547,6 @@ def _(diagrams, mo, panels):
 
     mo.vstack([_row('both'), _row('slit2'), _row('slit1'), _row('observed')],
               gap=2)
-    return
 
 
 @app.cell(hide_code=True)
@@ -598,7 +596,6 @@ def _(diagrams, mo, panels, tunable_controls):
         mo.hstack([diagrams['tunable'], panels['tunable']],
                   align='center', justify='start', gap=1, wrap=True),
     ], gap=1)})
-    return
 
 
 @app.cell(hide_code=True)
@@ -647,7 +644,6 @@ def _(diagrams, eraser_controls, mo, panels):
         mo.hstack([diagrams['eraser'], panels['eraser']],
                   align='center', justify='start', gap=1, wrap=True),
     ], gap=1)})
-    return
 
 
 @app.cell(hide_code=True)
@@ -686,7 +682,6 @@ def _(additivity_widget, curves_main, xs):
         'xdomain': [-1, 1], 'xlabel': 'screen position',
         'ylabel': 'intensity', 'width': 940, 'height': 180,
     }
-    return
 
 
 @app.cell(hide_code=True)
@@ -697,7 +692,6 @@ def _(EDITOR_UI, mo):
     mo.Html('<div style="text-align: center; color: #000; '
             'font-size: 1.6em; padding: 1.5em 0 1em;">&#8258;</div>'
             ) if not EDITOR_UI else None
-    return
 
 
 @app.cell(hide_code=True)
@@ -707,7 +701,6 @@ def _(EDITOR_UI, mo):
     mo.md(r"""
     ## Support code
     """) if EDITOR_UI else None
-    return
 
 
 @app.cell(hide_code=True)
@@ -913,7 +906,6 @@ def _(diagram_geom, diagram_widgets, main_angles, main_labels, math, theta_pre_s
         'tunable',
         {**main_angles, 'theta_pre': math.radians(theta_pre_sl.value)},
         {**main_labels, 'g_pre': f'{theta_pre_sl.value:.0f}°'})
-    return
 
 
 @app.cell(hide_code=True)
@@ -929,7 +921,6 @@ def _(
         'eraser',
         {**main_angles, 'theta_erase': math.radians(theta_erase_sl.value)},
         {**main_labels, 'g_erase': f'{theta_erase_sl.value:.0f}°'})
-    return
 
 
 @app.cell(hide_code=True)
@@ -994,7 +985,6 @@ def _(
             'seq': hit_store['seq'],
             'pts': [list(_p) for _p in _new],
             'total': len(hit_store['hits'][_m])}
-    return
 
 
 @app.cell(hide_code=True)
@@ -1008,7 +998,6 @@ def _(MODES, engine_curves, hit_store, mo, panel_widgets, reset_btn):
         hit_store['hits'][_m] = []
         panel_widgets[_m].hits_chunk = {'seq': hit_store['seq'],
                                         'reset': True}
-    return
 
 
 if __name__ == "__main__":

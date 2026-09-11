@@ -23,11 +23,11 @@ import math as m
 from collections import defaultdict
 from pathlib import Path
 
+import quantish.qnumber as qn
 from quantish.config_space import ConfigSpace, GatePort
 from quantish.display import cs_point_sort_key, strip_markdown
-from quantish.simulation import Simulation
 from quantish.qnumber import probability, to_float
-import quantish.qnumber as qn
+from quantish.simulation import Simulation
 
 log = logging.getLogger('quantish')
 
@@ -36,7 +36,7 @@ LEVEL_FLOOR = 0.1  # display level of a zero magnitude (1.0 = the figure's max)
 
 
 class NetworkGraph:
-    def __init__(self, result_space: ConfigSpace, sim: Simulation, diagram_path: Path=None,
+    def __init__(self, result_space: ConfigSpace, sim: Simulation, diagram_path: Path | None = None,
                  show=True):
         """With diagram_path: render the weight-evolution graph and save it
         as a PDF next to diagram_path (requires vl-convert). Without: just
@@ -253,9 +253,9 @@ class NetworkGraph:
                     if controller is not None and n != controller:
                         stroke, sw = self.border_color(
                             HUES[particles.index(controller) % len(HUES)]), 1.0
-                    base = dict(x=xc, y0=y0, y1=y1, particle=n,
-                                node=node_id[id(node)],
-                                cs_point=node['label'], stroke=stroke, sw=sw)
+                    base = {'x': xc, 'y0': y0, 'y1': y1, 'particle': n,
+                                'node': node_id[id(node)],
+                                'cs_point': node['label'], 'stroke': stroke, 'sw': sw}
                     if n not in node['at']:
                         cells.append(dict(base, fill='#ffffff', value='—',
                                           port='', pr=''))
@@ -273,7 +273,7 @@ class NetworkGraph:
                     cells.append(dict(base, fill=self.cell_color(to_level(mag), hue),
                                       value=f'{mag:.4f}', pr=f'{pr:.4f}', port=port))
                     if ci == 0:
-                        labels.append(dict(x=xc, y=(y0 + y1) / 2, text=n))
+                        labels.append({'x': xc, 'y': (y0 + y1) / 2, 'text': n})
 
         # ---- arrows: wires. For each node and each particle at it, the
         # nodes where that particle last was (walking each point's
@@ -315,16 +315,16 @@ class NetworkGraph:
                             drawn.add(key)
                             sx, _ = pos[id(src)]
                             dx, _ = pos[id(node)]
-                            arrows.append(dict(x=sx, y=cell_mid(src, n),
-                                               x2=dx, y2=cell_mid(node, n),
-                                               src=node_id[id(src)],
-                                               dst=node_id[id(node)]))
+                            arrows.append({'x': sx, 'y': cell_mid(src, n),
+                                               'x2': dx, 'y2': cell_mid(node, n),
+                                               'src': node_id[id(src)],
+                                               'dst': node_id[id(node)]})
 
-        return dict(col_labels=col_labels, layer_max=layer_max,
-                    n_columns=len(col_labels), band_h=band_h,
-                    cells=cells, stripes=stripes,
-                    arrows=arrows, labels=labels,
+        return {'col_labels': col_labels, 'layer_max': layer_max,
+                    'n_columns': len(col_labels), 'band_h': band_h,
+                    'cells': cells, 'stripes': stripes,
+                    'arrows': arrows, 'labels': labels,
                     # chart titles are plain text: peel the caption's
                     # Markdown markers rather than show them literally
-                    title=f'{sim.title}{" - " if sim.caption else ""}'
-                          f'{strip_markdown(sim.caption)}')
+                    'title': f'{sim.title}{" - " if sim.caption else ""}'
+                          f'{strip_markdown(sim.caption)}'}
