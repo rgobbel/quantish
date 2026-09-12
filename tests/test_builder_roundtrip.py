@@ -139,7 +139,7 @@ def test_unhandled_sections_survive_a_save():
     from pathlib import Path
 
     from quantish.builder import config_extras
-    models = Path(__file__).resolve().parents[1] / 'models' / 'extras'
+    models = Path(__file__).resolve().parents[1] / 'models' / 'decoherence'
     with open(models / 'double_slit_eraser.yaml') as f:
         cfg = yaml.safe_load(f)
     cfg['epr_stats'] = False
@@ -166,7 +166,7 @@ def test_unhandled_sections_keep_their_comments():
     from pathlib import Path
 
     from quantish.builder import config_extras, extract_sections
-    path = (Path(__file__).resolve().parents[1] / 'models' / 'extras'
+    path = (Path(__file__).resolve().parents[1] / 'models' / 'decoherence'
             / 'double_slit_eraser.yaml')
     text = path.read_text()
     cfg = yaml.safe_load(text)

@@ -91,7 +91,9 @@ def _(
     last_models_get,
     last_models_set,
     mo,
+    model_label,
     model_rescan,
+    model_title,
     model_upload,
 ):
     model_rescan  # noqa: B018 — dependency: pressing the button re-globs the directory
@@ -99,9 +101,12 @@ def _(
     def _():
         collection = collection_pick.value
         cdir = MODELS_TOP / collection
-        options = {p.stem: p for p in sorted(cdir.glob('*.yaml'))
-                   if p.stem != 'defaults'}
-        remembered = last_models_get().get(collection)
+        # file name first, then the model's title — the same label as
+        # in every other app's picker (screen.model_label)
+        options = {model_label(p.stem, model_title(p)): p
+                   for p in sorted(cdir.glob('*.yaml')) if p.stem != 'defaults'}
+        _by_stem = {p.stem: lab for lab, p in options.items()}
+        remembered = _by_stem.get(last_models_get().get(collection))
         default = remembered if remembered in options else next(iter(options))
 
         def remember(p):
@@ -1273,6 +1278,7 @@ async def initialization():
     from quantish.epr import run_epr_experiment, supports_epr, verdict, verdict_slack
     from quantish.gate import FredkinGate
     from quantish.network_graph import NetworkGraph
+    from quantish.screen import model_label, model_title
     from quantish.simulation import Simulation
     from quantish.sweep import run_sweep, sweep_spec, sweep_values
 
@@ -1297,6 +1303,8 @@ async def initialization():
         MODELS_TOP,
         NetworkGraph,
         Simulation,
+        model_label,
+        model_title,
         WASM_MODE,
         WeightSplitWidget,
         cmath,

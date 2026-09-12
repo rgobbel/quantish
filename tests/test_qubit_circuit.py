@@ -85,7 +85,7 @@ def test_gate_identity_matches_switch_components():
 def test_qiskit_export_agrees():
     qiskit = pytest.importorskip('qiskit', reason='qiskit not installed')
     Statevector = qiskit.quantum_info.Statevector
-    for rel in ('gr2026/fig4.13', 'gr2026/fig4.17', 'extras/double_slit_eraser'):
+    for rel in ('gr2026/fig4.13', 'gr2026/fig4.17', 'decoherence/double_slit_eraser'):
         sim = load(MODELS / f'{rel}.yaml')
         circuit = compile_qubits(sim)
         ours = circuit.simulate()

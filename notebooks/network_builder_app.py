@@ -82,6 +82,8 @@ async def initialization():
         sym_or_float,
     )
     from quantish.network_graph import NetworkGraph
+    from quantish.screen import model_label
+    from quantish.screen import model_title as yaml_title
     from quantish.simulation import Simulation
     from quantish.util import angle_label
 
@@ -104,6 +106,8 @@ async def initialization():
         NetworkGraph,
         NetworkGraphWidget,
         Simulation,
+        model_label,
+        yaml_title,
         WASM_MODE,
         angle_degrees,
         angle_label,
@@ -329,11 +333,12 @@ def _(get_file_mode, open_btn, set_file_mode, upload_btn):
 
 
 @app.cell(hide_code=True)
-def _(collection_pick, get_file_mode, mo, model_paths, model_upload):
+def _(collection_pick, get_file_mode, mo, model_label, model_paths, model_upload, yaml_title):
     # the unfolded controls for the chosen File action
     _collection = collection_pick.value
     model_pick = mo.ui.dropdown(
-        options={k.split('/', 1)[1].removesuffix('.yaml'): k
+        options={model_label(k.split('/', 1)[1].removesuffix('.yaml'),
+                             yaml_title(model_paths[k])): k
                  for k in sorted(model_paths)
                  if k.split('/')[0] == _collection},
         label='model')

@@ -87,9 +87,9 @@ def test_conditions_come_from_their_model_files():
     from quantish.double_slit import MODEL_FILES, MODES, slit_config
     from quantish.simulation import Simulation
 
-    models = Path(__file__).resolve().parents[1] / 'models' / 'extras'
+    models = Path(__file__).resolve().parents[1] / 'models'
     assert set(MODEL_FILES) == set(MODES)
-    for mode, name in MODEL_FILES.items():
+    for mode, name in MODEL_FILES.items():        # name is collection/file
         with open(models / f'{name}.yaml') as f:
             cfg = yaml.safe_load(f)
         app = slit_config(mode)
@@ -126,7 +126,7 @@ def test_tunable_recorder_visibility():
 
 
 def test_eraser_complementary_fringes():
-    """The quantum eraser (extras/double_slit_eraser.yaml): a 45° gate
+    """The quantum eraser (decoherence/double_slit_eraser.yaml): a 45° gate
     after the recorder mixes p2's two which-way wires. Sorted by p2's
     sign the screen shows complementary fringes — P(S, p2+) = ½cos²(φ/2)
     and P(S, p2−) = ½sin²(φ/2) whichever detector p2 reached — while
@@ -142,7 +142,7 @@ def test_eraser_complementary_fringes():
     from quantish.qnumber import CalcMode
     from quantish.simulation import Simulation
 
-    models = Path(__file__).resolve().parents[1] / 'models' / 'extras'
+    models = Path(__file__).resolve().parents[1] / 'models' / 'decoherence'
     with open(models / 'double_slit_eraser.yaml') as f:
         base = yaml.safe_load(f)
     base['loglevel'] = 'warning'

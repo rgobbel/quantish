@@ -29,9 +29,9 @@ particles:
    p1: {sign: 1, weight: 1}
 
 gates:
-   g_split: {angle: theta_split}
-   g_merge: {angle: theta_merge}
-   g_sort: {angle: theta_sort}
+   g_split: {angle: theta_split, angle_range: [0, 90]}
+   g_merge: {angle: theta_merge, angle_range: [0, 90]}
+   g_sort: {angle: theta_sort, angle_range: [0, 90]}
 
 delay_gates: [B1, S2, S, D]
 

@@ -1,0 +1,137 @@
+title: Double slit, three partial recorders in series (decoherence chain)
+
+caption: One screen pixel of the double-slit apparatus with three partial which-way recorders in series on the right slit — each records in only part of its weight, and the fringe visibility falls as the product of their bypass fractions.
+
+notes: |-
+  This variant of `double_slit_tunable.yaml` puts three recorder
+  particles $r_1$, $r_2$, $r_3$ on the right-slit arm instead of one. Each
+  recorder passes its own gate $g_{pre,i}(\theta_{pre,i})$ before its
+  recorder gate $g_{obs,i}$. The straight component goes on to $g_{obs,i}$ and
+  records which slit $p_1$ used, the crossing component runs into a
+  dead-end delay gate ($bypass_i$) and never meets $p_1$. $p_1$'s right-slit
+  wire threads the three recorder gates' control ports in turn, so the
+  records are made one after another, then continues to the phase
+  plate and $g_{merge}$ as before.
+
+  The recorders act independently: the joint state of the three,
+  conditioned on $p_1$'s slit, is a product, and the overlap of the two
+  joint recorder states is the product of the individual overlaps.
+  Each recorder's overlap is its bypass fraction $\sin^2(\theta_{pre,i})$, so
+  the screen shows
+
+  $$P(S) = V\cos^2(\varphi/2) + \tfrac{1 - V}{2}, \qquad V = \prod_i \sin^2\theta_{pre,i}$$
+
+  The three 45-degree defaults give $V = 1/8$. &nbsp;&nbsp; $\theta_{pre,i} = 90°$
+  for all $i$ reproduces the both-open condition (figure 4.13). Any
+  recorder at $0$ degrees reproduces the recorder condition (figure 4.15). The order
+  of the recorders along the arm does not matter.
+
+  This is the Joos-Zeh mechanism of decoherence in quantish form:
+  partial records accumulate in the environment, and the interference
+  term decays as the product of their overlaps — exponentially in the
+  number of recorders when the angles are equal. No single record
+  destroys the fringes, and no single record's reversal restores them:
+  interference returns only when every record is undone. Compare the
+  fullerene interference experiments, where visibility falls smoothly
+  as the number of environmental records grows — with gas pressure in
+  Hornberger et al. (2003, collisional decoherence) and with the
+  molecules' temperature in Hackermueller et al. (2004, decoherence by
+  thermal emission). The model goes beyond *Good and Real* chapter 4,
+  whose observations are all complete.
+
+  As in the single-recorder model, an oblique $g_{pre}$ gives each recorder
+  minus-sign components, and its angle-$0$ recorder gate routes those
+  crosswise irrespective of $p_1$. Each record is carried by the
+  recorder's position and sign jointly, and the engine's remerge rule
+  handles the bookkeeping.
+
+  Per screen pixel the app overrides $\varphi$ with that pixel's phase.
+
+# the screen: P(p1 at S) across one fringe period
+sweep:
+  title: screen intensity across one fringe period
+  variable: phi
+  from: 0
+  to: 2*pi
+  points: 41
+  observe: {particle: p1, at: S}
+
+run_stages:
+  split: [g_split]
+  decoherence: [g_pre_1, g_pre_2, g_pre_3, bypass_1, bypass_2, bypass_3]
+  observe_1: [g_obs_1]
+  observe_2: [g_obs_2]
+  observe_3: [g_obs_3]
+  slits: [S1, S2]
+  phase: [φ]
+  merge: [g_merge]
+  sort: [g_sort]
+  detect: [D, S]
+
+particles:
+  p1: {weight: 1, sign: 1}
+  r1: {weight: 1, sign: 1}
+  r2: {weight: 1, sign: 1}
+  r3: {weight: 1, sign: 1}
+
+gates:
+  g_split: {angle: theta_split, angle_range: [0, 90]}
+  g_pre_1: {angle: theta_pre_1, angle_range: [0, 90]}
+  g_pre_2: {angle: theta_pre_2, angle_range: [0, 90]}
+  g_pre_3: {angle: theta_pre_3, angle_range: [0, 90]}
+  g_obs_1: {angle: 0}
+  g_obs_2: {angle: 0}
+  g_obs_3: {angle: 0}
+  g_merge: {angle: theta_merge, angle_range: [0, 90]}
+  g_sort: {angle: theta_sort, angle_range: [0, 90]}
+
+delay_gates: [D, S, S1, S2, bypass_1, bypass_2, bypass_3]
+
+phase_plates:
+  φ: 'phi'
+
+display_strings:
+  g_split: '$g_{split}$'
+  g_pre_1: '$g_{pre,1}$'
+  g_pre_2: '$g_{pre,2}$'
+  g_pre_3: '$g_{pre,3}$'
+  g_obs_1: '$g_{obs,1}$'
+  g_obs_2: '$g_{obs,2}$'
+  g_obs_3: '$g_{obs,3}$'
+  g_merge: '$g_{merge}$'
+  g_sort: '$g_{sort}$'
+  bypass_1: '$bypass_1$'
+  bypass_2: '$bypass_2$'
+  bypass_3: '$bypass_3$'
+
+variables:
+  theta_pre_1: '45°'
+  theta_pre_2: '45°'
+  theta_pre_3: '45°'
+  theta_split: '45°'
+  theta_merge: '45°'
+  theta_sort: 0
+  phi: 0
+
+links:
+  p1: g_split.upper
+  r1: g_pre_1.upper
+  r2: g_pre_2.upper
+  r3: g_pre_3.upper
+  g_pre_1.upper: g_obs_1.upper
+  g_pre_2.upper: g_obs_2.upper
+  g_pre_3.upper: g_obs_3.upper
+  g_pre_1.lower: bypass_1
+  g_pre_2.lower: bypass_2
+  g_pre_3.lower: bypass_3
+  g_split.upper: S1
+  S1: g_merge.upper
+  g_split.lower: g_obs_1.control
+  g_obs_1.control: g_obs_2.control
+  g_obs_2.control: g_obs_3.control
+  g_obs_3.control: S2
+  S2: φ
+  φ: g_merge.lower
+  g_merge.upper: g_sort.upper
+  g_sort.upper: S
+  g_sort.lower: D

@@ -9,7 +9,7 @@ python -m quantish.main -c gr2026/fig4.17
 
 (paths are relative to this directory; `defaults.yaml` is loaded first).
 
-## Why three directories?
+## Why four directories?
 
 The 2026 revised draft of *Good and Real* chapter 4 renumbers several figures
 relative to the 2006 published edition. Most readers will have one version or
@@ -26,13 +26,21 @@ copy of the book and the file names line up with its figure numbers.
   double-slit app in its four conditions (`double_slit` with both slits
   open, `double_slit_left_blocked`, `double_slit_right_blocked`, and
   `double_slit_recorder` with the which-way recorder on the right
-  slit, plus `double_slit_tunable` with a partial recorder and
-  `double_slit_eraser` with a quantum eraser after the recorder — the
-  last three also declare a `sweep`, the screen intensity across one
-  fringe period, which the quantish app plots and `--sweep` prints),
-  diagnostic circuits (`noop_*`,
+  slit), diagnostic circuits (`noop_*`,
   `zero_*`, `one_angle_plus_zero`, `split_*`), and figure 12 of AI Memo
   1026a (`AIM_Figure12`), the 1988 paper the chapter grew from.
+- **`decoherence/`** — the tweakable decoherence demonstrations behind
+  the decoherence lab, all variants of the double-slit apparatus:
+  `double_slit_tunable` with a partial recorder, `double_slit_eraser`
+  with a quantum eraser after the recorder, `double_slit_decoherence_chain`
+  with three partial recorders in series, whose fringe visibility is the
+  product of their overlaps, and `double_slit_eraser_chain`, that chain
+  with an eraser on the middle recorder, whose sign-sorted fringes
+  recover only what was completely recorded. Each declares a `sweep`,
+  the screen intensity across one fringe period (as do `double_slit` and
+  `double_slit_recorder`), which the quantish app plots, `--sweep`
+  prints, and the decoherence lab turns into a screen; their gates carry
+  `angle_range` hints for the lab's sliders.
 
 ## Figure mapping (2006 ↔ 2026)
 

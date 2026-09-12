@@ -3,7 +3,7 @@ title: Double slit, recorder on the right slit, tunable decoherence
 caption: One screen pixel of the double-slit apparatus with a which-way recorder that reaches the slit only in part of its weight — a tunable degree of decoherence, from full fringes to none.
 
 notes: |-
-  This variant of double_slit.yaml adds a gate, g_pre, on the recorder
+  This variant of double_slit.yaml adds a gate, $g_{pre}$, on the recorder
   particle p2's path ahead of the recorder gate g_obs. At g_pre, p2's
   weight splits: the straight component continues to g_obs and records
   which slit p1 used; the crossing component runs into a dead-end delay
@@ -41,6 +41,15 @@ notes: |-
   therefore carried by p2's position and sign jointly rather than by
   its exit wire alone. The engine's remerge rule handles this correctly.
 
+# the screen: P(p1 at S) across one fringe period
+sweep:
+  title: screen intensity across one fringe period
+  variable: phi
+  from: 0
+  to: 2*pi
+  points: 41
+  observe: {particle: p1, at: S}
+
 run_stages:
   split: [g_split]
   decoherence: [g_pre, bypass]
@@ -56,11 +65,11 @@ particles:
   p2: {weight: 1, sign: 1}
 
 gates:
-  g_merge: {angle: theta_merge}
+  g_merge: {angle: theta_merge, angle_range: [0, 90]}
   g_obs: {angle: 0}
-  g_pre: {angle: theta_pre}
-  g_sort: {angle: theta_sort}
-  g_split: {angle: theta_split}
+  g_pre: {angle: theta_pre, angle_range: [0, 90]}
+  g_sort: {angle: theta_sort, angle_range: [0, 90]}
+  g_split: {angle: theta_split, angle_range: [0, 90]}
 
 delay_gates: [D, S, S1, S2, bypass]
 

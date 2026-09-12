@@ -100,11 +100,23 @@ There is also a demonstration of the classic [double-slit experiment](https://en
 ```bash
 uv run marimo run notebooks/double_slit_app.py
 ```
-Either of these notebooks can also be run using `marimo edit` in place of `marimo run`, to allow viewing and editing of the code.
+and of the decoherence lab, a workbench that puts any two models side
+by side — any library model or an uploaded model file — with their
+angles as sliders (ranged by the gates' optional `angle_range` hints)
+and their own notes as the explanation. A model that declares a screen
+(a `sweep` on a phase plate) also gets the fired-particle screen with
+its exact curve; the double-slit family all do — the plain double slit,
+the recorder, the partial recorder, the quantum eraser, the decoherence
+chain, and the chain with an eraser on one recorder:
+
+```bash
+uv run marimo run notebooks/decoherence_app.py
+```
+Any of these notebooks can also be run using `marimo edit` in place of `marimo run`, to allow viewing and editing of the code.
 
 ## Browser-only builds (WebAssembly)
 
-Both apps can be compiled into a static web site that runs entirely in
+The apps can be compiled into a static web site that runs entirely in
 the visitor's browser. The Python engine executes under
 [Pyodide](https://pyodide.org/) (WebAssembly), so serving the apps needs
 no Python installation, no running server process, and no authentication
@@ -117,11 +129,12 @@ To build the site:
 tools/build_wasm_app.sh . /path/to/output-dir
 ```
 
-The script builds a wheel of the `quantish` package, exports both
+The script builds a wheel of the `quantish` package, exports the
 notebooks with `marimo export html-wasm`, and bundles the wheels and the
-model library into the output. The apps land in `quantish_app/` and
-`double_slit_app/`, with a landing page at the site root linking to
-both. The output includes a small `serve.sh`; to try it locally:
+model library into the output. The apps land in `quantish_app/`,
+`double_slit_app/`, `decoherence_app/` and `builder_app/`, with a landing
+page at the site root linking to all of them. The output includes a
+small `serve.sh`; to try it locally:
 
 ```bash
 python3 -m http.server --directory /path/to/output-dir
@@ -207,6 +220,12 @@ Some useful options (see `--help` for the full list):
 - `--qubits` — compile the model to a qubit circuit, draw it, and check
   the circuit's statevector against the engine (see *Quantish as qubits*)
 - `--set NAME=EXPR` — override a model variable, e.g. `--set theta2=pi/8`
+- `--loose` — loose mode: run whatever the particles reach and drop the
+  rest (gates nothing feeds, particles with no link, links into
+  undeclared gates), deriving any `run_stages` the model leaves out
+  from the wiring; the strict default refuses all of those. A model
+  can set `loose: true` itself. The dropped names are logged and kept
+  in `Simulation.dropped`
 - `--loglevel debug` — a detailed trace of every gate firing and
   configuration-space point split, with checkable weight arithmetic
 
@@ -216,7 +235,7 @@ Some useful options (see `--help` for the full list):
 
 A model is a YAML file, containing definitions of particles with initial weights,
 Fredkin gates with
-rotation angles, links wiring gate outputs to gate inputs, and explicit `run_stages` specifying the order in which gates will be run, possibly (virtually) simultaneously.
+rotation angles, links wiring gate outputs to gate inputs, and explicit `run_stages` specifying the order in which gates will be run, possibly (virtually) simultaneously (in loose mode, `--loose` or `loose: true`, any stages left out are derived from the wiring).
 `models/defaults.yaml` supplies shared settings. `models/gr2026` holds models corresponding to the 2026 revision of Chapter 4 of *Good and Real*, `models/gr2006` has models whose numbering corresponds to the 2006 edition of the book, and `models/extras/` holds
 circuits not corresponding to any book figure. `models/README.md` documents the
 2006/2026 figure correspondence.

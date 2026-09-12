@@ -1,0 +1,128 @@
+title: Double slit, recorder on the right slit, quantum eraser (one pixel)
+
+caption: One screen pixel of the double-slit apparatus with a which-way recorder on the right slit and a quantum eraser — a 45° gate $g_{erase}$ that mixes the recorder particle's two paths so its exit wire no longer tells which slit; sorted by the eraser's outcome (p2's sign), the screen shows two complementary fringe patterns whose sum is the fringeless recorder pattern.
+
+notes: |-
+  The recorder condition (`double_slit_recorder.yaml`) with one gate added
+  on the recorder particle's path: after $g_{obs}$ has swapped $p_2$ exactly
+  when $p_1$ took the right slit, both of $p_2$'s possible wires feed the
+  switch inputs of $g_{erase}$, a gate at $\theta_{erase} = 45°$, and its
+  two outputs end at the detectors $E1$ and $E2$.
+
+  This is the quantish version of the delayed-choice quantum eraser of
+  Kim et al. (2000), where the idler photon's two which-way paths are
+  recombined on a beam splitter. Here $g_{erase}$ is the beam splitter. At
+  $45°$ each of $p_2$'s incoming wires splits evenly over both outgoing
+  wires, so which detector $p_2$ reaches ($E1$ or $E2$) is uncorrelated with
+  which slit $p_1$ used, and so is $p_2$'s sign taken alone. The which-way
+  record is not destroyed — $p_2$'s two branch states stay orthogonal, as
+  a reversible gate must keep them — but it is spread over $p_2$'s exit
+  wire and sign jointly, where no single readout can recover it.
+
+  Neither $p_2$ coordinate alone carries which-way information, yet the
+  screen pattern sorted by $p_2$'s SIGN shows fringes: the configuration-
+  space points with $p_2$ at plus sign give $P(S) = \cos^2(\varphi/2)$, those with
+  minus sign give $\sin^2(\varphi/2)$, whichever detector $p_2$ reached. The two
+  patterns are complementary, shifted by half a period, and their sum is
+  the flat $1/2$ of the recorder condition. Sorting by the detector alone
+  shows no fringes at any eraser angle: within one exit wire, the two
+  branch states of $p_2$ remain orthogonal.
+
+  Why the sign: a quantish gate's four-way split sends a switch-wire
+  particle to two wires *and* two signs. Keeping its sign, the particle
+  goes to one wire with weight $\cos^2\theta$ and to the other with
+  $\sin^2\theta$. Flipping its sign, it goes to those same two wires with
+  the opposite pair $i\sin\theta\cos\theta$ and $-i\sin\theta\cos\theta$.
+  $p_2$'s two which-way branches enter $g_{erase}$ on different wires, so
+  at either exit wire they arrive with equal plus-sign weights (both $1/2$
+  at $45°$) and opposite minus-sign weights ($+i/2$ and $-i/2$). The equal
+  pair is what lets the plus-sign subset show fringes; the opposite pair
+  is what shifts the minus-sign subset by half a period. The beam-splitter
+  mixing that erases the record is carried by the sign components as
+  much as by the wire components. The sign is a coordinate
+  of the configuration-space point on the same footing as the wire; the
+  same trick — an angle-$0$ gate crossing minus-sign particles — is what
+  $g_{sort}$ uses to turn $p_1$'s sign into the S/D detector choice, and a sort
+  gate on each of $g_{erase}$'s outputs would likewise turn $p_2$'s sign into
+  a detector choice. The interference at $g_{merge}$ is the same as in the
+  both-open condition; what the eraser adds is that the fringes can be
+  seen again, one subset of trials at a time, though the screen taken as
+  a whole is as fringeless as in the recorder condition — which is why
+  the erasure can be "chosen" after $p_1$ hits the screen without changing
+  anything on the screen.
+
+  The eraser runs in the sort stage beside $g_{sort}$ only to keep the
+  diagram compact. It acts on $p_2$ alone, so the engine gives the same
+  final configuration-space points whether $g_{erase}$ runs before or after
+  $p_1$ reaches the screen — moving it to a stage after "detect" is the
+  delayed-choice version, and changes no number.
+
+  Per screen pixel the app overrides $\varphi$ with that pixel's phase.
+
+variables:
+   theta_split: 45°
+   theta_merge: 45°
+   theta_sort: 0
+   theta_erase: 45°
+   phi: 0
+
+# the screen: P(p1 at S) across one fringe period, sorted by the
+# eraser's outcome (p2's sign) — the two complementary patterns and
+# their flat sum
+sweep:
+   title: screen intensity across one fringe period, sorted by the eraser's outcome
+   variable: phi
+   from: 0
+   to: 2*pi
+   points: 41
+   observe: {particle: p1, at: S}
+   group_by: {particle: p2, coordinate: sign}
+
+run_stages:
+   split: [g_split]
+   observe: [g_obs]
+   slits: [S1, S2]
+   phase: [φ]
+   merge: [g_merge]
+   sort: [g_sort, g_erase]
+   detect: [S, D, E1, E2]
+
+particles:
+   p1: {sign: 1, weight: 1}
+   p2: {sign: 1, weight: 1}
+
+gates:
+   g_split: {angle: theta_split, angle_range: [0, 90]}
+   g_obs: {angle: 0}
+   g_merge: {angle: theta_merge, angle_range: [0, 90]}
+   g_erase: {angle: theta_erase, angle_range: [0, 90]}
+   g_sort: {angle: theta_sort, angle_range: [0, 90]}
+
+delay_gates: [S1, S2, S, D, E1, E2]
+
+phase_plates:
+   φ: phi
+
+display_strings:
+   g_split: '$g_{split}$'
+   g_obs: '$g_{obs}$'
+   g_merge: '$g_{merge}$'
+   g_erase: '$g_{erase}$'
+   g_sort: '$g_{sort}$'
+
+links:
+   p1: g_split.upper
+   p2: g_obs.upper
+   g_split.upper: S1
+   S1: g_merge.upper
+   g_split.lower: g_obs.control
+   g_obs.control: S2
+   g_obs.upper: g_erase.upper
+   g_obs.lower: g_erase.lower
+   S2: φ
+   φ: g_merge.lower
+   g_merge.upper: g_sort.upper
+   g_sort.upper: S
+   g_sort.lower: D
+   g_erase.upper: E1
+   g_erase.lower: E2

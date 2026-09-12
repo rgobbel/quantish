@@ -372,7 +372,12 @@ def _(mo):
         - **fringes**&#42; ($f$) controls how many bright fringes fit across
           the screen when both slits are open. We allow odd values only, so that the
           screen edges always sit on dark fringes.
-        - **screen resolution** controls the granularity of each raster display.
+        - **screen resolution** controls the granularity of each raster display: how many
+          points the exact curve is computed at, and how fine the film's pixels are. Moving it
+          repaints the film, but nothing is simulated or redrawn at random: every hit keeps the
+          landing point it got when it was fired, and the same hits are re-binned into the
+          new pixels. Coarser pixels collect more hits each and glow brighter; finer ones spread
+          the same hits thinner. The hit counts in the titles do not change.
         - **particles per volley** controls how many simulated particles will be fired at the apparatus with each press of **fire particles**.
         - **fire particles** does just that: it fires a volley in each of the four conditions displayed, and displays every particle that reaches the screen. Not all of them do: blocking a slit absorbs about half the volley, so those rasters fill half as fast. The hit counts in the titles record how many particles went through in each condition.
         - **reset screens** erases the raster displays.

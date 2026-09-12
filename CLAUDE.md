@@ -20,7 +20,7 @@ The main entry point is `quantish/main.py`. Run simulations using:
 python -m quantish.main -c <model_name>   # e.g. -c gr2026/fig4.17
 ```
 
-Model files live in the `models/` directory, split by book edition: `gr2006/` (2006 published figure numbers), `gr2026/` (2026 revised-draft numbers), and `extras/` (circuits with no book figure). See `models/README.md` for the figure mapping (e.g., `gr2026/fig4.17.yaml` is the EPR experiment).
+Model files live in the `models/` directory, split by book edition: `gr2006/` (2006 published figure numbers), `gr2026/` (2026 revised-draft numbers), `extras/` (circuits with no book figure), and `decoherence/` (the tweakable decoherence demos behind the decoherence lab). See `models/README.md` for the figure mapping (e.g., `gr2026/fig4.17.yaml` is the EPR experiment).
 
 ### Key Command-Line Options
 
@@ -168,6 +168,15 @@ Configuration options (usually in defaults.yaml):
   as floats (display.sym_or_float)
 - `sample` / `n_samples`: enable sampling mode
 - `epr_stats`: collect EPR statistics (the fig4.17 models set it)
+- `loose`: loose mode (also `Simulation(cfg, loose=True)`, CLI
+  `--loose`): `simulation.loose_config` prunes gates no particle
+  reaches, particles with no link, links into undeclared gates, and the
+  labels/display strings/stage entries naming them (recorded in
+  `Simulation.dropped`); `loose_run_stages` slots unscheduled gates in
+  ahead of the first declared stage that depends on them, the rest at
+  the end (stages `auto_N`). Strict mode (the default) refuses all of
+  those as wiring errors. Built for the lab's builder: pull a gate out
+  and run what is left
 
 ### Important Patterns
 
@@ -197,10 +206,10 @@ Configuration options (usually in defaults.yaml):
   - `util.py`: shared constants (SEP, wires, Sign) and small helpers
 - `models/`: YAML configuration files for experiments
   - `defaults.yaml`: Default configuration
-  - `gr2006/`, `gr2026/`, `extras/`: per-edition book figures and non-book circuits (see `models/README.md`)
+  - `gr2006/`, `gr2026/`, `extras/`, `decoherence/`: per-edition book figures, non-book circuits, and the decoherence demos (see `models/README.md`)
 - `tests/`: Unit tests (golden states, wiring validation, EPR, Monte
   Carlo, variables, double slit)
-- `notebooks/`: the marimo apps (`quantish_app.py`, `double_slit_app.py`)
+- `notebooks/`: the marimo apps (`quantish_app.py`, `double_slit_app.py`, `decoherence_app.py`, `network_builder_app.py`)
 - `HIDEME/`: Historical/experimental code and archived dead code (ignore)
 
 ## Notes for Development

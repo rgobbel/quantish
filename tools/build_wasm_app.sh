@@ -32,15 +32,17 @@ WHEEL=$(ls -t dist/quantish-*.whl | head -1)
 (cd notebooks && uv run marimo export html-wasm quantish_app.py -o "$OUT/quantish_app" --mode run -f)
 (cd notebooks && uv run marimo export html-wasm double_slit_app.py -o "$OUT/double_slit_app" --mode run -f)
 (cd notebooks && uv run marimo export html-wasm network_builder_app.py -o "$OUT/builder_app" --mode run -f)
+(cd notebooks && uv run marimo export html-wasm decoherence_app.py -o "$OUT/decoherence_app" --mode run -f)
 (cd notebooks && uv run marimo export html-wasm quantish_app.py -o "$OUT/quantish_app_edit" --mode edit -f)
 (cd notebooks && uv run marimo export html-wasm double_slit_app.py -o "$OUT/double_slit_app_edit" --mode edit -f)
 (cd notebooks && uv run marimo export html-wasm network_builder_app.py -o "$OUT/builder_app_edit" --mode edit -f)
+(cd notebooks && uv run marimo export html-wasm decoherence_app.py -o "$OUT/decoherence_app_edit" --mode edit -f)
 # Two config patches on the exported pages. The exporter pins
 # auto_instantiate off for editable exports; we want the notebooks to
 # run on load. And it bakes in theme "system", which hands dark-mode
 # visitors marimo's dark theme under stylesheets tuned for the light
 # one — pin every app to light.
-python3 - "$OUT"/quantish_app*/index.html "$OUT"/double_slit_app*/index.html "$OUT"/builder_app*/index.html <<'PYPATCH'
+python3 - "$OUT"/quantish_app*/index.html "$OUT"/double_slit_app*/index.html "$OUT"/builder_app*/index.html "$OUT"/decoherence_app*/index.html <<'PYPATCH'
 import os
 import sys
 for path in sys.argv[1:]:
@@ -57,7 +59,8 @@ PYPATCH
 #    page via mo.notebook_location)
 for W in "$OUT"/quantish_app/public/wheels "$OUT"/double_slit_app/public/wheels \
          "$OUT"/builder_app/public/wheels "$OUT"/builder_app_edit/public/wheels \
-         "$OUT"/quantish_app_edit/public/wheels "$OUT"/double_slit_app_edit/public/wheels; do
+         "$OUT"/quantish_app_edit/public/wheels "$OUT"/double_slit_app_edit/public/wheels \
+         "$OUT"/decoherence_app/public/wheels "$OUT"/decoherence_app_edit/public/wheels; do
   mkdir -p "$W"
   cp "$WHEEL" "$W/"
   if [ ! -f "$W/addict-2.4.0-py3-none-any.whl" ]; then
@@ -68,7 +71,8 @@ done
 
 # 3b) the build stamp beside each app, and at the site root
 for D in "$OUT"/quantish_app "$OUT"/quantish_app_edit "$OUT"/double_slit_app \
-         "$OUT"/double_slit_app_edit "$OUT"/builder_app "$OUT"/builder_app_edit; do
+         "$OUT"/double_slit_app_edit "$OUT"/builder_app "$OUT"/builder_app_edit \
+         "$OUT"/decoherence_app "$OUT"/decoherence_app_edit; do
   echo "$VERSION_JSON" > "$D/public/version.json"
 done
 echo "$VERSION_JSON" > "$OUT/version.json"
@@ -101,7 +105,8 @@ for p in sorted(top.rglob('*.yaml')):
 payload = json.dumps(models)
 for app_dir in ('quantish_app', 'quantish_app_edit', 'builder_app',
                 'builder_app_edit', 'double_slit_app',
-                'double_slit_app_edit'):
+                'double_slit_app_edit', 'decoherence_app',
+                'decoherence_app_edit'):
     (out / app_dir / 'public' / 'models.json').write_text(payload)
 print(f'bundled {len(models)} model files')
 PYEOF
@@ -157,6 +162,13 @@ cat > "$OUT/index.html" <<'HTML'
     Models created in this app can be downloaded as YAML
     model files that the quantish app can load.
   </a>
+  <a class="app" href="decoherence_app/">
+    <b>Decoherence lab</b><br>
+    A workbench for the double-slit family: put any two of its circuits side
+    by side — the plain double slit, complete and partial which-way recorders,
+    the quantum eraser, a chain of partial recorders, the chain with an eraser
+    on one recorder — set their angles, and watch the fringes fade or return.
+  </a>
   <p>Every app also comes as an editable notebook, with the same code in
      the full marimo editor, where you can read it, change it, and
      re-run cells. Edits run entirely in your browser and affect
@@ -164,7 +176,8 @@ cat > "$OUT/index.html" <<'HTML'
      download button to keep your changes.</p>
   <p><a href="double_slit_app_edit/">Double-slit app (editable)</a> &middot;
      <a href="quantish_app_edit/">Quantish app (editable)</a> &middot;
-     <a href="builder_app_edit/">Network builder (editable)</a></p>
+     <a href="builder_app_edit/">Network builder (editable)</a> &middot;
+     <a href="decoherence_app_edit/">Decoherence lab (editable)</a></p>
   <p class="build">Build @BUILD@ &middot; @BUILT_AT@</p>
 </body>
 </html>
@@ -190,8 +203,9 @@ Serves the app directory over HTTP. One server covers both apps:
     http://<host>:<port>/quantish_app/      the quantish app
     http://<host>:<port>/double_slit_app/   the double-slit app
     http://<host>:<port>/builder_app/       the network builder
-    (plus quantish_app_edit/ and double_slit_app_edit/: the same
-    notebooks in the in-browser editor)
+    http://<host>:<port>/decoherence_app/   the decoherence lab
+    (plus the *_edit/ variants: the same notebooks in the in-browser
+    editor)
 
 Options:
   -d, --directory DIR   directory to serve
@@ -241,6 +255,7 @@ echo "  landing page:    http://localhost:$PORT/"
 echo "  quantish app:    http://localhost:$PORT/quantish_app/"
 echo "  double-slit app: http://localhost:$PORT/double_slit_app/"
 echo "  network builder: http://localhost:$PORT/builder_app/"
+echo "  decoherence lab: http://localhost:$PORT/decoherence_app/"
 exec python3 -m http.server --directory "$DIR" "$PORT"
 SH
 chmod +x "$OUT/serve.sh"
@@ -252,9 +267,10 @@ Quantish apps, compiled to WebAssembly (static site).
 
 then open  http://<host>:<port>/  in a browser: the root is a landing
 page linking to the quantish app (quantish_app/), the double-slit app
-(double_slit_app/), the network builder (builder_app/), and
-editable-notebook variants of all three (quantish_app_edit/,
-double_slit_app_edit/, builder_app_edit/). Edits run entirely in the
+(double_slit_app/), the network builder (builder_app/), the decoherence
+lab (decoherence_app/), and editable-notebook variants of all four
+(quantish_app_edit/, double_slit_app_edit/, builder_app_edit/,
+decoherence_app_edit/). Edits run entirely in the
 visitor's browser and affect only their own copy.
 
 Notes:

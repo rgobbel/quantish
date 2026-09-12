@@ -3264,3 +3264,20 @@ class BuilderWidget(anywidget.AnyWidget):
     # 'pi/6 (30.0°)'}), computed by the app — specs are sympy syntax
     # the browser cannot evaluate
     angle_labels = traitlets.Dict({}).tag(sync=True)
+
+
+_HTML_ESM = r"""
+export function render({ model, el }) {
+  const apply = () => { el.innerHTML = model.get('html'); };
+  model.on('change:html', apply);
+  apply();
+}
+"""
+
+
+class HtmlWidget(anywidget.AnyWidget):
+    """A span of HTML the notebook updates in place — a readout beside
+    a control that must not re-render its container (a value under a
+    slider inside an accordion, say). Assign `.html`."""
+    _esm = _HTML_ESM
+    html = traitlets.Unicode('').tag(sync=True)

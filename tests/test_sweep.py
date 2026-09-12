@@ -31,7 +31,7 @@ def float_mode():
 
 
 def test_eraser_sweep_matches_the_law():
-    sim = load('extras/double_slit_eraser')
+    sim = load('decoherence/double_slit_eraser')
     spec = sweep_spec(sim)
     assert spec['variable'] == 'phi' and spec['points'] == 41
     assert spec['group_by'] == {'particle': 'p2', 'coordinate': 'sign'}
@@ -49,7 +49,7 @@ def test_eraser_sweep_matches_the_law():
 def test_symbolic_sweep_stays_exact():
     import sympy
     CalcMode.default('Symbolic')
-    sim = load('extras/double_slit_eraser')
+    sim = load('decoherence/double_slit_eraser')
     spec = sweep_spec(sim)
     values = sweep_values(spec, 5)          # 0, π/2, π, 3π/2, 2π
     assert [v.v for v in values] == [0, sympy.pi / 2, sympy.pi,
@@ -84,7 +84,7 @@ def test_bad_declarations_are_rejected():
         sweep_spec(load('extras/double_slit',
                         sweep={**base, 'observe': {'particle': 'p1', 'at': 'Q'}}))
     with pytest.raises(ValueError, match='coordinate'):
-        sweep_spec(load('extras/double_slit_eraser',
+        sweep_spec(load('decoherence/double_slit_eraser',
                         sweep={**base, 'group_by': {'particle': 'p2',
                                                     'coordinate': 'hue'}}))
     with pytest.raises(ValueError):

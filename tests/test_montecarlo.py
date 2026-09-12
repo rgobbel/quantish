@@ -112,8 +112,8 @@ class TestPilotWave(unittest.TestCase):
     def test_pilot_matches_exact_distribution(self):
         from quantish.montecarlo import predicted_distribution, sample_pilot
         for name, variables in (('gr2026/fig4.13', {}),
-                                ('extras/double_slit_eraser', {'phi': '90°'}),
-                                ('extras/double_slit_tunable',
+                                ('decoherence/double_slit_eraser', {'phi': '90°'}),
+                                ('decoherence/double_slit_tunable',
                                  {'theta_pre': '45°', 'phi': '60°'}),
                                 ('gr2026/fig4.17', {})):
             sim = self.run_with(name, **variables)

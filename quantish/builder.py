@@ -453,9 +453,13 @@ def graph_to_config(graph, title: str, caption: str | None = None,
         return v if isinstance(v, (int, float)) else str(v)
 
     def _gate_entry(g):
-        return ({'angle': 0, 'phase': _spec(g.get('phase', 0))}
-                if g.get('kind') == 'phase'
-                else {'angle': _spec(g.get('angle', 0))})
+        entry = ({'angle': 0, 'phase': _spec(g.get('phase', 0))}
+                 if g.get('kind') == 'phase'
+                 else {'angle': _spec(g.get('angle', 0))})
+        if g.get('angle_range') is not None:
+            # a slider-range hint (degrees) rides along untouched
+            entry['angle_range'] = list(g['angle_range'])
+        return entry
 
     # phase plates go in the model's phase_plates section (name →
     # phase spec)
@@ -633,6 +637,8 @@ def config_to_graph(config) -> tuple[dict, list[str]]:
         else:
             gd['angle'] = _keep(
                 'angle', config['gates'][name].get('angle', 0), deg)
+            if config['gates'][name].get('angle_range') is not None:
+                gd['angle_range'] = list(config['gates'][name]['angle_range'])
             if pdeg:
                 notes.append(f'{name}: phase {pdeg:g}° dropped (the '
                              'builder only puts phases on φ plates)')
@@ -789,6 +795,9 @@ def config_to_yaml(config, raw_sections: dict[str, str] | None = None) -> str:
     lines += ['', 'gates:']
     for name, g in config['gates'].items():
         opts = f"angle: {g['angle']}"
+        if g.get('angle_range') is not None:
+            lo, hi = g['angle_range']
+            opts += f", angle_range: [{lo:g}, {hi:g}]"
         if 'phase' in g:
             opts += f", phase: {g['phase']}"
         lines.append(f"  {name}: {{{opts}}}")

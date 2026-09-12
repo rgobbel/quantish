@@ -36,6 +36,9 @@ properties:
   sample: {type: boolean}
   n_samples: {type: integer, minimum: 0}
   epr_stats: {type: boolean}
+  # loose mode: run whatever the particles reach, drop unreachable
+  # gates and unlinked particles, derive any run_stages left out
+  loose: {type: boolean}
   variables:
     type: object
     additionalProperties: {$ref: '#/$defs/spec'}
@@ -76,6 +79,15 @@ properties:
       properties:
         angle: {$ref: '#/$defs/spec'}
         phase: {$ref: '#/$defs/spec'}
+        # the sensible range of the angle in degrees, [low, high] — a
+        # hint for apps that put the angle on a slider (the decoherence
+        # lab); an angle given as a variable takes the range of the
+        # gates that use it
+        angle_range:
+          type: array
+          items: {type: number}
+          minItems: 2
+          maxItems: 2
   # a link is 'source: destination'. A particle may branch instead —
   # [g1.control, g2.control, 0.25]: it starts in a superposition over
   # the two destinations, the number being the probability of the

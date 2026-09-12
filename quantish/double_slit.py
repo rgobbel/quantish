@@ -64,12 +64,12 @@ MODES = ('both', 'slit1', 'slit2', 'observed', 'tunable', 'eraser')
 # The four conditions are model files in models/extras/ — reading or
 # diffing the YAML says what each condition is. The app only sets the
 # angles and the pixel's phase on top of them.
-MODEL_FILES = {'both': 'double_slit',
-               'slit1': 'double_slit_right_blocked',
-               'slit2': 'double_slit_left_blocked',
-               'observed': 'double_slit_recorder',
-               'tunable': 'double_slit_tunable',
-               'eraser': 'double_slit_eraser'}
+MODEL_FILES = {'both': 'extras/double_slit',
+               'slit1': 'extras/double_slit_right_blocked',
+               'slit2': 'extras/double_slit_left_blocked',
+               'observed': 'extras/double_slit_recorder',
+               'tunable': 'decoherence/double_slit_tunable',
+               'eraser': 'decoherence/double_slit_eraser'}
 
 _CACHE: dict[str, dict] = {}
 
@@ -80,14 +80,14 @@ def _model_config(mode: str) -> dict:
     overrides never leak."""
     name = MODEL_FILES[mode]
     if name not in _CACHE:
-        for cand in (Path('/wasm-data/models/extras') / f'{name}.yaml',
+        for cand in (Path('/wasm-data/models') / f'{name}.yaml',
                      Path(__file__).resolve().parent.parent / 'models'
-                     / 'extras' / f'{name}.yaml'):
+                     / f'{name}.yaml'):
             if cand.is_file():
                 _CACHE[name] = yaml.safe_load(cand.read_text())
                 break
         else:
-            raise FileNotFoundError(f'models/extras/{name}.yaml not found')
+            raise FileNotFoundError(f'models/{name}.yaml not found')
     return copy.deepcopy(_CACHE[name])
 
 
