@@ -1,5 +1,6 @@
 import logging
 from collections import defaultdict
+from copy import deepcopy
 
 import networkx as nx
 from addict import Dict as Addict
@@ -37,8 +38,135 @@ def _prob_text(spec, rest: bool = False) -> str:
     return f'1-({spec})' if rest else str(spec)
 
 
+def _link_object(end: str) -> str:
+    """The particle or gate behind a link endpoint ('p1|2' → p1,
+    'g1.upper' → g1)."""
+    return base_name(end.split(SEP)[0])
+
+
+def loose_config(config):
+    """Loose mode: the model is whatever the particles can reach.
+
+    Strict loading refuses a model with loose ends — an unlinked
+    particle, a gate nothing feeds, a link into an undeclared gate, a
+    linked gate the run_stages forget. Loose mode instead drops every
+    gate no particle can reach along the links, every particle with no
+    link left, and the links, labels, display strings, and stage entries
+    that named them; whatever run_stages the model still lacks are
+    derived from the topology (see Simulation.loose_run_stages). This is
+    what lets a builder pull one gate out of a circuit and run the rest.
+
+    Returns the pruned config (a deep copy; the original is untouched)
+    and a record of what went: {particles: [...], gates: [...],
+    links: ['src: dst', ...]}."""
+    cfg = deepcopy(config)
+    if not isinstance(cfg, Addict):
+        cfg = Addict(cfg)
+    cfg.loose = True
+    gates = dict(cfg.get('gates') or {})
+    delays = list(cfg.get('delay_gates') or [])
+    plates = dict(cfg.get('phase_plates') or {})
+    declared = set(gates) | set(delays) | set(plates)
+    bare = set(delays) | set(plates)
+    particles = dict(cfg.get('particles') or {})
+
+    def canon(end):
+        return f'{end}{SEP}control' if end in bare else end
+
+    # every link as (source key, source object, destination gate)
+    edges = []
+    for src, dst in dict(cfg.get('links') or {}).items():
+        arms = ([d for d in dst if isinstance(d, str)]
+                if isinstance(dst, (list, tuple)) else [dst])
+        for arm in arms:
+            edges.append((src, _link_object(canon(src)),
+                          _link_object(canon(arm))))
+    # reachability: from the linked particles, along the links, through
+    # declared gates only
+    reached = {obj for _, obj, _ in edges if obj in particles}
+    grown = True
+    while grown:
+        grown = False
+        for _, obj, dest in edges:
+            if obj in reached and dest in declared and dest not in reached:
+                reached.add(dest)
+                grown = True
+    dropped = {'particles': [], 'gates': sorted(declared - reached),
+               'links': []}
+
+    def alive(end):
+        return _link_object(canon(end)) in reached
+
+    links = {}
+    for src, dst in dict(cfg.get('links') or {}).items():
+        if not alive(src):
+            dropped['links'].append(f'{src}: {dst}')
+            continue
+        if isinstance(dst, (list, tuple)):
+            arms = [d for d in dst if isinstance(d, str)]
+            kept = [d for d in arms if alive(d)]
+            if len(kept) == len(arms):
+                links[src] = list(dst)
+            elif kept:
+                # one arm gone: the particle goes the other way for sure
+                links[src] = kept[0]
+                dropped['links'].append(f'{src}: {dst}')
+            else:
+                dropped['links'].append(f'{src}: {dst}')
+        elif alive(dst):
+            links[src] = dst
+        else:
+            dropped['links'].append(f'{src}: {dst}')
+    cfg.links = Addict(links)
+    linked = {_link_object(src) for src in links}
+    dropped['particles'] = sorted(p for p in particles if p not in linked)
+    cfg.particles = Addict({p: v for p, v in particles.items() if p in linked})
+    cfg.gates = Addict({g: v for g, v in gates.items() if g in reached})
+    if 'delay_gates' in cfg:
+        cfg.delay_gates = [d for d in delays if d in reached]
+    if 'phase_plates' in cfg:
+        cfg.phase_plates = Addict({p: v for p, v in plates.items() if p in reached})
+    # what is left: the reached gates, and the particles still linked
+    kept = (reached - set(particles)) | linked
+    if 'display_strings' in cfg:
+        cfg.display_strings = Addict({n: v for n, v in dict(cfg.display_strings).items()
+                                      if n in kept})
+    if 'wire_labels' in cfg:
+        # a label names a kept link or a kept gate's port
+        labels = {}
+        for key, label in dict(cfg.wire_labels).items():
+            ends = key.lstrip('>').split('>')
+            if all(_link_object(canon(e)) in kept for e in ends):
+                labels[key] = label
+        cfg.wire_labels = Addict(labels)
+    for section in ('run_stages', 'diagram_groups'):
+        groups = cfg.get(section)
+        if not groups:
+            continue
+        pruned = {}
+        for name, group in dict(groups).items():
+            members = [group] if isinstance(group, str) else list(group)
+            members = [g for g in members if g in reached]
+            if members:
+                pruned[name] = members
+        cfg[section] = Addict(pruned)
+    return cfg, dropped
+
+
 class Simulation:
-    def __init__(self, config):
+    def __init__(self, config, loose=None):
+        # loose mode (the config's `loose` key, or the argument): run
+        # whatever the particles reach, prune the rest, derive any
+        # stages the model leaves out — see loose_config
+        if loose is None:
+            loose = bool(config.get('loose', False))
+        self.loose = loose
+        self.dropped = {'particles': [], 'gates': [], 'links': []}
+        if loose:
+            config, self.dropped = loose_config(config)
+            for kind, names in self.dropped.items():
+                if names:
+                    log.info(f'loose mode drops unreachable {kind}: {names}')
         self.config = config
         self.title = config.title
         # optional model caption (typically the book figure's caption);
@@ -60,7 +188,9 @@ class Simulation:
         # diagram grouping (diagram_groups) is a separate concern and is
         # never used for scheduling. A model without run_stages is a bug.
         self.declared_run_stages = self.normalize_groups(config.get('run_stages'))
-        if not self.declared_run_stages:
+        if self.loose:
+            self.declared_run_stages = self.loose_run_stages(self.declared_run_stages)
+        elif not self.declared_run_stages:
             raise ValueError(
                 f"model '{config.title}' declares no run_stages — "
                 f"run order must be explicit")
@@ -256,6 +386,43 @@ class Simulation:
             return None
         return {name: ([g] if isinstance(g, str) else list(g))
                 for name, g in groups.items()}
+
+    def loose_run_stages(self, groups):
+        """Loose mode's run_stages: the declared groups, restricted to
+        the gates the link graph has, with whatever the model left
+        unscheduled slotted in where the topology needs it — ahead of
+        the first declared stage that depends on it, the leftovers at
+        the end — as extra stages named auto_1, auto_2, .... A model
+        without run_stages runs in pure topological order; an empty
+        circuit runs no stages."""
+        graph = self.simplified_links
+        gate_set = set(flat_list(self.topo_stages))
+        declared = {}
+        for name, group in (groups or {}).items():
+            members = [g for g in group if g in gate_set]
+            if members:
+                declared[name] = members
+        scheduled = set(flat_list(list(declared.values())))
+        # topological order, so an auto stage's gates layer correctly
+        pending = [g for g in flat_list(self.topo_stages) if g not in scheduled]
+        stages = {}
+        n = 0
+
+        def auto(gates):
+            nonlocal n, pending
+            if gates:
+                n += 1
+                stages[f'auto_{n}'] = gates
+                pending = [g for g in pending if g not in gates]
+
+        for name, members in declared.items():
+            needed = set()
+            for m in members:
+                needed |= nx.ancestors(graph, m)
+            auto([g for g in pending if g in needed])
+            stages[name] = members
+        auto(list(pending))
+        return stages
 
     def grouped_run_stages(self, groups):
         """Execution stages from the model's declared run_stages: gates in

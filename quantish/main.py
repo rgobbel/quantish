@@ -98,6 +98,9 @@ def main():
     parser.add_argument('--sweep', action='store_true',
                         help="Run the model's declared sweep (its `sweep` section) and "
                              "log the table; with --csv-output also writes <name>_sweep.csv")
+    parser.add_argument('--loose', action='store_true',
+                        help='Loose mode: run what the particles reach, drop the rest, '
+                             'derive any run_stages the model leaves out')
     parser.add_argument('--qubits', action='store_true',
                         help='Compile the model to a qubit circuit (quantish/qubit_circuit.py): log '
                              'the qubit map and a drawing, simulate it, and check its final '
@@ -132,6 +135,8 @@ def main():
         config.variables[name.strip()] = expr.strip()
     if args.calculation_mode is not None:
         config.calculation_mode = args.calculation_mode
+    if args.loose:
+        config.loose = True
     # calculation_mode is a case-independent string ('float' or
     # 'symbolic'); the legacy boolean 'symbolic' key still works
     _mode = config.get('calculation_mode') or (
