@@ -3000,10 +3000,11 @@ function render({ model, el }) {
   const M = { l: 46, r: 10, t: 26, b: 40 };
   const TAU = 4;     // film response: hits on a pixel to ~63% white
   // Grouped hits (a third element per point, e.g. the eraser's p2 sign)
-  // expose the film in a color per group; where two groups land on
-  // one pixel the colors add toward white, so brightness still reads
-  // the total while the color reads the sorting.
-  const GROUP_RGB = [[255, 170, 60], [70, 190, 255]];
+  // expose the film in a color per group: the additive primaries, pure
+  // red, green, and blue, so where two groups land on one pixel the
+  // colors add toward white (red + blue = magenta, all three = white)
+  // and brightness still reads the total while the hue reads the sorting.
+  const GROUP_RGB = [[255, 0, 0], [0, 255, 0], [0, 0, 255]];
 
   function dims() {
     // two pixel columns per engine sample: the grain follows the

@@ -390,7 +390,8 @@ def _(
             f'## Slot {slot}\n\n<span style="font-size:0.85em">{spec.title}</span>':
             mo.accordion({f'About: {spec.title}': notes_html(spec),
                           'Angles': controls,
-                          'Circuit diagram': mo.ui.anywidget(diagram)})})
+                          'Circuit diagram': mo.ui.anywidget(diagram)},
+                         multiple=True)})
         return {'slot': slot, 'spec': spec, 'sliders': sliders,
                 'readout': readout, 'panel': panel, 'diagram': diagram,
                 'screen': screen, 'details': details, 'grain': None,
