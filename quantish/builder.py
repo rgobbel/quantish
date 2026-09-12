@@ -125,11 +125,29 @@ def _endpoint(e: str, gates) -> tuple:
     return None, None
 
 
+def loose_ends(graph) -> list[str]:
+    """The graph's loose ends: particles connected to nothing and gates
+    nothing feeds — wiring errors in a strict run, ignored in a loose
+    one (the engine drops them and whatever only they reach)."""
+    gates = graph.get('gates', {})
+    particles = graph.get('particles', {})
+    links = [tuple(l) for l in graph.get('links', [])]
+    sources = {src for src, _ in links}
+    out = [f'particle {p} is not connected to anything'
+           for p in sorted(set(particles) - sources)]
+    fed = {_endpoint(dst, gates)[0] for _, dst in links}
+    out += [f'gate {g} has no inputs' for g in sorted(set(gates) - fed)]
+    return out
+
+
 def validate_graph(graph, variables=None,
-                   angle_unit: str = 'radians') -> list[str]:
+                   angle_unit: str = 'radians', loose: bool = False) -> list[str]:
     """Human-readable problems that keep the graph from running.
     Angle and phase specs resolve through the model's variables and
-    read plain numbers in angle_unit, as the engine does."""
+    read plain numbers in angle_unit, as the engine does. In loose
+    mode the loose ends the engine's loose run tolerates — a particle
+    connected to nothing, a gate nothing feeds — are not problems (the
+    run ignores them; see loose_ends)."""
     env, problems = variables_env(variables)
     gates = graph.get('gates', {})
     particles = graph.get('particles', {})
@@ -185,13 +203,8 @@ def validate_graph(graph, variables=None,
         elif dw not in WIRES:
             problems.append(f'unknown input wire {dst}')
 
-    linked = {p for p in particles if p in sources}
-    for p in sorted(set(particles) - linked):
-        problems.append(f'particle {p} is not connected to anything')
-
-    fed = {_endpoint(dst, gates)[0] for _, dst in links}
-    for g in sorted(set(gates) - fed):
-        problems.append(f'gate {g} has no inputs')
+    if not loose:
+        problems.extend(loose_ends(graph))
 
     plates = {n for n, g in gates.items() if g.get('kind') == 'phase'}
     for end in sorted({e for l in links for e in l}):
@@ -355,7 +368,7 @@ HANDLED_KEYS = frozenset((
     'title', 'caption', 'notes', 'calculation_mode', 'angle_unit',
     'run_stages', 'diagram_groups', 'particles', 'gates', 'delay_gates',
     'phase_plates', 'display_strings', 'variables', 'links',
-    'wire_labels'))
+    'wire_labels', 'loose'))
 
 
 def config_extras(config) -> dict:
@@ -419,10 +432,12 @@ def graph_to_config(graph, title: str, caption: str | None = None,
                     symbolic: bool | None = None,
                     angle_unit: str | None = None,
                     notes: str | None = None,
-                    extras: dict | None = None) -> dict:
+                    extras: dict | None = None,
+                    loose: bool = False) -> dict:
     """The model-config dict the Simulation loads (no defaults mixed
-    in). caption, variables, symbolic, angle_unit, and notes ride
-    along when given; angle and weight specs referencing the variables
+    in). caption, variables, symbolic, angle_unit, notes, and the loose
+    flag (loose: true — run what the particles reach) ride along when
+    given; angle and weight specs referencing the variables
     stay verbatim. symbolic is tri-state: None leaves the key out of
     the YAML entirely (the loader's defaults decide), True/False write
     it explicitly; angle_unit None likewise omits the key (plain
@@ -440,6 +455,8 @@ def graph_to_config(graph, title: str, caption: str | None = None,
         config['angle_unit'] = str(angle_unit).lower()
     if symbolic is not None:
         config['calculation_mode'] = 'symbolic' if symbolic else 'float'
+    if loose:
+        config['loose'] = True
     config['run_stages'] = derive_stages(graph)
     def _particle_entry(p):
         return {'weight': p.get('weight', 1), 'sign': p.get('sign', 1)}
@@ -591,7 +608,9 @@ def config_to_graph(config) -> tuple[dict, list[str]]:
             'loglevel': 'warning'}
     base.update(config)
     base['config_path'] = 'builder-load'
-    sim = Simulation(Addict(base))   # resolves variables, checks wiring
+    # resolves variables, checks wiring; a loose model loads loosely,
+    # so its loose ends open on the canvas instead of refusing to
+    sim = Simulation(Addict(base), loose=bool(config.get('loose')))
 
     notes = []
     env, _ = variables_env(config.get('variables'))
@@ -607,9 +626,26 @@ def config_to_graph(config) -> tuple[dict, list[str]]:
                  in dict(config.get('display_strings') or {}).items()}
     col_of = {s: i for i, s in enumerate(config['run_stages'])}
     row_count = {}
-    for name, gate in sim.fredkin_gates.items():
-        deg = round(float(gate.theta.degrees), 10)
-        pdeg = round(float(gate.phase.degrees), 10)
+    _unit = str(config.get('angle_unit') or 'radians').lower()
+
+    def _resolved(spec, fallback=0.0):
+        # degrees of a spec the loaded Simulation did not resolve (a gate
+        # a loose load dropped): through the variables, else the fallback
+        try:
+            return round(float(angle_degrees(spec, env, _unit)), 10)
+        except Exception:  # noqa: BLE001 — an unparseable spec
+            return fallback
+
+    # every declared gate reaches the canvas, the ones a loose load
+    # dropped included (their angles resolve here instead)
+    for name in config['gates']:
+        gate = sim.fredkin_gates.get(name)
+        if gate is not None:
+            deg = round(float(gate.theta.degrees), 10)
+            pdeg = round(float(gate.phase.degrees), 10)
+        else:
+            deg = _resolved(config['gates'][name].get('angle', 0))
+            pdeg = _resolved(config['gates'][name].get('phase', 0))
         col = col_of.get(stage_of.get(name), 0)
         row = row_count[col] = row_count.get(col, 0)
         row_count[col] += 1
@@ -662,12 +698,13 @@ def config_to_graph(config) -> tuple[dict, list[str]]:
             gd['dgroup'] = dgroup_of[name]
         graph['gates'][name] = gd
 
-    for name, plate in sim.phase_plates.items():
-        pdeg = round(float(plate.phase.degrees), 10)
+    for name, spec in dict(config.get('phase_plates') or {}).items():
+        plate = sim.phase_plates.get(name)
+        pdeg = (round(float(plate.phase.degrees), 10) if plate is not None
+                else _resolved(spec))
         col = col_of.get(stage_of.get(name), 0)
         row = row_count[col] = row_count.get(col, 0)
         row_count[col] += 1
-        spec = config.get('phase_plates', {}).get(name, 0)
         try:
             angle_degrees(spec, env)
             phase = spec if isinstance(spec, (int, float)) else str(spec)
@@ -776,6 +813,8 @@ def config_to_yaml(config, raw_sections: dict[str, str] | None = None) -> str:
             lines += ['', f'notes: {txt}']
     _opts = [f'{k}: {config[k]}'
              for k in ('calculation_mode', 'angle_unit') if k in config]
+    if config.get('loose'):
+        _opts.append('loose: true')
     if _opts:
         lines += [''] + _opts
     lines += ['', 'run_stages:']
