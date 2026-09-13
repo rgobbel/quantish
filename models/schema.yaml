@@ -59,6 +59,12 @@ properties:
   display_strings:
     type: object
     additionalProperties: {type: string}
+  # variable_notes maps a variable to a short Markdown line an app shows
+  # under that variable's slider — landmarks along its range, such as
+  # {theta_erase: '0°: the plain recorder · 45°: full erasure'}
+  variable_notes:
+    type: object
+    additionalProperties: {type: string}
   particles:
     type: object
     minProperties: 1

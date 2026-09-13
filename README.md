@@ -105,9 +105,14 @@ by side — any library model or an uploaded model file — with their
 angles as sliders (ranged by the gates' optional `angle_range` hints)
 and their own notes as the explanation. A model that declares a screen
 (a `sweep` on a phase plate) also gets the fired-particle screen with
-its exact curve; the double-slit family all do — the plain double slit,
-the recorder, the partial recorder, the quantum eraser, the decoherence
-chain, and the chain with an eraser on one recorder:
+its exact curve, plus the virtual screens — one film strip per stage
+showing what the screen would be if the paths were merged right there,
+whole and per sorted subset, so a which-way record is seen being
+written and, by an eraser, moved into the recorder's sign — the same
+progression as a table of fringe visibilities, and the weight-evolution
+graphic of its particles; the double-slit family all do — the plain
+double slit, the recorder, the partial recorder, the quantum eraser, the
+decoherence chain, and the chain with an eraser on one recorder:
 
 ```bash
 uv run marimo run notebooks/decoherence_app.py

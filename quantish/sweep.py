@@ -42,6 +42,15 @@ def sweep_spec(sim) -> dict | None:
     raw = sim.config.get('sweep')
     if not raw:
         return None
+    return check_sweep(sim, raw)
+
+
+def check_sweep(sim, raw: dict) -> dict:
+    """A sweep declaration — the model's, or one made in an app —
+    with defaults filled in and validated against the loaded model:
+    the variable must be one of the model's, the observed particle and
+    gate declared, the group_by particle declared and its coordinate
+    one of COORDINATES. Raises ValueError with the specifics."""
     spec = {k: v for k, v in dict(raw).items()}
     var = spec.get('variable')
     if var not in sim.qvars:
@@ -96,11 +105,14 @@ def group_label(coord, coordinate: str, display_strings=None) -> str:
     return f'{SIGN_MARKS[int(coord.sign)]}{gate}'
 
 
-def run_sweep(sim, spec: dict | None = None, values=None) -> dict:
+def run_sweep(sim, spec: dict | None = None, values=None,
+              inert: tuple = (), absent: tuple = ()) -> dict:
     """Run the sweep: {'spec', 'x': the swept values, 'series': {label:
     probabilities aligned with x}, 'total': their sum per x}. Without a
     group_by there is a single series named for the observed arrival.
-    Probabilities are qnumber values (exact in Symbolic mode)."""
+    Probabilities are qnumber values (exact in Symbolic mode). `inert`
+    gates and `absent` particles (the apps' switch-off boxes) apply to
+    every point's run."""
     from quantish.simulation import Simulation
     spec = spec if spec is not None else sweep_spec(sim)
     if spec is None:
@@ -117,9 +129,10 @@ def run_sweep(sim, spec: dict | None = None, values=None) -> dict:
         for i, x in enumerate(values):
             cfg = deepcopy(sim.config)
             cfg.variables[spec['variable']] = x
-            space, _ = Simulation(cfg).run()
+            space, _ = Simulation(cfg, inert=tuple(inert), absent=tuple(absent)).run()
             for point in space.index.values():
-                origin = point.coords[obs['particle']].position.origin
+                coord = point.coords.get(obs['particle'])
+                origin = coord.position.origin if coord is not None else None
                 if origin is None or origin.gate != obs['at']:
                     continue
                 label = (group_label(point.coords[grp['particle']],

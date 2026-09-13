@@ -46,6 +46,8 @@ DELAY_FILL, DELAY_STROKE = '#e2e8f0', '#64748b'    # slate gray
 VALUE_FILL, VALUE_STROKE = '#f4f4f6', '#8b93a0'    # very pale gray
 PARTICLE_FILL = VALUE_FILL
 WIRE_COLOR = '#22314a'
+DISABLED_FILL, DISABLED_STROKE = '#e5e7eb', '#9ca3af'   # a switched-off gate
+DISABLED_X = '#b91c1c'                              # and the X across it
 
 LINE_H = 0.26           # height of one text line, in layout units
 PORT_PAD = 0.14         # padding inside port boxes
@@ -58,7 +60,8 @@ def _sub(s) -> str:
 
 def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
                      angle_overrides: dict | None = None,
-                     show_values: bool | None = None) -> dict:
+                     show_values: bool | None = None,
+                     disabled: tuple = (), absent: tuple = ()) -> dict:
     """Everything the circuit drawing is made of, as plain
     JSON-serializable lists in layout coordinates (y grows upward):
     boxes (fill/stroke/corner px, hover amp/Pr), texts (multi-line
@@ -72,7 +75,12 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
     has_run=True, show_values=False the geometry is laid out exactly
     as the results view — boxes sized and placed for their value
     blocks — but the values themselves stay hidden, so the only
-    visible change when they appear is the values themselves."""
+    visible change when they appear is the values themselves.
+
+    `disabled` names gates switched off (Simulation's inert argument):
+    their frames and ports gray out and a bold X crosses the frame;
+    `absent` names particles left out (Simulation's absent argument),
+    grayed and crossed the same way."""
     if show_values is None:
         show_values = has_run
     spec = spec_from_simulation(sim)
@@ -151,6 +159,7 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
     fx = _x_map()
 
     boxes, texts, wires, arrows, dots, stadiums = [], [], [], [], [], []
+    particle_marks = []   # (x, y, x2, y2) of each absent particle's blob
     frames = {}   # drawn gate/delay frame extents, for the stage boxes
     # scaled wire-endpoint -> x of the DRAWN box edge there, so wires and
     # arrowheads stop at the boundary even when a box grew for its text
@@ -431,10 +440,14 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
         pw = 2 * PORT_PAD + CHAR_W * (len(label) + 1)
         ph = 2 * PORT_PAD + LINE_H
         cx, cy = fx(px), py * KY
+        _off = pname in absent
         boxes.append({'x': cx - pw / 2, 'x2': cx + pw / 2,
                           'y': cy - ph / 2, 'y2': cy + ph / 2,
-                          'fill': PARTICLE_FILL, 'stroke': VALUE_STROKE,
+                          'fill': DISABLED_FILL if _off else PARTICLE_FILL,
+                          'stroke': DISABLED_STROKE if _off else VALUE_STROKE,
                           'corner': int(ph * scale / 2), 'amp': '', 'pr': ''})
+        if _off:
+            particle_marks.append((cx - pw / 2, cy - ph / 2, cx + pw / 2, cy + ph / 2))
         _ptx = {'x': cx, 'y': cy, 'lines': [label],
                     'size': 11, 'color': '#333333', 'weight': 'bold'}
         if _pruns:
@@ -686,7 +699,25 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
         x0, x1 = min(x0, p['x']), max(x1, p['x'])
         y0, y1 = min(y0, p['y']), max(y1, p['y'])
     pad = 0.4
-    return {'boxes': boxes, 'texts': texts, 'wires': wires, 'arrows': arrows,
+    # switched-off gates: gray every box inside the frame, and cross
+    # the frame with a bold X (marks: lines the presenters draw on top)
+    marks = []
+    for gname in disabled:
+        if gname not in frames:
+            continue
+        left, bottom, right, top = frames[gname]
+        for b in boxes:
+            if b['x'] >= left - 1e-9 and b['x2'] <= right + 1e-9 \
+                    and b['y'] >= bottom - 1e-9 and b['y2'] <= top + 1e-9:
+                b['fill'], b['stroke'] = DISABLED_FILL, DISABLED_STROKE
+        marks.append({'x': left, 'y': bottom, 'x2': right, 'y2': top,
+                      'stroke': DISABLED_X, 'width': 4})
+        marks.append({'x': left, 'y': top, 'x2': right, 'y2': bottom,
+                      'stroke': DISABLED_X, 'width': 4})
+    for x, y, x2, y2 in particle_marks:
+        marks.append({'x': x, 'y': y, 'x2': x2, 'y2': y2, 'stroke': DISABLED_X, 'width': 3})
+        marks.append({'x': x, 'y': y2, 'x2': x2, 'y2': y, 'stroke': DISABLED_X, 'width': 3})
+    return {'marks': marks, 'boxes': boxes, 'texts': texts, 'wires': wires, 'arrows': arrows,
                 'dots': dots, 'stadiums': stadiums, 'line_h': LINE_H,
                 'wire_color': WIRE_COLOR, 'value_fill': VALUE_FILL,
                 'value_stroke': VALUE_STROKE, 'scale': scale,

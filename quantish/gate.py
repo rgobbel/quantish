@@ -29,6 +29,10 @@ class FredkinGate:
         # so an angle entered as -30º displays as -30º, not 330º)
         self.theta = qify(theta)
         self.phase = qify(phase)
+        # an inert gate is a wire: every particle passes straight through
+        # untouched (the model's `inert` list; the decoherence lab's
+        # virtual screens switch off the gates after a stage)
+        self.inert = False
         if isinstance(self, DelayGate):
             return
         self.twist = self.theta - PI/2

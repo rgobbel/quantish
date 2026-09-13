@@ -219,3 +219,11 @@ button:not([data-state]) { white-space: nowrap; }
 
 /* The sampling-model checkbox rows: each label stays on one line. */
 .mode-boxes label, .mode-boxes .paragraph { white-space: nowrap; }
+
+/* The one message that says why a Run button is disabled: bright red,
+   overriding the no-gray-text rule above (same importance, later wins). */
+.not-runnable, .not-runnable *,
+.not-runnable .markdown, .not-runnable .markdown *,
+.not-runnable .markdown p, .not-runnable .markdown li {
+    color: #e00000 !important;
+}

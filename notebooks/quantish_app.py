@@ -169,9 +169,13 @@ def _(
                 _show = sim is not None and show_values.value
                 return mo.ui.anywidget(DiagramWidget(
                     geometry=diagram_geometry(_s, has_run=True,
-                                              show_values=_show)))
+                                              show_values=_show,
+                                              disabled=tuple(_s.inert),
+                                              absent=tuple(_s.absent))))
             return mo.ui.anywidget(DiagramWidget(
-                geometry=diagram_geometry(sim_model, has_run=False)))
+                geometry=diagram_geometry(sim_model, has_run=False,
+                                          disabled=tuple(sim_model.inert),
+                                          absent=tuple(sim_model.absent))))
         except Exception as exc:  # noqa: BLE001 — show, don't crash the app
             return mo.md(f'_circuit diagram failed: {exc}_')
 
@@ -191,7 +195,7 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(build_sim, inexact_note, mo, mode_pick, model_pick, run_btn):
+def _(build_sim, inexact_note, mo, mode_pick, model_pick, run_btn, run_problem):
     # Gated on the button. Rather than mo.stop (whose descendants all
     # display "this cell wasn't run because an ancestor was stopped"),
     # sim is None until the button is pressed, and each results cell
@@ -228,18 +232,60 @@ def _(build_sim, inexact_note, mo, mode_pick, model_pick, run_btn):
                 'the `▶ Run simulation` button will execute the loaded '
                 'model, with the currently-set parameters. Results '
                 'displays will appear after execution is complete.')
-        return mo.vstack([msg, run_btn], align='start')
+        button = (mo.hstack([run_btn, mo.md(f'<span style="color: #b00020">{run_problem}</span>')],
+                            justify='start', align='center', gap=1)
+                  if run_problem else run_btn)
+        return mo.vstack([msg, button], align='start')
 
     _()
     return (sim,)
 
 
 @app.cell(hide_code=True)
-def _(mo):
+def _(mo, run_problem):
     # displayed in the run-status cell above, next to whichever status
-    # text applies
-    run_btn = mo.ui.run_button(label='▶ Run simulation')
+    # text applies; disabled, with the reason beside it, whenever the
+    # model cannot run
+    run_btn = mo.ui.run_button(label='▶ Run simulation', disabled=run_problem is not None)
     return (run_btn,)
+
+
+@app.cell(hide_code=True)
+def _():
+    # the switch-off choices ('g:name' / 'p:name' -> False when off),
+    # remembered across model reloads, which rebuild the checkboxes
+    off_memory = {}
+    return (off_memory,)
+
+
+@app.cell(hide_code=True)
+def _(particle_names_model, switch_off):
+    # why the model cannot run, or None: every particle switched off
+    # means nothing enters (a model that fails to load stops the app
+    # with its own message, above)
+    run_problem = ('every particle is switched off — nothing would enter'
+                   if particle_names_model and all(
+                       not switch_off.value.get(f'p:{p}', True) for p in particle_names_model)
+                   else None)
+    return (run_problem,)
+
+
+@app.cell(hide_code=True)
+def _(gate_names, mo, off_memory, particle_names_model, plate_names_model):
+    # switch off for the run: a gate or phase plate goes inert (a plain
+    # wire), a particle absent (a null input) — the quick way to try a
+    # configuration without editing the model
+    def _remember(key):
+        def cb(v):
+            off_memory[key] = bool(v)
+        return cb
+
+    switch_off = mo.ui.dictionary({
+        key: mo.ui.checkbox(value=off_memory.get(key, True), label=name,
+                            on_change=_remember(key))
+        for key, name in ([(f'g:{n}', n) for n in gate_names + plate_names_model]
+                          + [(f'p:{n}', n) for n in particle_names_model])})
+    return (switch_off,)
 
 
 @app.cell(hide_code=True)
@@ -279,6 +325,9 @@ def _(
     gate_names,
     mo,
     mode_pick,
+    particle_names_model,
+    plate_names_model,
+    switch_off,
     units_pick,
     variables_editor,
     vars_error,
@@ -297,8 +346,11 @@ def _(
     """)
 
     def _():
-        rows = [mo.hstack([angle_slider_elems[g], angle_text_elems[g]],
-                          widths=[5, 1], align='center', wrap=True)
+        # each gate's row: its slider, its text entry, and its on/off
+        # box (unchecked, the gate is a plain wire for the run)
+        rows = [mo.hstack([angle_slider_elems[g], angle_text_elems[g],
+                           switch_off.elements[f'g:{g}']],
+                          widths=[5, 1, 1], align='center', wrap=True)
                 for g in gate_names]
         # the model's caption (typically the book figure's) is Markdown
         # and passes through verbatim — no added styling
@@ -313,6 +365,17 @@ def _(
                   "expression (`pi/8`, `rad(30)`, `acos(4/5)`)."),
             mo.hstack([mode_pick, units_pick], wrap=True, justify='start', gap=2),
             mo.vstack(rows),
+            mo.md("**Switch off**: uncheck a gate (the box beside its slider) "
+                  "to make it a plain wire that every particle passes straight "
+                  "through, a particle to leave it out of the run (a null "
+                  "input); the diagram grays and crosses out whatever is off."),
+            *([mo.hstack([mo.md('phase plates:')]
+                         + [switch_off.elements[f'g:{g}'] for g in plate_names_model],
+                         justify='start', align='center', wrap=True, gap=1.5)]
+              if plate_names_model else []),
+            mo.hstack([mo.md('particles:')]
+                      + [switch_off.elements[f'p:{p}'] for p in particle_names_model],
+                      justify='start', align='center', wrap=True, gap=1.5),
             mo.md("**Variables**: the model's named constants, one "
                   "`name: expression` per line (`theta_split: pi/4`); "
                   "gate angles and weights that refer to them follow."),
@@ -1005,21 +1068,63 @@ def _(
 
 @app.cell(hide_code=True)
 def _(mo, sim_model, sweep_spec):
-    # The sweep's controls, seeded from the loaded model's declaration
-    # so they follow a model change. A run button keeps the cost
-    # (one engine run per point) explicit, as for the EPR sweep.
+    # The sweep is defined here, in the UI: which variable, over what
+    # range, how many points, what to record, and how to sort — seeded
+    # from the loaded model's own sweep section when it has one, so the
+    # editor follows a model change. A run button keeps the cost (one
+    # engine run per point) explicit, as for the EPR sweep.
     def _():
         try:
-            spec = sweep_spec(sim_model)
-            problem = None
-        except ValueError as exc:
-            spec, problem = None, str(exc)
-        points = mo.ui.number(2, 401, value=(spec or {}).get('points', 41),
-                              label='points')
-        return spec, problem, points, mo.ui.run_button(label='Run sweep')
+            decl = sweep_spec(sim_model) or {}
+        except ValueError:      # a broken declaration: start from the defaults
+            decl = {}
+        variables = list(sim_model.qvars)
+        particles = list(sim_model.particles)
+        gates = list(sim_model.gates)
+        obs, grp = decl.get('observe') or {}, decl.get('group_by') or {}
+        editor = mo.ui.dictionary({
+            'variable': mo.ui.dropdown(options=variables,
+                                       value=decl.get('variable', variables[0] if variables else None),
+                                       label='variable'),
+            'from': mo.ui.text(value=str(decl.get('from', 0)), label='from'),
+            'to': mo.ui.text(value=str(decl.get('to', '2*pi')), label='to'),
+            'points': mo.ui.number(2, 401, value=int(decl.get('points', 41)), label='points'),
+            'particle': mo.ui.dropdown(options=particles,
+                                       value=obs.get('particle', particles[0] if particles else None),
+                                       label='record: particle'),
+            'at': mo.ui.dropdown(options=gates, value=obs.get('at', gates[-1] if gates else None),
+                                 label='arriving at'),
+            'sort': mo.ui.dropdown(options=['(unsorted)', *particles],
+                                   value=grp.get('particle', '(unsorted)'), label='sort by'),
+            'coordinate': mo.ui.dropdown(options=['sign', 'position', 'both'],
+                                         value=grp.get('coordinate', 'sign'), label='coordinate'),
+        })
+        return editor, mo.ui.run_button(label='Run sweep')
 
-    sweep_decl, sweep_problem, sweep_points, sweep_button = _()
-    return sweep_button, sweep_decl, sweep_points, sweep_problem
+    sweep_editor, sweep_button = _()
+    return sweep_button, sweep_editor
+
+
+@app.cell(hide_code=True)
+def _(check_sweep, sim_model, sweep_editor):
+    # the editor's sweep, validated against the loaded model
+    def _():
+        v = sweep_editor.value
+        if not v.get('variable'):
+            return None, 'the model has no variables to sweep'
+        raw = {'variable': v['variable'], 'from': v['from'], 'to': v['to'],
+               'points': int(v['points']),
+               'observe': {'particle': v['particle'], 'at': v['at']}}
+        if v['sort'] != '(unsorted)':
+            raw['group_by'] = {'particle': v['sort'], 'coordinate': v['coordinate']}
+        try:
+            return check_sweep(sim_model, raw), None
+        except ValueError as exc:
+            return None, str(exc)
+
+    sweep_decl, sweep_problem = _()
+    sweep_points = sweep_editor.elements['points']
+    return sweep_decl, sweep_points, sweep_problem
 
 
 @app.cell(hide_code=True)
@@ -1097,16 +1202,15 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(mo, sweep_button, sweep_decl, sweep_points, sweep_problem, sweep_view):
+def _(mo, sweep_button, sweep_decl, sweep_editor, sweep_problem, sweep_view):
     def _():
-        if sweep_decl is None and not sweep_problem:
-            return mo.md('_The loaded model declares no sweep. A model may '
-                         'declare one in its `sweep` section — see the '
-                         'double-slit models under **extras**, where the '
-                         'sweep is the screen: the pixel phase across one '
-                         'fringe period._')
+        e = sweep_editor.elements
+        rows = [mo.hstack([e['variable'], e['from'], e['to'], e['points']],
+                          justify='start', wrap=True, gap=1.5, align='end'),
+                mo.hstack([e['particle'], e['at'], e['sort'], e['coordinate']],
+                          justify='start', wrap=True, gap=1.5, align='end')]
         if sweep_decl is None:
-            return sweep_view
+            return mo.vstack([*rows, sweep_view or mo.md('')])
         spec = sweep_decl
         obs, grp = spec['observe'], spec.get('group_by')
         what = (f"the probability that **{obs['particle']}** ends at "
@@ -1116,6 +1220,7 @@ def _(mo, sweep_button, sweep_decl, sweep_points, sweep_problem, sweep_view):
                      else grp['coordinate'])
             what += f", split by **{grp['particle']}**'s final {coord}"
         return mo.vstack([
+            *rows,
             mo.md(r"""
     **What a sweep does:** it re-runs the whole circuit once per point,
     with one of the model's variables rebound to each value across the
@@ -1126,18 +1231,16 @@ def _(mo, sweep_button, sweep_decl, sweep_points, sweep_problem, sweep_view):
     values are rational fractions of the range) at a cost of several
     seconds; Float mode is quick.
     """),
-            mo.md(f"**{spec.get('title', 'declared sweep')}** — "
-                  f"`{spec['variable']}` from `{spec['from']}` to "
-                  f"`{spec['to']}`, recording {what}."),
-            mo.hstack([sweep_points, sweep_button], justify='start',
-                      wrap=True),
+            mo.md(f"`{spec['variable']}` from `{spec['from']}` to "
+                  f"`{spec['to']}` in {spec['points']} points, recording {what}."),
+            mo.hstack([sweep_button], justify='start', wrap=True),
             sweep_view,
         ])
 
     mo.accordion({'## Sweep\n\n<span style="font-size:0.85em">Run the '
-                  'model across a range of one variable — for models '
-                  'that declare a sweep, such as the double-slit '
-                  'circuits</span>': _()})
+                  'model across a range of one of its variables — as '
+                  'defined here, seeded from the model\'s own sweep '
+                  'section when it has one</span>': _()})
 
 
 @app.cell(hide_code=True)
@@ -1280,7 +1383,7 @@ async def initialization():
     from quantish.network_graph import NetworkGraph
     from quantish.screen import model_label, model_title
     from quantish.simulation import Simulation
-    from quantish.sweep import run_sweep, sweep_spec, sweep_values
+    from quantish.sweep import check_sweep, run_sweep, sweep_spec, sweep_values
 
     REPO_DIR = Path(__file__).resolve().parents[1]
     WASM_MODE = sys.platform == 'emscripten'
@@ -1322,6 +1425,7 @@ async def initialization():
         run_sweep,
         short_label,
         supports_epr,
+        check_sweep,
         sweep_spec,
         sweep_values,
         sym_or_float,
@@ -1416,7 +1520,10 @@ def _(
     mode_pick,
     model_pick,
     model_vars,
+    particle_names_model,
+    plate_names_model,
     qn,
+    switch_off,
 ):
     # Model construction is cheap and needs no ▶ Run: cells that only need
     # the loaded model (the EPR sweep) depend on sim_model; cells that show
@@ -1444,7 +1551,10 @@ def _(
         config.variables.update(model_vars)
         for g in gate_names:
             config.gates[g].angle = angle_for(g)
-        return Simulation(config)
+        off = {k for k, v in switch_off.value.items() if not v}
+        return Simulation(config,
+                          inert=[g for g in gate_names + plate_names_model if f'g:{g}' in off],
+                          absent=[p for p in particle_names_model if f'p:{p}' in off])
 
     try:
         sim_model = build_sim()
@@ -1579,16 +1689,21 @@ def _(Simulation, base_config, load_config, mo, model_pick, model_vars):
         except Exception as exc:  # noqa: BLE001 — bad variable definitions
             problem = f'variables rejected — {exc}'
             base_sim = Simulation(load_config(model_pick.value)[0])
-        names = list(base_sim.fredkin_gates.keys())
+        # the gates in run order
+        names = [g for g in base_sim.run_order if g in base_sim.fredkin_gates]
         angles = mo.state({
             g: {'deg': round(centered(float(gate.theta.degrees)) * 2) / 2,
                 'expr': spec_expr(g)}
             for g, gate in base_sim.fredkin_gates.items()})
-        # the model's variables, so typed expressions can use them by name
-        return names, angles, dict(base_sim.qvars), problem
+        # the model's variables, so typed expressions can use them by name;
+        # the phase plates, in run order, for the switch-off row
+        plates = [g for g in base_sim.run_order if g in base_sim.phase_plates]
+        return names, angles, dict(base_sim.qvars), problem, list(base_sim.particles), plates
 
-    gate_names, (angles_get, angles_set), base_env, vars_problem = _()
-    return angles_get, angles_set, base_env, gate_names, vars_problem
+    (gate_names, (angles_get, angles_set), base_env, vars_problem,
+     particle_names_model, plate_names_model) = _()
+    return (angles_get, angles_set, base_env, gate_names, particle_names_model,
+            plate_names_model, vars_problem)
 
 
 @app.cell(hide_code=True)

@@ -40,7 +40,10 @@ def test_family_is_every_extras_model_with_a_screen():
         assert 'phi' not in spec.variables
         assert spec.angle_gates()          # every model's gates are variable-named
         # the family's gates carry angle ranges of 0..90 for every slider
-        assert all(r == (0.0, 90.0) for r in spec.angle_ranges().values()), spec.angle_ranges()
+        # the model declares; a slider made for a literal-angle gate (the
+        # recorders' `angle: 0`) has no hint and takes the default
+        assert all(r == (0.0, 90.0) for k, r in spec.angle_ranges().items()
+                   if k not in spec.synthetic), spec.angle_ranges()
 
 
 def test_any_model_loads_without_a_screen():
@@ -111,3 +114,45 @@ def test_fit_is_refused_when_the_phase_enters_twice():
     from quantish.screen import _mentions
     assert _mentions('phi', 'phi') and _mentions('2*phi + 1', 'phi')
     assert not _mentions('phi2', 'phi') and not _mentions('theta.phi', 'phi')
+
+
+def test_a_literal_angle_gate_gets_a_slider_of_its_own():
+    spec = ScreenSpec.load('double_slit_tunable')
+    assert spec.synthetic == {'theta_g_obs': 'g_obs'}
+    assert 'theta_g_obs' in spec.variables and spec.angle_gates()['g_obs'] == 'theta_g_obs'
+    assert spec.default_degrees()['theta_g_obs'] == 0.0
+    sim = spec.simulation({'theta_g_obs': math.radians(30)})
+    assert abs(float(sim.gates['g_obs'].theta.degrees) - 30) < 1e-9
+    # untouched, the model runs exactly as declared
+    _, a = screen_curves(spec, {}, 21, 1.0)
+    _, b = screen_curves(ScreenSpec.load('double_slit_recorder'), {}, 21, 1.0)
+    assert max(abs(x - y) for x, y in zip(a['all'], b['all'])) < 1e-12
+    # a gate whose angle is an expression over the model's variables
+    # keeps it: no slider is made up for it
+    from quantish.screen import _mentions, model_config
+    raw = model_config('gr2026/fig4.17')
+    epr = ScreenSpec.load('gr2026/fig4.17')
+    expression_gates = {g for g, gs in raw['gates'].items()
+                        if any(_mentions(str(gs.get('angle', '')), v) for v in raw['variables'])}
+    assert expression_gates and not expression_gates & set(epr.synthetic.values())
+
+
+def test_a_screen_defined_in_the_app_replaces_the_models_sweep():
+    # the recorder model, sorted by the recorder's sign from the app
+    spec = ScreenSpec.load('extras/double_slit_recorder',
+                           sweep={'plate': 'φ', 'observe': {'particle': 'p1', 'at': 'S'},
+                                  'group_by': {'particle': 'p2', 'coordinate': 'sign'}})
+    assert spec.has_screen and spec.fit_ok and spec.group_by == ('p2', 'sign')
+    assert spec.override and 'phi' not in spec.variables
+    _, curves = screen_curves(spec, {}, 21, 1.0)
+    assert list(curves) == ['+', '−'] and max(curves['−']) == 0     # p2 never turns minus
+    # no plate: no screen, every variable a slider (phi included)
+    plain = ScreenSpec.load('extras/double_slit_recorder', sweep={'plate': None, 'observe': {}})
+    assert not plain.has_screen and 'phi' in plain.variables
+    # observe a different arrival: the dark detector, the complement
+    dark = ScreenSpec.load('extras/double_slit', sweep={'plate': 'φ', 'observe': {'particle': 'p1', 'at': 'D'}})
+    _, bright = screen_curves(ScreenSpec.load('extras/double_slit'), {}, 21, 1.0)
+    _, d = screen_curves(dark, {}, 21, 1.0)
+    assert all(abs(a + b - 1) < 1e-9 for a, b in zip(bright['all'], d['all']))
+    assert ScreenSpec.load('extras/double_slit').screen_definition() == {
+        'plate': 'φ', 'observe': {'particle': 'p1', 'at': 'S'}, 'group_by': None}

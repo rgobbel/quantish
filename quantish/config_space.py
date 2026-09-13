@@ -26,7 +26,7 @@ import quantish.qnumber as qn
 from quantish.gate import FredkinGate
 from quantish.particle import PKey
 from quantish.qnumber import Complex, probability
-from quantish.util import SEP, Sign
+from quantish.util import PASS_THROUGH_TYPES, SEP, Sign
 
 log = logging.getLogger('quantish')
 
@@ -285,16 +285,18 @@ class ConfigSpaceRunner:
             # finished, or still en route to a later stage: carried through unchanged
             return [(coord, None)]
         gate = stage_gates[endpoint.gate]
-        if gate.report_type() in ('DelayGate', 'PhasePlate') \
-                or endpoint.port in (None, 'control'):
+        if gate.report_type() in PASS_THROUGH_TYPES \
+                or endpoint.port in (None, 'control') or gate.inert:
             # control wires (and delay gates) pass the particle straight
             # through — untouched, unless the gate carries a phase, which
             # every traversing particle picks up (a PhasePlate, or a
-            # full gate's optional phase; see gate.py)
+            # full gate's optional phase; see gate.py). An inert gate
+            # (Simulation's `inert` argument) is a wire: every particle
+            # passes straight through, sign, weight, and phase untouched
             origin = GatePort(gate.name, endpoint.port)
             dest = self.link_dest(origin)
             new_coord = PCoordinate(pname, coord.sign, Position(origin=origin, endpoint=dest))
-            component = None if qn.zerop(gate.phase) else gate.phase_factor
+            component = None if gate.inert or qn.zerop(gate.phase) else gate.phase_factor
             return [(new_coord, component)]
         # switch wire: the four-way split of §4.2.3. Control presence is
         # positional PER CONFIGURATION-SPACE POINT — some *other* particle

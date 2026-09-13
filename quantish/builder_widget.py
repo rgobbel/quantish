@@ -320,8 +320,8 @@ _CSS = """
 
 _ESM = _SHARED_JS + r"""
 const GW = 132, GH = 110;                      // gate box size
-const PW = 46, PH = 46;                        // phase-plate box size
-const DW = 40, DH = 40;                        // delay-gate box size
+const PW = 64, PH = 46;                        // phase-plate box size
+const DW = 64, DH = 40;                        // delay-gate box size
 const PORT_Y = { control: 48, upper: 72, lower: 96 };
 const WIRES = ['control', 'upper', 'lower'];
 const PR = 18;                                 // particle half-height
@@ -332,6 +332,7 @@ const partW = (name) =>
 const C = {
   gateFill: '#e6f4f1', gateStroke: '#2f9e8f',
   plateFill: '#f3e8ff', plateStroke: '#8b5cf6',
+  offFill: '#e5e7eb', offStroke: '#9ca3af', offX: '#b91c1c',   // switched off
   delayFill: '#eef1f8', delayStroke: '#8b93a0',
   portFill: '#e0e7ff', portStroke: '#5c64d1',
   particleFill: '#f4f4f6', particleStroke: '#8b93a0',
@@ -759,7 +760,18 @@ function render({ model, el }) {
            `${x2} ${y2}`;
   }
 
+  // a bold X across a switched-off node (the app's `off` list)
+  const crossOut = (grp, x, y, w, hh, sw) => {
+    for (const [x1, y1, x2, y2] of [[x, y, x + w, y + hh], [x, y + hh, x + w, y]])
+      grp.appendChild(h('line', {
+        x1, y1, x2, y2, stroke: C.offX, 'stroke-width': sw,
+        'stroke-linecap': 'round', 'pointer-events': 'none',
+      }));
+  };
+  let offSet = new Set();
+
   function redraw() {
+    offSet = new Set(model.get('off') || []);
     const g = graph();
     svg.innerHTML = '';
     const layer = h('g', zoom === 1 && !pan.x && !pan.y ? {} : {
@@ -911,10 +923,12 @@ function render({ model, el }) {
       const sel = selected?.kind === 'gate' && selected.key === name;
       const inMulti = inMultiOf('gate', name);
       const grp = h('g', { 'data-gate': name, style: 'cursor: move' });
+      const off = offSet.has(name);
       grp.appendChild(h('rect', {
         x: gd.x, y: gd.y, width: w0, height: h0, rx: 8,
-        fill: plate ? C.plateFill : delay ? C.delayFill : C.gateFill,
+        fill: off ? C.offFill : plate ? C.plateFill : delay ? C.delayFill : C.gateFill,
         stroke: (sel || inMulti) ? C.select
+                                 : off ? C.offStroke
                                  : plate ? C.plateStroke
                                  : delay ? C.delayStroke : C.gateStroke,
         'stroke-width': (sel || inMulti) ? 2.5 : 1.5,
@@ -930,7 +944,7 @@ function render({ model, el }) {
       } else if (plate) {
         grp.appendChild(hSub({
           x: gd.x + w0 / 2, y: gd.y + h0 / 2 - 3, 'text-anchor': 'middle',
-          'font-size': 15, 'font-weight': 600, fill: '#000',
+          'font-size': 13, 'font-weight': 600, fill: '#000',
           'data-name': name,
         }, gd.display_string || name));
         grp.appendChild(hSub({
@@ -1013,6 +1027,7 @@ function render({ model, el }) {
           'data-outport': name, style: 'cursor: crosshair',
         }));
       }
+      if (off) crossOut(grp, gd.x, gd.y, w0, h0, 4);
       layer.appendChild(grp);
     }
 
@@ -1021,10 +1036,11 @@ function render({ model, el }) {
       const inMulti = inMultiOf('particle', name);
       const pw = partW(name);
       const grp = h('g', { 'data-particle': name, style: 'cursor: move' });
+      const off = offSet.has(name);
       grp.appendChild(h('rect', {
         x: p.x, y: p.y, width: pw, height: 2 * PR, rx: PR,
-        fill: C.particleFill,
-        stroke: (sel || inMulti) ? C.select : C.particleStroke,
+        fill: off ? C.offFill : C.particleFill,
+        stroke: (sel || inMulti) ? C.select : off ? C.offStroke : C.particleStroke,
         'stroke-width': (sel || inMulti) ? 2.5 : 1.5,
         ...(inMulti && !sel ? { 'stroke-dasharray': '5 3' } : {}),
       }));
@@ -1046,6 +1062,7 @@ function render({ model, el }) {
         stroke: C.portStroke, 'stroke-width': 1.5,
         'data-outport': name, style: 'cursor: crosshair',
       }));
+      if (off) crossOut(grp, p.x, p.y, pw, 2 * PR, 3);
       layer.appendChild(grp);
     }
 
@@ -1285,6 +1302,11 @@ function render({ model, el }) {
   delBtn.onclick = deleteSelected;
   root.tabIndex = 0;
   root.addEventListener('keydown', (ev) => {
+    // keys typed into a dialog's text box are the box's own: a
+    // Backspace there edits the value, it must never delete the
+    // selected object underneath
+    const tag = ev.target?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || ev.target?.isContentEditable) return;
     if (ev.key === 'Delete' || ev.key === 'Backspace') {
       ev.preventDefault();
       deleteSelected();
@@ -1471,11 +1493,11 @@ function render({ model, el }) {
     commit(copy);
   }
 
-  const NAME_OK = /^[^\s.]+$/;
+  const NAME_OK = /^[^\s.\d-][^\s.]*$/;   // no spaces or dots; not a number
 
   function checkName(copy, nn, current) {
     if (!NAME_OK.test(nn)) {
-      window.alert(`cannot rename to "${nn}": no spaces or dots in names`);
+      window.alert(`cannot rename to "${nn}": a name has no spaces or dots and does not start with a digit`);
       return false;
     }
     if (nn !== current && (copy.gates[nn] || copy.particles[nn])) {
@@ -1584,7 +1606,8 @@ function render({ model, el }) {
     // target is usually a tspan inside the named text: look outward
     const onName = !!target?.closest?.('[data-name]');
     if (grp.dataset.gate) {
-      if (onName || isDelay(copy.gates[grp.dataset.gate])) {
+      const oneWire = isPlate(copy.gates[grp.dataset.gate]);
+      if (isDelay(copy.gates[grp.dataset.gate]) || (onName && !oneWire)) {
         renameGate(copy, grp.dataset.gate);
         return;
       }
@@ -1603,7 +1626,11 @@ function render({ model, el }) {
           // reports anything unparseable in the problems list
           gd[field] = degSpec(s);
           commit(fresh);
-        });
+        },
+        // a plate is mostly its name, so its double-click always lands
+        // here; the rename lives behind a button
+        oneWire ? { extra: [{ label: 'rename…', onClick: () =>
+          renameGate(JSON.parse(JSON.stringify(graph())), gname) }] } : {});
       return;
     } else {
       // a particle's pill is mostly its name, so a double-click
@@ -1945,6 +1972,7 @@ function render({ model, el }) {
 
   model.on('change:graph', redraw);
   model.on('change:angle_labels', redraw);
+  model.on('change:off', redraw);
   redraw();
   return () => {
     document.removeEventListener('pointerup', _palUp);
@@ -2044,6 +2072,14 @@ function render({ model, el }) {
       svg.appendChild(h('path', {
         d: rounded(seg.map((p) => [p.x, fy(p.y)])),
         fill: 'none', stroke: g.wire_color, 'stroke-width': 1.3 / S,
+      }));
+    // marks: bold lines drawn over everything — the X across a
+    // switched-off gate
+    for (const mk of g.marks || [])
+      svg.appendChild(h('line', {
+        x1: mk.x, y1: fy(mk.y), x2: mk.x2, y2: fy(mk.y2),
+        stroke: mk.stroke, 'stroke-width': (mk.width || 3) / S,
+        'stroke-linecap': 'round', 'pointer-events': 'none',
       }));
     for (const a of g.arrows || []) {
       const s = 5.4 / S;   // matches the chart's size-45 triangles
@@ -3265,6 +3301,9 @@ class BuilderWidget(anywidget.AnyWidget):
     # 'pi/6 (30.0°)'}), computed by the app — specs are sympy syntax
     # the browser cannot evaluate
     angle_labels = traitlets.Dict({}).tag(sync=True)
+    # gates and particles switched off for the next run (the app's
+    # checkboxes): drawn grayed, with a bold X across them
+    off = traitlets.List([]).tag(sync=True)
 
 
 _HTML_ESM = r"""

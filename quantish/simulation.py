@@ -154,7 +154,21 @@ def loose_config(config):
 
 
 class Simulation:
-    def __init__(self, config, loose=None):
+    def __init__(self, config, loose=None, inert=(), absent=()):
+        # runtime knobs, never model-file keys: `inert` names gates to
+        # switch off (wires, applied once the gates exist, in
+        # load_elements); `absent` names particles to leave out of the
+        # run — a null input, the loader's zero-weight particle: the
+        # particle stays declared and drawn, but never enters, so the
+        # gates it would have fed see an empty wire
+        self.inert_requested = tuple(str(g) for g in inert)
+        self.absent = [str(p) for p in absent]
+        if self.absent:
+            config = deepcopy(config)
+            for pname in self.absent:
+                if pname not in (config.get('particles') or {}):
+                    raise ValueError(f"absent names no declared particle: '{pname}'")
+                config.particles[pname].weight = 0
         # loose mode (the config's `loose` key, or the argument): run
         # whatever the particles reach, prune the rest, derive any
         # stages the model leaves out — see loose_config
@@ -581,6 +595,14 @@ class Simulation:
                                self.links.get(pport, ''))
             self.phase_plates[ppname] = plate
             self.gates[ppname] = plate
+        # inert gates: wires. Every particle passes straight through,
+        # sign, weight, and phase untouched — a runtime knob (the lab's
+        # gate toggles, its virtual screens), never a model-file key
+        self.inert = list(self.inert_requested)
+        for gname in self.inert:
+            if gname not in self.gates:
+                raise ValueError(f"inert names no declared gate: '{gname}'")
+            self.gates[gname].inert = True
         # Branch probabilities: p for the first arm, 1-p for the second,
         # each arm's amplitude the square root (real, so the two start
         # states carry exactly those probabilities and no phase — the

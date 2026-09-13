@@ -72,7 +72,12 @@ async def initialization():
         variables_block,
         variables_env,
     )
-    from quantish.builder_widget import BuilderWidget, DiagramWidget, NetworkGraphWidget
+    from quantish.builder_widget import (
+        BuilderWidget,
+        DiagramWidget,
+        LinePlotWidget,
+        NetworkGraphWidget,
+    )
     from quantish.diagram_layout import diagram_geometry
     from quantish.display import (
         coord_sort_key,
@@ -86,6 +91,7 @@ async def initialization():
     from quantish.screen import model_label
     from quantish.screen import model_title as yaml_title
     from quantish.simulation import Simulation
+    from quantish.sweep import check_sweep, run_sweep, sweep_values
     from quantish.util import angle_label
 
     # the model library, for loading an existing model into the
@@ -104,10 +110,14 @@ async def initialization():
         BuilderWidget,
         CalcMode,
         DiagramWidget,
+        LinePlotWidget,
         NetworkGraph,
         NetworkGraphWidget,
         Simulation,
+        check_sweep,
         model_label,
+        run_sweep,
+        sweep_values,
         yaml_title,
         WASM_MODE,
         angle_degrees,
@@ -623,8 +633,13 @@ def _(BuilderWidget, get_loaded, mo):
     builder_widget = (BuilderWidget(graph=_loaded['graph']) if _loaded
                       else BuilderWidget())
     builder = mo.ui.anywidget(builder_widget)
+    # the run's switch-off choices ('g:name' / 'p:name' -> False when
+    # off), remembered across canvas edits, which rebuild the checkboxes
+    off_memory = {}
+    # the sweep editor's entries, remembered the same way
+    sweep_memory = {}
     builder  # noqa: B018 — the cell's output
-    return builder, builder_widget
+    return builder, builder_widget, off_memory, sweep_memory
 
 
 @app.cell(hide_code=True)
@@ -636,6 +651,7 @@ def _(
     builder,
     builder_widget,
     caption_input,
+    check_sweep,
     coherence_warnings,
     graph_to_config,
     loaded_extras,
@@ -647,6 +663,9 @@ def _(
     model_title,
     model_vars,
     notes_input,
+    sweep_cfg,
+    switch_off,
+    switch_off_particles,
     unit_pick,
     validate_graph,
     variables_block,
@@ -662,6 +681,9 @@ def _(
     _loose = bool(loose_sw.value)
     problems = validate_graph(_graph, variables=model_vars,
                               angle_unit=_unit or 'radians', loose=_loose)
+    if switch_off_particles and all(
+            not switch_off.value.get(f'p:{p}', True) for p in switch_off_particles):
+        problems.append('every particle is switched off — nothing would enter')
     builder_config = None
     # loose mode's diagnosis: what a run would ignore, from the engine
     # itself (a loose load prunes exactly what a loose run would)
@@ -677,9 +699,19 @@ def _(
                           'Symbolic': True}[mode_pick.value],
                 angle_unit=_unit,
                 notes=notes_input.value.strip() or None,
-                extras=loaded_extras, loose=_loose)
+                extras={**{k: v for k, v in loaded_extras.items() if k != 'sweep'},
+                        **({'sweep': sweep_cfg} if sweep_cfg else {})},
+                loose=_loose)
         except ValueError as exc:  # a wiring loop
             problems = [str(exc)]
+    if builder_config is not None and sweep_cfg:
+        # the sweep must name the model's own variable, particle, and gate
+        try:
+            check_sweep(Simulation(Addict({'loglevel': 'warning', **builder_config}),
+                                   loose=_loose), sweep_cfg)
+        except Exception as exc:  # noqa: BLE001 — the engine's own wording
+            problems = [f'sweep: {exc}']
+            builder_config = None
     if builder_config is not None and _loose:
         try:
             _probe = Simulation(Addict({'string_precision': 2, 'max_symbolic_len': 40,
@@ -720,7 +752,7 @@ def _(
 
     # what the save writes verbatim: the loaded file's unhandled sections
     # and, when the editor holds variables, its text — comments included
-    raw_sections = dict(loaded_extras_text)
+    raw_sections = {k: v for k, v in loaded_extras_text.items() if k != 'sweep'}   # regenerated
     if model_vars and variables_editor.value.strip():
         raw_sections['variables'] = variables_block(variables_editor.value)
 
@@ -730,13 +762,15 @@ def _(
         n_l = len(_graph.get('links', []))
         summary = f'{n_g} gate(s), {n_p} particle(s), {n_l} wire(s)'
         if problems:
-            msg = (summary + ' — not runnable yet:\n'
+            msg = (summary + ' — **not runnable yet:**\n'
                    + '\n'.join(f'- {p}' for p in problems))
             # only loose ends in the way: loose mode would run around them
             if not _loose and set(problems) <= set(loose_ends(_graph)):
                 msg += ('\n\nSwitch on loose mode to run what the particles '
                         'reach and ignore these.')
-            return mo.md(msg)
+            # bright red: this is the one message that says why the Run
+            # button is disabled
+            return mo.Html(f'<div class="not-runnable">{mo.md(msg).text}</div>')
         stages = ' | '.join(
             f"{name}: {', '.join(gs)}"
             for name, gs in (loose_stages
@@ -760,18 +794,207 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(caption_input, mo, notes_input, variables_editor):
+def _(builder, loaded_extras, mo, model_vars, sweep_memory):
+    # the model's sweep, entered here: the variable to sweep (one of
+    # the editor's), its range and point count, the particle and gate
+    # whose arrival is recorded, and an optional sort. Seeded from a
+    # loaded model's sweep section, remembered across rebuilds (the
+    # elements are remade whenever the variables or the canvas change)
+    _graph = builder.value.get('graph') or {}
+    _particles = list(_graph.get('particles') or {})
+    _gates = list(_graph.get('gates') or {})
+    _vars = list(model_vars or {})
+    _decl = dict(loaded_extras.get('sweep') or {}) if isinstance(loaded_extras.get('sweep'), dict) else {}
+    _obs, _grp = dict(_decl.get('observe') or {}), dict(_decl.get('group_by') or {})
+
+    def _seed(key, default):
+        return sweep_memory.get(key, default)
+
+    def _remember(key):
+        def cb(v):
+            sweep_memory[key] = v
+        return cb
+
+    def _pick(key, options, default, label):
+        value = _seed(key, default)
+        return mo.ui.dropdown(options=options, value=value if value in options else (options[0] if options else None),
+                              label=label, on_change=_remember(key))
+
+    sweep_ui = mo.ui.dictionary({
+        'on': mo.ui.checkbox(value=_seed('on', bool(_decl)), label='declare a sweep',
+                             on_change=_remember('on')),
+        'variable': _pick('variable', _vars, _decl.get('variable'), 'variable'),
+        'from': mo.ui.text(value=str(_seed('from', _decl.get('from', 0))), label='from',
+                           on_change=_remember('from')),
+        'to': mo.ui.text(value=str(_seed('to', _decl.get('to', '2*pi'))), label='to',
+                         on_change=_remember('to')),
+        'points': mo.ui.number(2, 401, value=int(_seed('points', _decl.get('points', 41))),
+                               label='points', on_change=_remember('points')),
+        'particle': _pick('particle', _particles, _obs.get('particle'), 'record: particle'),
+        'at': _pick('at', _gates, _obs.get('at'), 'arriving at'),
+        'sort': _pick('sort', ['(unsorted)', *_particles], _grp.get('particle', '(unsorted)'),
+                      'sort by'),
+        'coordinate': _pick('coordinate', ['sign', 'position', 'both'],
+                            _grp.get('coordinate', 'sign'), 'coordinate'),
+    })
+    return (sweep_ui,)
+
+
+@app.cell(hide_code=True)
+def _(sweep_ui):
+    # the sweep as the model declares it (None when not declared)
+    def _():
+        v = sweep_ui.value
+        if not v.get('on') or not v.get('variable'):
+            return None
+        spec = {'variable': v['variable'], 'from': v['from'], 'to': v['to'],
+                'points': int(v['points']),
+                'observe': {'particle': v['particle'], 'at': v['at']}}
+        if v['sort'] and v['sort'] != '(unsorted)':
+            spec['group_by'] = {'particle': v['sort'], 'coordinate': v['coordinate']}
+        return spec
+
+    sweep_cfg = _()
+    return (sweep_cfg,)
+
+
+@app.cell(hide_code=True)
+def _(builder_config, mo, sweep_cfg):
+    # the sweep runs on its own button (one engine run per point);
+    # disabled until the network runs and a sweep is declared
+    sweep_button = mo.ui.run_button(label='Run sweep',
+                                    disabled=builder_config is None or sweep_cfg is None)
+    return (sweep_button,)
+
+
+@app.cell(hide_code=True)
+def _(
+    Addict,
+    CalcMode,
+    LinePlotWidget,
+    Simulation,
+    builder_config,
+    mo,
+    run_sweep,
+    sweep_button,
+    sweep_cfg,
+    sweep_values,
+    switch_off,
+    unit_pick,
+):
+    # the declared sweep, run and plotted: the switched-off gates and
+    # particles apply to every point, as to a run of the network
+    def _():
+        if not sweep_button.value or builder_config is None or sweep_cfg is None:
+            return mo.md('_press **Run sweep** to run the network across the range_'
+                         if sweep_cfg else '')
+        CalcMode.default(
+            'Symbolic' if str(builder_config.get('calculation_mode')
+                              or '').lower() == 'symbolic' else 'Float')
+        config = Addict({'string_precision': 2, 'max_symbolic_len': 40,
+                         'loglevel': 'warning', **builder_config})
+        inert = [k[2:] for k, v in switch_off.value.items() if k.startswith('g:') and not v]
+        absent = [k[2:] for k, v in switch_off.value.items() if k.startswith('p:') and not v]
+        try:
+            with mo.status.spinner(title='running the sweep…'):
+                res = run_sweep(Simulation(config), sweep_cfg,
+                                values=sweep_values(sweep_cfg), inert=inert, absent=absent)
+        except Exception as exc:  # noqa: BLE001 — show, don't crash the app
+            return mo.md(f'**sweep failed** — `{exc}`')
+        import math as _m
+        degrees = unit_pick.value == 'degrees'
+        xs = [_m.degrees(float(x)) if degrees else float(x) for x in res['x']]
+        grp, obs = sweep_cfg.get('group_by'), sweep_cfg['observe']
+        names = {lab: f"{lab}{grp['particle']}" if grp else lab for lab in res['series']}
+        palette = ['#4c78a8', '#f58518', '#54a24b', '#e45756', '#72b7b2',
+                   '#b279a2', '#ff9da6', '#9d755d']
+        series = [{'name': names[lab], 'x': xs, 'y': [float(v) for v in ys],
+                   'color': palette[i % len(palette)]}
+                  for i, (lab, ys) in enumerate(res['series'].items())]
+        if grp:
+            series.append({'name': 'total', 'x': xs, 'y': [float(v) for v in res['total']],
+                           'color': '#333', 'dash': '6 4'})
+        chart = mo.ui.anywidget(LinePlotWidget(data={
+            'series': series, 'xdomain': [min(xs), max(xs)],
+            'xlabel': f"{sweep_cfg['variable']} ({'degrees' if degrees else 'radians'})",
+            'ylabel': f"P({obs['particle']} at {obs['at']})",
+            'width': 900, 'height': 220}))
+        off = ''.join(f' — {what} off: {", ".join(ns)}'
+                      for what, ns in (('gates', inert), ('particles', absent)) if ns)
+        return mo.vstack([mo.md(f'{len(xs)} points{off}'), chart], gap=0.3)
+
+    sweep_view = _()
+    return (sweep_view,)
+
+
+@app.cell(hide_code=True)
+def _(caption_input, mo, notes_input, sweep_button, sweep_ui, sweep_view, variables_editor):
     # all entirely optional, so they live below the canvas
-    mo.accordion({'#### Caption, notes, and variables':
+    _e = sweep_ui.elements
+    mo.accordion({'#### Caption, notes, variables, and sweep':
                   mo.vstack([
         caption_input,
         notes_input,
         mo.md('<span style="font-size: 0.9em">**variables**</span>'),
-        variables_editor], align='stretch')})
+        variables_editor,
+        mo.md('<span style="font-size: 0.9em">**sweep** — rerun the model across a '
+              'range of one variable, recording a particle\'s arrival at a gate; a '
+              'sweep on a phase plate\'s variable is a screen in the decoherence lab</span>'),
+        _e['on'],
+        mo.hstack([_e['variable'], _e['from'], _e['to'], _e['points']],
+                  justify='start', wrap=True, gap=1.5, align='end'),
+        mo.hstack([_e['particle'], _e['at'], _e['sort'], _e['coordinate']],
+                  justify='start', wrap=True, gap=1.5, align='end'),
+        sweep_button,
+        sweep_view,
+    ], align='stretch')})
+
+
+@app.cell(hide_code=True)
+def _(builder, graph_to_config, mo, off_memory):
+    # switch off for the run: a checkbox per gate (a plain wire when
+    # off) and per particle (a null input when off) — the quick way to
+    # try a configuration without rewiring; the canvas crosses out
+    # whatever is off
+    _graph = builder.value.get('graph') or {}
+    # gates in run order (the stages a loose translation derives), any
+    # the translation cannot place after, by name
+    try:
+        _staged = [g for stage in graph_to_config(_graph, 'x', loose=True)
+                   .get('run_stages', {}).values() for g in stage]
+    except Exception:  # noqa: BLE001 — a wiring loop: no order to speak of
+        _staged = []
+    _gates = [n for n, g in (_graph.get('gates') or {}).items() if g.get('kind') != 'delay']
+    _gates = sorted(_gates, key=lambda n: (_staged.index(n) if n in _staged else len(_staged), n))
+    _particles = list(_graph.get('particles') or {})
+
+    def _remember(key):
+        def cb(v):
+            off_memory[key] = bool(v)
+        return cb
+    switch_off = mo.ui.dictionary({
+        key: mo.ui.checkbox(value=off_memory.get(key, True), label=name,
+                            on_change=_remember(key))
+        for key, name in ([(f'g:{n}', n) for n in _gates]
+                          + [(f'p:{n}', n) for n in _particles])})
+    _rows = []
+    if _gates:
+        _rows.append(mo.hstack([mo.md('<span style="color: #000">gates on:</span>')]
+                               + [switch_off.elements[f'g:{n}'] for n in _gates],
+                               justify='start', align='center', wrap=True, gap=1.5))
+    if _particles:
+        _rows.append(mo.hstack([mo.md('<span style="color: #000">particles on:</span>')]
+                               + [switch_off.elements[f'p:{n}'] for n in _particles],
+                               justify='start', align='center', wrap=True, gap=1.5))
+    switch_off_particles = _particles
+    mo.vstack(_rows, gap=0.5) if _rows else None
+    return switch_off, switch_off_particles
 
 
 @app.cell(hide_code=True)
 def _(builder_config, mo):
+    # the Run button: disabled whenever the network cannot run — the
+    # status line above says why, in red
     run_network_btn = mo.ui.run_button(label='▶ Run network',
                                        disabled=builder_config is None)
     run_network_btn  # noqa: B018 — the cell's output
@@ -779,7 +1002,22 @@ def _(builder_config, mo):
 
 
 @app.cell(hide_code=True)
-def _(Addict, CalcMode, Simulation, builder_config, mo, run_network_btn):
+def _(
+    Addict,
+    CalcMode,
+    Simulation,
+    builder_config,
+    builder_widget,
+    mo,
+    run_network_btn,
+    switch_off,
+):
+    # what is switched off: gates go inert (wires), particles absent
+    # (null inputs); the canvas crosses them out as soon as they are
+    _inert = [k[2:] for k, v in switch_off.value.items() if k.startswith('g:') and not v]
+    _absent = [k[2:] for k, v in switch_off.value.items() if k.startswith('p:') and not v]
+    builder_widget.off = _inert + _absent
+
     # sim_built is None until a successful run of the CURRENT network;
     # any canvas change recreates the button unpressed, clearing stale
     # results (the same staleness scheme as the main app)
@@ -795,7 +1033,7 @@ def _(Addict, CalcMode, Simulation, builder_config, mo, run_network_btn):
         config = Addict(base)
         config.config_path = 'builder'
         try:
-            s = Simulation(config)
+            s = Simulation(config, inert=_inert, absent=_absent)
             s.run()
         except Exception as exc:  # noqa: BLE001 — show, don't crash the app
             return None, mo.md(f'**run failed** — `{exc}`')
@@ -812,11 +1050,14 @@ def _(Addict, CalcMode, Simulation, builder_config, mo, run_network_btn):
                       ' (loose mode ignored ' + '; '.join(
                           f"{kind} {', '.join(names)}"
                           for kind, names in ignored.items()) + ')')
+        off_note = ''.join(
+            f' — {what} off: {", ".join(names)}'
+            for what, names in (('gates', _inert), ('particles', _absent)) if names)
         return s, mo.md(
             f'Ran **{config.title}** — '
             f'{len(s.run_stages)} stage(s), '
             f'{len(s.result_space.index)} final configuration-space '
-            f'point(s), total probability {total:.6f}' + loose_note + note)
+            f'point(s), total probability {total:.6f}' + off_note + loose_note + note)
 
     sim_built, _msg = _build()
     _msg  # noqa: B018 — the cell's output
@@ -839,7 +1080,9 @@ def _(DiagramWidget, diagram_geometry, mo, sim_built):
                       'to reset · hover over or tap a port for its '
                       'values</span>'),
                 mo.ui.anywidget(DiagramWidget(
-                    geometry=diagram_geometry(sim_built, has_run=True))),
+                    geometry=diagram_geometry(sim_built, has_run=True,
+                                              disabled=tuple(sim_built.inert),
+                                              absent=tuple(sim_built.absent)))),
             ], gap=0)
         except Exception as exc:  # noqa: BLE001 — show, don't crash the app
             return mo.md(f'_circuit diagram failed: {exc}_')

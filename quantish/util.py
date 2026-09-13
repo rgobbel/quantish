@@ -13,6 +13,8 @@ log = logging.getLogger('quantish')
 
 SWITCH_WIRES = ('upper', 'lower')
 WIRES = ('control',) + SWITCH_WIRES
+# the one-wire gates a particle passes straight through (gate.report_type)
+PASS_THROUGH_TYPES = ('DelayGate', 'PhasePlate')
 OTHER = {'upper': 'lower', 'lower': 'upper'}
 
 class Sign(IntEnum):

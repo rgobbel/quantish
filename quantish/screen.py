@@ -142,6 +142,9 @@ class ScreenSpec:
     observe: tuple[str, str] | None     # (particle, detector gate)
     group_by: tuple[str, str] | None    # (particle, 'sign'|'position'|'both')
     variables: dict = field(default_factory=dict)   # name -> spec, phase_var excluded
+    variable_notes: dict = field(default_factory=dict)  # name -> a line under its slider
+    synthetic: dict = field(default_factory=dict)   # variable -> the gate it was made for
+    override: tuple = ()            # a sweep defined in the app, frozen (see load)
     fit_ok: bool = True
     config: dict = field(default_factory=dict, repr=False)
 
@@ -150,13 +153,56 @@ class ScreenSpec:
         return self.plate is not None
 
     @classmethod
-    def load(cls, model_id: str) -> ScreenSpec:
+    def load(cls, model_id: str, sweep: dict | None = None) -> ScreenSpec:
+        """The model as the lab sees it. `sweep` (an app's own screen
+        definition) replaces the model's sweep section: {'plate': the
+        phase plate to sweep or None for no screen, 'observe':
+        {'particle', 'at'}, 'group_by': {'particle', 'coordinate'} or
+        None}."""
         cfg = model_config(model_id)
         if '/' not in model_id and not model_id.startswith('upload:'):
             model_id = str(model_path(model_id).relative_to(models_root()).with_suffix(''))
+        plates = {k: str(v) for k, v in (cfg.get('phase_plates') or {}).items()}
+        # every gate gets a slider: a gate whose angle is a literal (the
+        # recorders' `angle: 0`) is given a variable of its own, named
+        # for the gate, set to that literal in degrees — the model's
+        # own variables and expressions over them are left alone; a
+        # phase plate likewise, for its phase (a swept plate's is taken
+        # back out of the sliders below)
+        synthetic = {}
+        declared = set(cfg.get('variables') or {})
+        literal = [g for g, gspec in (cfg.get('gates') or {}).items()
+                   if not any(_mentions(str(gspec.get('angle', '')), v) for v in declared)]
+        literal_plates = [p for p, pspec in plates.items()
+                          if not any(_mentions(pspec, v) for v in declared)]
+        if literal or literal_plates:
+            from quantish.simulation import Simulation
+            sim = Simulation(Addict({**copy.deepcopy(cfg), 'loglevel': 'error'}))
+            for g in literal:
+                name = f'theta_{g}'
+                deg = float(sim.gates[g].theta.degrees)
+                cfg.setdefault('variables', {})[name] = f'{deg:.10g}°'
+                cfg['gates'][g]['angle'] = name
+                synthetic[name] = g
+            for p in literal_plates:
+                name = f'phi_{p}'
+                deg = float(sim.gates[p].phase.degrees)
+                cfg.setdefault('variables', {})[name] = f'{deg:.10g}°'
+                cfg['phase_plates'][p] = name
+                plates[p] = name
+                synthetic[name] = p
+        override = ()
+        if sweep is not None:
+            # the app's definition: the plate names the variable
+            override = _freeze(sweep)
+            plate = sweep.get('plate')
+            cfg['sweep'] = ({'variable': plates[plate].strip(), 'from': 0, 'to': '2*pi',
+                             'observe': dict(sweep.get('observe') or {}),
+                             **({'group_by': dict(sweep['group_by'])}
+                                if sweep.get('group_by') else {})}
+                            if plate in plates else None)
         sweep = cfg.get('sweep') or {}
         var = sweep.get('variable')
-        plates = {k: str(v) for k, v in (cfg.get('phase_plates') or {}).items()}
         carriers = [k for k, spec in plates.items() if var and _mentions(spec, var)]
         screened = (var is not None and len(carriers) == 1
                     and plates[carriers[0]].strip() == var and 'observe' in sweep)
@@ -172,6 +218,7 @@ class ScreenSpec:
         grp = sweep.get('group_by')
         variables = {k: v for k, v in (cfg.get('variables') or {}).items()
                      if not (screened and k == var)}
+        synthetic = {k: v for k, v in synthetic.items() if k in variables}
         return cls(name=model_id, title=str(cfg.get('title', model_id)),
                    caption=str(cfg.get('caption', '')), notes=str(cfg.get('notes', '')),
                    phase_var=var if screened else None,
@@ -179,13 +226,38 @@ class ScreenSpec:
                    observe=(observe['particle'], observe['at']) if screened else None,
                    group_by=((grp['particle'], grp.get('coordinate', 'sign'))
                              if screened and grp else None),
-                   variables=variables, fit_ok=fit_ok, config=cfg)
+                   variables=variables,
+                   variable_notes={k: str(v) for k, v in (cfg.get('variable_notes') or {}).items()},
+                   synthetic=synthetic, override=override, fit_ok=fit_ok, config=cfg)
+
+    @property
+    def plates(self) -> list[str]:
+        return list(self.config.get('phase_plates') or {})
+
+    @property
+    def gate_names(self) -> list[str]:
+        """Every gate a particle can end at: gates, delays, plates."""
+        return (list(self.config.get('gates') or {}) + list(self.config.get('delay_gates') or [])
+                + self.plates)
+
+    def screen_definition(self) -> dict:
+        """The screen as {'plate', 'observe', 'group_by'} — the app's
+        editable form, from the model's sweep or the override."""
+        return {'plate': self.plate,
+                'observe': ({'particle': self.observe[0], 'at': self.observe[1]}
+                            if self.observe else {}),
+                'group_by': ({'particle': self.group_by[0], 'coordinate': self.group_by[1]}
+                             if self.group_by else None)}
 
     def angle_ranges(self) -> dict[str, tuple[float, float]]:
         """variable -> (low, high) in degrees: the gates' angle_range
         hints for the gates the variable sets (their intersection when
         several), DEFAULT_RANGE otherwise."""
         out = {k: DEFAULT_RANGE for k in self.variables}
+        # a plate's phase runs the full turn
+        for var in (self.config.get('phase_plates') or {}).values():
+            if str(var).strip() in out:
+                out[str(var).strip()] = (0.0, 360.0)
         for spec in (self.config.get('gates') or {}).values():
             var = str(spec.get('angle', '')).strip()
             rng = spec.get('angle_range')
@@ -204,12 +276,16 @@ class ScreenSpec:
 
     def angle_gates(self) -> dict[str, str]:
         """gate name -> the settable variable that is its angle (only
-        gates whose angle is exactly a variable name)."""
+        gates whose angle is exactly a variable name; phase plates
+        likewise, by their phase — the swept plate's is not settable)."""
         out = {}
         for g, spec in (self.config.get('gates') or {}).items():
             angle = str(spec.get('angle', '')).strip()
             if angle in self.variables:
                 out[g] = angle
+        for p, spec in (self.config.get('phase_plates') or {}).items():
+            if str(spec).strip() in self.variables:      # a plate's settable phase
+                out[p] = str(spec).strip()
         return out
 
     def group_names(self) -> tuple[str, ...]:
@@ -233,54 +309,84 @@ class ScreenSpec:
                 cfg['variables'][k] = v
         return Addict(cfg)
 
-    def simulation(self, variables: dict):
+    def simulation(self, variables: dict, inert: tuple = (), absent: tuple = ()):
         """A loaded, unrun Simulation with the variables set — for a
-        circuit diagram, say."""
+        circuit diagram, say — and, with `inert`, those gates switched
+        off (wires: every particle passes straight through), with
+        `absent`, those particles left out (null inputs)."""
         from quantish.simulation import Simulation
-        return Simulation(self.config_with(variables))
+        return Simulation(self.config_with(variables), inert=tuple(inert),
+                          absent=tuple(absent))
 
 
 def _mentions(text: str, var: str) -> bool:
     return re.search(rf'(?<![\w.]){re.escape(var)}(?![\w])', str(text)) is not None
 
 
-def _key(spec: ScreenSpec, variables: dict) -> tuple:
-    return tuple(sorted((k, float(v)) for k, v in variables.items() if k in spec.variables))
+def _key(spec: ScreenSpec, variables: dict, inert: tuple = ()) -> tuple:
+    """The cache key: the settable variables — less those that only set
+    the angles of inert gates, which cannot matter to the run."""
+    if inert:
+        used_elsewhere = {v for g, v in spec.angle_gates().items() if g not in inert}
+        idle = {v for g, v in spec.angle_gates().items() if g in inert} - used_elsewhere
+    else:
+        idle = set()
+    return tuple(sorted((k, float(v)) for k, v in variables.items()
+                        if k in spec.variables and k not in idle))
 
 
-@functools.lru_cache(maxsize=64)
-def _sim(name: str, key: tuple):
+def _freeze(d) -> tuple:
+    """A sweep definition as a hashable tuple (cache keys)."""
+    if isinstance(d, dict):
+        return tuple((k, _freeze(v)) for k, v in sorted(d.items()))
+    return d
+
+
+def _thaw(t):
+    if isinstance(t, tuple):
+        return {k: _thaw(v) for k, v in t}
+    return t
+
+
+@functools.lru_cache(maxsize=256)
+def _sim(name: str, key: tuple, inert: tuple = (), absent: tuple = (), override: tuple = ()):
     from quantish.simulation import Simulation
-    spec = ScreenSpec.load(name)
-    return spec, Simulation(spec.config_with(dict(key)))
+    spec = ScreenSpec.load(name, sweep=_thaw(override) if override else None)
+    return spec, Simulation(spec.config_with(dict(key)), inert=tuple(inert),
+                            absent=tuple(absent))
 
 
 @functools.lru_cache(maxsize=1 << 16)
-def _pixel(name: str, key: tuple, phi: float) -> tuple:
+def _pixel(name: str, key: tuple, phi: float, inert: tuple = (), absent: tuple = (),
+           override: tuple = ()) -> tuple:
     """((group, probability), ...) that the observed particle ends at
     the detector, sorted by the group particle's coordinate, for one
     phase — one engine run (the loaded Simulation is reused, only the
-    plate's phase changes)."""
-    spec, sim = _sim(name, key)
+    plate's phase changes). `inert` names gates switched off, `absent`
+    particles left out: an absent observed particle makes no hits, an
+    absent sort particle leaves the hits unsorted ('all')."""
+    spec, sim = _sim(name, key, inert, absent, override)
     sim.phase_plates[spec.plate].set_phase(phi)
     sim.run()
     particle, detector = spec.observe
     strings = dict(sim.config.get('display_strings') or {})
     by_group: dict[str, float] = {}
     for point in sim.result_space.index.values():
-        origin = point.coords[particle].position.origin
+        coord = point.coords.get(particle)
+        origin = coord.position.origin if coord is not None else None
         if origin is None or origin.gate != detector:
             continue
-        if spec.group_by is None:
-            label = 'all'
-        else:
-            label = group_label(point.coords[spec.group_by[0]], spec.group_by[1], strings)
+        sort = point.coords.get(spec.group_by[0]) if spec.group_by else None
+        label = 'all' if sort is None else group_label(sort, spec.group_by[1], strings)
         by_group[label] = by_group.get(label, 0.0) + float(point.probability)
     return tuple(sorted(by_group.items(), key=lambda kv: (kv[0].lstrip('+−'), kv[0])))
 
 
-def pixel(spec: ScreenSpec, variables: dict, phi: float) -> dict[str, float]:
-    return dict(_pixel(spec.name, _key(spec, variables), float(phi)))
+def pixel(spec: ScreenSpec, variables: dict, phi: float, inert: tuple = (),
+          absent: tuple = ()) -> dict[str, float]:
+    inert, absent = tuple(inert), tuple(absent)
+    return dict(_pixel(spec.name, _key(spec, variables, inert), float(phi), inert, absent,
+                       spec.override))
 
 
 def screen_positions(n_points: int) -> list[float]:
@@ -288,18 +394,20 @@ def screen_positions(n_points: int) -> list[float]:
 
 
 def screen_curves(spec: ScreenSpec, variables: dict, n_points: int = 81,
-                  fringes: float = 3.0, via: str = 'fit'
-                  ) -> tuple[list[float], dict[str, list[float]]]:
+                  fringes: float = 3.0, via: str = 'fit', inert: tuple = (),
+                  absent: tuple = ()) -> tuple[list[float], dict[str, list[float]]]:
     """(positions, {group: intensities}) across the screen: the phase
     sweeps `fringes` periods over x in [-1, 1]. via='fit' uses the
     three-run reconstruction when the model allows it (spec.fit_ok),
-    one engine run per pixel otherwise."""
+    one engine run per pixel otherwise. `inert` names gates switched
+    off for the run (wires), `absent` particles left out of it."""
     if via not in VIA:
         raise ValueError(f'via must be one of {VIA}, not {via!r}')
     xs = screen_positions(n_points)
-    groups = list(spec.group_names())
+    inert, absent = tuple(inert), tuple(absent)
+    groups = list(_groups(spec, absent))
     if via == 'fit' and spec.fit_ok:
-        at = [pixel(spec, variables, phi) for phi in (0.0, math.pi / 2, math.pi)]
+        at = [pixel(spec, variables, phi, inert, absent) for phi in (0.0, math.pi / 2, math.pi)]
         curves = {}
         for g in groups:
             p0, p1, p2 = (at[k].get(g, 0.0) for k in range(3))
@@ -307,8 +415,121 @@ def screen_curves(spec: ScreenSpec, variables: dict, n_points: int = 81,
             curves[g] = [a + b * math.cos(fringes * math.pi * x)
                          + c * math.sin(fringes * math.pi * x) for x in xs]
         return xs, curves
-    per_x = [pixel(spec, variables, fringes * math.pi * x) for x in xs]
+    per_x = [pixel(spec, variables, fringes * math.pi * x, inert, absent) for x in xs]
     return xs, {g: [p.get(g, 0.0) for p in per_x] for g in groups}
+
+
+def _groups(spec: ScreenSpec, absent: tuple = ()) -> tuple[str, ...]:
+    # the sort needs its particle: without it the hits are one group
+    if spec.group_by and spec.group_by[0] in absent:
+        return ('all',)
+    return spec.group_names()
+
+
+def _fit_curves(spec: ScreenSpec, variables: dict, xs: list[float], fringes: float,
+                inert: tuple, symmetric: bool, absent: tuple = ()) -> dict[str, list[float]]:
+    """The three-run reconstruction a + b cos φ + c sin φ; with
+    `symmetric` (c known to be 0) two runs, at φ = 0 and π."""
+    phis = (0.0, math.pi) if symmetric else (0.0, math.pi / 2, math.pi)
+    at = [pixel(spec, variables, phi, inert, absent) for phi in phis]
+    curves = {}
+    for g in _groups(spec, absent):
+        p0, p2 = at[0].get(g, 0.0), at[-1].get(g, 0.0)
+        a, b = (p0 + p2) / 2, (p0 - p2) / 2
+        c = 0.0 if symmetric else at[1].get(g, 0.0) - a
+        curves[g] = [a + b * math.cos(fringes * math.pi * x)
+                     + c * math.sin(fringes * math.pi * x) for x in xs]
+    return curves
+
+
+def stage_screens(spec: ScreenSpec, variables: dict, n_points: int = 81,
+                  fringes: float = 3.0, via: str = 'fit', sim=None,
+                  inert: tuple = (), absent: tuple = ()) -> tuple[list[float], list[dict]]:
+    """The virtual screens: what the model's own screen would show if
+    the paths were merged right after each stage. Each is the same run
+    with the environment frozen at that stage — every later gate the
+    observed particle does not traverse switched off (inert) — so the
+    sort sees the recorder as it stands there. Delayed choice makes
+    this honest: a gate acting on the environment alone gives the same
+    screen wherever it is staged.
+
+    (positions, [{'step', 'name', 'gates', 'switched', 'curves'}, ...])
+    for the stages up to the plate in which some particle was split
+    (the others would repeat the screen before them), and then, always,
+    the model's own screen as 'actual screen' — which differs from the
+    last virtual one only when a gate acts on the environment after the
+    merge (an eraser staged late). `sim` is the model already run at its
+    own phase, when the caller has one; `inert` names gates switched off
+    throughout (the lab's gate toggles) — the freeze adds to them — and
+    `absent` particles left out. Without the observed particle there is
+    no screen: an empty list."""
+    from quantish.coherence import REAL_TOL, path_coherence
+    if via not in VIA:
+        raise ValueError(f'via must be one of {VIA}, not {via!r}')
+    if not spec.has_screen:
+        raise ValueError(f'{spec.name} declares no screen')
+    base, absent = tuple(inert), tuple(absent)
+    xs = screen_positions(n_points)
+    observe = spec.observe[0]
+    if observe in absent:
+        return xs, []
+    if sim is None:
+        sim = spec.simulation(variables, base, absent)
+        sim.run()
+    group_by = None if spec.group_by and spec.group_by[0] in absent else spec.group_by
+    rows = path_coherence(sim, observe, group_by, upto_gate=spec.plate)
+    acting = [r for r in rows if r.switched]
+    # the gates that switch the observed particle are the tail (with the
+    # plate); every other gate — a recorder it merely controls, the
+    # recorder's own gates, an eraser — is the environment, frozen
+    # after the stage
+    switching = set()
+    for pt in sim.all_points.index.values():
+        pos = pt.coords[observe].position
+        switching |= {p.gate for p in (pos.origin, pos.endpoint)
+                      if p is not None and p.gate and p.port in ('upper', 'lower')}
+    environment = [g for g in sim.gates if g not in switching and g != spec.plate]
+    # the fringes carry no sine term when the coherences are all real
+    # (the phase between the paths is 0 or π): then two runs fix a
+    # screen, once the first virtual screen (three runs) shows the
+    # tail adds no shift of its own
+    real = all(z is None or abs(z.imag) < REAL_TOL
+               for r in rows for z in (r.whole, *r.groups.values()))
+    fit = via == 'fit' and spec.fit_ok
+    out, symmetric, last_values = [], False, None
+
+    def values(row):
+        return [None if z is None else (round(z.real, 9), round(z.imag, 9))
+                for z in (row.whole, *row.groups.values())]
+
+    for r in acting:
+        inert = base + tuple(g for g in environment
+                             if sim.gate_step[g] > r.step and g not in base)
+        if out and values(r) == last_values:
+            # nothing the screen can see changed: the same screen again
+            curves = out[-1]['curves']
+        elif fit:
+            curves = _fit_curves(spec, variables, xs, fringes, inert, symmetric, absent)
+            if not symmetric and real:
+                symmetric = all(abs(ys[len(ys) // 4] - ys[-1 - len(ys) // 4]) < 1e-9
+                                for ys in curves.values())   # c = 0: symmetric about x = 0
+        else:
+            _, curves = screen_curves(spec, variables, n_points, fringes, via,
+                                      inert=inert, absent=absent)
+        last_values = values(r)
+        out.append({'step': r.step, 'name': r.name, 'gates': r.gates,
+                    'switched': r.switched, 'curves': curves})
+    # the model's own screen closes the progression: it differs from the
+    # last virtual strip only when a gate acts on the environment after
+    # the merge (an eraser staged late), and it is always shown so the
+    # list never changes shape as the sliders move
+    _, final = screen_curves(spec, variables, n_points, fringes, via, inert=base, absent=absent)
+    tail = [g for g in environment
+            if not out or sim.gate_step[g] > out[-1]['step']]
+    out.append({'step': len(sim.run_stages), 'name': 'actual screen',
+                'gates': [g for g in tail if sim.gates[g].report_type() != 'DelayGate'],
+                'switched': [], 'curves': final})
+    return xs, out
 
 
 def visibility(ys: list[float]) -> float | None:

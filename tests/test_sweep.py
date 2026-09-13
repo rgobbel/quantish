@@ -89,3 +89,36 @@ def test_bad_declarations_are_rejected():
                                                     'coordinate': 'hue'}}))
     with pytest.raises(ValueError):
         sweep_values({'from': 0, 'to': 1, 'points': 1})
+
+
+def test_check_sweep_validates_a_sweep_made_in_an_app():
+    from quantish.screen import ScreenSpec
+    from quantish.simulation import Simulation
+    from quantish.sweep import check_sweep
+    sim = Simulation(ScreenSpec.load('extras/double_slit_recorder').config_with({}))
+    spec = check_sweep(sim, {'variable': 'phi', 'to': '2*pi',
+                             'observe': {'particle': 'p1', 'at': 'S'},
+                             'group_by': {'particle': 'p2'}})
+    assert spec['from'] == 0 and spec['points'] == 41 and spec['group_by']['coordinate'] == 'sign'
+    for bad, msg in ((dict(spec, variable='nope'), 'not one of the model'),
+                     (dict(spec, observe={'particle': 'px', 'at': 'S'}), 'does not declare'),
+                     (dict(spec, observe={'particle': 'p1', 'at': 'nowhere'}), 'not a gate'),
+                     (dict(spec, group_by={'particle': 'p2', 'coordinate': 'color'}), 'coordinate')):
+        with pytest.raises(ValueError, match=msg):
+            check_sweep(sim, bad)
+
+
+def test_run_sweep_honors_switched_off_gates_and_particles():
+    from quantish.screen import ScreenSpec
+    from quantish.simulation import Simulation
+    from quantish.sweep import run_sweep, sweep_spec, sweep_values
+    sim = Simulation(ScreenSpec.load('extras/double_slit_recorder').config_with({}))
+    spec = sweep_spec(sim)
+    values = sweep_values(spec, 5)
+    flat = run_sweep(sim, spec, values)                       # the record: no fringes
+    assert max(map(to_float, flat['total'])) - min(map(to_float, flat['total'])) < 1e-9
+    fringes = run_sweep(sim, spec, values, inert=('g_obs',))  # the recorder off
+    assert max(map(to_float, fringes['total'])) > 0.99
+    gone = run_sweep(sim, spec, values, absent=('p2',))       # the recorder's particle off
+    assert max(map(to_float, gone['total'])) > 0.99
+    assert all(v == 0 for v in map(to_float, run_sweep(sim, spec, values, absent=('p1',))['total']))

@@ -81,6 +81,18 @@ Configuration is split between:
      path-length difference). Declared in a model's `phase_plates`
      section (`{φ: phi}`, name → phase spec); the legacy spelling — an
      angle-0 gate with a `phase` in `gates` — still loads
+   - `gate.inert` turns any gate into a wire — every particle passes
+     straight through, sign, weight, and phase untouched. A runtime
+     knob only: `Simulation(cfg, inert=('g_pre_2', ...))`, used by the
+     apps' switch-off checkboxes and by the lab's virtual screens,
+     which freeze a circuit's environment after a stage this way.
+     `Simulation(cfg, absent=('p2', ...))` likewise leaves particles
+     out of a run — a null input, the loader's zero-weight particle:
+     declared and drawn, never entering, so the gates it would have
+     fed see an empty wire and the total probability stays 1. Every
+     app that runs a network has both sets of checkboxes, and the
+     diagrams gray and cross out whatever is off. There is
+     deliberately no model-file key for either
 
 3. **Particle** (`quantish/particle.py`)
    - A particle: name, complex-valued initial weight, sign (+1 or -1)
@@ -141,6 +153,9 @@ Model files define:
   in place of the name ({g_split: '$g_{split}$'}); covers gates, delay
   gates, phase plates, and particles alike — the name stays the
   identifier everywhere
+- `variable_notes` (optional): variable → a short Markdown line the
+  decoherence lab shows under that variable's slider, landmarks along
+  its range ({theta_erase: '0°: the plain recorder · 45°: full erasure'})
 - `links`: Connectivity graph (particle/gate outputs → gate inputs). A
   particle may branch — `p1: [g1.control, g2.control, 0.25]` starts
   it in a superposition over two destinations, the number being the
@@ -203,6 +218,12 @@ Configuration options (usually in defaults.yaml):
   - `montecarlo.py`: Monte Carlo sampling mode
   - `mermaid_diagram.py`, `network_graph.py`, `tikz_diagram.py`: Diagrams
   - `double_slit.py`: the double-slit demo's engine side
+  - `screen.py`: the decoherence lab's engine side (a model's screen from
+    its `sweep`; `stage_screens` = the virtual screens, the model rerun
+    with the environment frozen after each stage via `inert` gates);
+    `coherence.py`: which-way coherence per stage — the fringe
+    visibility the paths would show if merged after each stage, whole
+    and per sort subset, read from the all-points history
   - `util.py`: shared constants (SEP, wires, Sign) and small helpers
 - `models/`: YAML configuration files for experiments
   - `defaults.yaml`: Default configuration

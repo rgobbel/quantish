@@ -717,9 +717,13 @@ def probability(w: Complex) -> Real:
     return result
 
 def prod(it):
-    if not it:
+    """The product of the items — 0 for none, the convention the weight
+    arithmetic relies on (materialized first: a generator is truthy
+    even when empty)."""
+    items = list(it)
+    if not items:
         return Real(0)
-    return reduce(mul, it)
+    return reduce(mul, items)
 
 
 

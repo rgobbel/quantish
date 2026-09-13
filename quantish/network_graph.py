@@ -140,7 +140,7 @@ class NetworkGraph:
 
         particles = sorted({n for step in steps for p in layers[step]
                             for n in p.coords})
-        n_particles = len(particles)
+        n_particles = max(1, len(particles))    # an empty run still lays out
 
         # ---- magnitudes: per step, particle, port -> sqrt(Σ probability)
         prob_at = {}
