@@ -14,7 +14,7 @@ from collections import defaultdict
 
 import quantish.qnumber as qn
 from quantish.config_space import GatePort
-from quantish.util import SEP, math_to_unicode
+from quantish.util import SEP, base_name, math_to_unicode
 
 log = logging.getLogger('quantish')
 
@@ -238,6 +238,20 @@ def pos_sign_lines(sim, pos):
     except (TypeError, ValueError):
         return None  # symbolic weights with free symbols
     return '\n'.join(lines)
+
+
+def entry_summary(sim, source: str, name: str | None = None) -> str:
+    """What a circuit-entry port shows: the arriving particle's sign
+    and probability per sign — '+p1 1.00', or '+p1 0.56  −p1 0.19' for
+    a particle in a superposition of its signs (the per-sign style of
+    the port value blocks). `source` is the link source ('p1', or
+    'p1|2' for a branching particle's second arm); `name` overrides
+    how the particle's name is written."""
+    pname = base_name(source) if name is None else name
+    prec = sim.precision
+    return '  '.join(
+        f'{SIGN_MARK[str(s)]}{pname} {qn.to_float(qn.probability(w)):.{prec}f}'
+        for s, w in sim.entry_components(source).items())
 
 
 def port_summary(sim, step, port, end='origin'):

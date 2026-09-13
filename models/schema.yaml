@@ -65,13 +65,17 @@ properties:
   variable_notes:
     type: object
     additionalProperties: {type: string}
+  # A particle has one sign and one weight — or a two-sign weight,
+  # 'plus; minus' (either half possibly empty, meaning zero), which
+  # starts it in a superposition of its two signs on one wire, the
+  # shape a gate's output has: `p1: {weight: '3/16; -1/16i'}`. Such a
+  # weight carries its signs, so the particle declares none.
   particles:
     type: object
     minProperties: 1
     additionalProperties:
       type: object
       additionalProperties: false
-      required: [sign]
       properties:
         sign: {type: [integer, string]}
         weight: {$ref: '#/$defs/spec'}
@@ -100,11 +104,21 @@ properties:
   # FIRST (omit it for an even split). Two arms at most, and the
   # amplitudes are real (sqrt of the probabilities): this is U2's
   # notion of a superposition, with no phase between the branches.
+  # The general form maps each destination to a weight (plain or
+  # two-sign): `p1: {g1.upper: '3/16; 1/16i', g1.lower: '9/16; -3/16i'}`
+  # — one complex amplitude per (destination, sign), a gate's four-way
+  # output fed back in. The particle then declares no sign, and at most
+  # a plain weight factor. The squared magnitudes of a particle's
+  # amplitudes must sum to 1, checked at load.
   links:
     type: object
     additionalProperties:
       oneOf:
         - {type: string}
+        - type: object
+          minProperties: 1
+          maxProperties: 2
+          additionalProperties: {$ref: '#/$defs/spec'}
         - type: array
           minItems: 2
           maxItems: 3

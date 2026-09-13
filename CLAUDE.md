@@ -17,7 +17,7 @@ Follow the book's terms. A **configuration-space point** (`ConfigSpacePoint` and
 The main entry point is `quantish/main.py`. Run simulations using:
 
 ```bash
-python -m quantish.main -c <model_name>   # e.g. -c gr2026/fig4.17
+python -m quantish.main -c <model_name>   # e.g. -c fig4.17 (--config-sub gr2026 is the default)
 ```
 
 Model files live in the `models/` directory, split by book edition: `gr2006/` (2006 published figure numbers), `gr2026/` (2026 revised-draft numbers), `extras/` (circuits with no book figure), and `decoherence/` (the tweakable decoherence demos behind the decoherence lab). See `models/README.md` for the figure mapping (e.g., `gr2026/fig4.17.yaml` is the EPR experiment).
@@ -146,7 +146,12 @@ Model files define:
 - `diagram_groups` (optional): display grouping when it differs from
   `run_stages`
 - `variables`: Symbolic constants (angles, weights) using YAML anchors
-- `particles`: Initial particles with weight and sign
+- `particles`: Initial particles with weight and sign. A two-sign
+  weight `'plus; minus'` (`p1: {weight: '3/16; -1/16i'}`, either half
+  possibly empty = zero) starts the particle in a superposition of its
+  two signs on one wire — the shape of a gate's output; it carries its
+  signs, so no `sign` is declared. `Particle.superposed`; `±p1` in
+  diagrams
 - `gates`: Fredkin gates with rotation angles (and optionally a `phase`)
 - `phase_plates` (optional): phase plates, name → phase spec ({φ: phi});
   control-only pass-throughs that rotate traversing weights by e^(iφ).
@@ -163,7 +168,14 @@ Model files define:
   particle may branch — `p1: [g1.control, g2.control, 0.25]` starts
   it in a superposition over two destinations, the number being the
   probability of the first (even split when omitted; real amplitudes,
-  the U2 notion of a superposition)
+  the U2 notion of a superposition). The general form maps each
+  destination to a weight, plain or two-sign — `p1: {g1.upper: '3/4;
+  sqrt(3)*i/4', g1.lower: '1/4; -sqrt(3)*i/4'}` — one complex
+  amplitude per (destination, sign), a gate's four-way output fed back
+  in (figure 4.4's outputs fed into the same gate recombine into the
+  original input). The particle then declares no sign and at most a
+  plain weight factor. The loader checks that every particle's
+  amplitudes' squared magnitudes sum to 1 (`ValueError` before any run)
 - `sweep` (optional): a model-declared sweep — rerun the circuit over a
   range of one variable and record the probability that a particle ends
   at a gate, optionally split by another particle's final coordinate

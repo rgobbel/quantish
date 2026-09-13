@@ -85,12 +85,19 @@ class TestWiring(unittest.TestCase):
         self.assertEqual(sim.wire_labels['>g1.lower'], 'w3')
         self.assertEqual(sim.wire_labels['g2.upper'], 'w2b')
 
-    def test_null_input_label_on_fed_port_raises(self):
-        # g1.upper is fed by p1: the label belongs on the source
+    def test_null_input_label_on_fed_port_moves_to_the_wire(self):
+        # g1.upper is fed by p1: a wire into a previously labeled stub
+        # inherits the stub's label
         cfg = make_config(wire_labels={'>g1.upper': 'w2'})
-        with self.assertRaises(ValueError) as ctx:
-            Simulation(cfg)
-        self.assertIn("label its source", str(ctx.exception))
+        sim = Simulation(cfg)
+        self.assertEqual(sim.wire_labels['p1'], 'w2')
+        self.assertNotIn('>g1.upper', sim.wire_labels)
+
+    def test_null_input_label_yields_to_the_wires_own_label(self):
+        cfg = make_config(wire_labels={'>g1.upper': 'w2', 'p1': 'w9'})
+        sim = Simulation(cfg)
+        self.assertEqual(sim.wire_labels['p1'], 'w9')
+        self.assertNotIn('>g1.upper', sim.wire_labels)
 
     def test_unlinked_particle_raises(self):
         cfg = make_config()

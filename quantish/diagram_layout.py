@@ -14,7 +14,7 @@ import math
 import re
 from bisect import bisect_right
 
-from quantish.display import pos_sign_lines, pos_value_str
+from quantish.display import entry_summary, pos_sign_lines, pos_value_str
 from quantish.tikz_diagram import (
     CONTROL_HALF_W,
     GATE_WIDTH,
@@ -30,6 +30,7 @@ from quantish.tikz_diagram import (
 from quantish.util import (
     SEP,
     angle_label,
+    base_name,
     fmt_label,
     math_runs,
     math_to_unicode,
@@ -235,12 +236,8 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
         # weight ('+p₁ 1.00'), as in the Mermaid diagrams — the sign is
         # a coordinate and goes first; the weight is a number
         src = sim.sources.get(pos)
-        if src is not None and SEP not in src and src in sim.particles:
-            import quantish.qnumber as qn
-            particle = sim.particles[src]
-            sign = '+' if qn.to_float(particle.sign) >= 0 else '−'
-            w = qn.to_float(particle.weight.real)
-            return f'{sign}{_sub(src)} {w:.{sim.precision}f}'
+        if src is not None and SEP not in src and base_name(src) in sim.particles:
+            return entry_summary(sim, src, name=_sub(base_name(src)))
         return None
 
     # gates: header (name, angle, compass), ports, dotted X, frame
@@ -436,7 +433,8 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
     for pname, (px, py) in L.particle_xy.items():
         sign = spec.topology['topo']['particle_signs'].get(pname, 1)
         _pline, _pruns = display_text(pname)
-        label = f'{"+" if sign > 0 else "−"}{_pline}'
+        # sign 0: a superposition of both signs
+        label = f'{"±" if sign == 0 else "+" if sign > 0 else "−"}{_pline}'
         pw = 2 * PORT_PAD + CHAR_W * (len(label) + 1)
         ph = 2 * PORT_PAD + LINE_H
         cx, cy = fx(px), py * KY
@@ -492,9 +490,13 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
                 stub_end = fx(gx + GATE_WIDTH + WIRE_STUB_LEN)
                 cy = gy * KY + PORT_DY[wname] * KY
                 blob_left = stub_end + 0.1
+                # the same hover detail as the out-port box it extends
+                tip = tip_lines(pos) if show_values else []
                 blob = {'x': blob_left, 'x2': blob_left + w,
                             'y': cy - h / 2, 'y2': cy + h / 2,
-                            'corner': int(h * scale / 2)}
+                            'corner': int(h * scale / 2),
+                            'amp': tip[0] if tip else '',
+                            'pr': (tip[1] if len(tip) > 1 else '').removeprefix('Pr: ')}
                 reserved.append(blob)
                 if not show_blobs:
                     continue

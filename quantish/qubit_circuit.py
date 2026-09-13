@@ -330,6 +330,11 @@ def compile_qubits(sim) -> QubitCircuit:
     for name, particle in sim.particles.items():
         if name not in starts:
             continue                                    # absent (zero weight)
+        if particle.superposed or name in sim.arm_specs:
+            raise NotImplementedError(
+                f'{name}: the qubit compiler does not take a particle in a '
+                f'superposition of its two signs, or weights per '
+                f'destination, yet')
         weight *= complex(particle.weight)
         pq = ParticleQubits(sign=qc.new_qubit(f'{name}.s'), x=qc.new_qubit(f'{name}.x'),
                             initial_sign=int(particle.sign))

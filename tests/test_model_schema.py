@@ -35,10 +35,16 @@ def test_schema_rejects_bad_configs():
             'gates': {'g1': {'angle': 'rad(30)'}},
             'links': {'p1': 'g1.upper'}}
     assert validate_model(good) == []
+    # a two-sign weight declares no sign; a link may map each
+    # destination to a weight
+    two_sign = {**good, 'particles': {'p1': {'weight': '1/2; 1/2i'}},
+                'links': {'p1': {'g1.upper': '1; 1', 'g1.lower': '; 1'}}}
+    assert validate_model(two_sign) == []
     for breakage in (
             lambda c: c.pop('title'),
             lambda c: c.update(unknown_option=True),
-            lambda c: c['particles']['p1'].pop('sign'),
+            lambda c: c['links'].update(p1={'g1.upper': 1, 'g1.lower': 1,
+                                            'g1.control': 1}),   # 2 arms at most
             lambda c: c['particles']['p1'].update(color='red'),
             lambda c: c['gates']['g1'].pop('angle'),
             lambda c: c['run_stages'].update(s2='g1'),  # not a list

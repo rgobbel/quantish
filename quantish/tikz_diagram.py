@@ -94,7 +94,9 @@ def spec_from_simulation(sim, fig: str | None = None) -> DiagramSpec:
     # The renderer needs only each particle's sign, for its circle label.
     # (The quantish_gld original also derived per-port wire names here;
     # nothing in this renderer reads them.)
-    particle_signs = {src: int(sim.particles[src].sign)
+    # (0 for a particle in a superposition of both signs)
+    particle_signs = {src: 0 if sim.particles[src].superposed
+                      else int(sim.particles[src].sign)
                       for src in links if src in particles}
 
     # wire labels (the book's w₂, w₂ₐ... segment names), keyed by
@@ -1524,7 +1526,7 @@ def emit_tex(circuit: Circuit, L: Layout, routes: list[Route],
     # Particles.
     for pname, (cx, cy) in L.particle_xy.items():
         sign_int = circuit.topology['topo']['particle_signs'][pname]
-        sign_char = '+' if sign_int > 0 else '-'
+        sign_char = r'\pm ' if sign_int == 0 else '+' if sign_int > 0 else '-'
         stem, sub = split_name(pname)
         if len(stem) > 2:
             stem = stem[0]   # a long name would burst the particle circle

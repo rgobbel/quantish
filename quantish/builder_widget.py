@@ -302,7 +302,7 @@ _CSS = """
 .qb-dialog .qb-dlg-title { font-weight: 600; margin-bottom: 8px; }
 .qb-dialog .qb-dlg-grid { display: grid; grid-template-columns: auto 1fr;
                           gap: 6px 10px; align-items: center; }
-.qb-dialog input { width: 100%; box-sizing: border-box;
+.qb-dialog input, .qb-dialog select { width: 100%; box-sizing: border-box;
                    font-size: 14px; padding: 5px 8px;
                    border: 1px solid #bbb; border-radius: 5px;
                    color: #000; }
@@ -544,10 +544,22 @@ function render({ model, el }) {
   // a branch probability belongs to a particle with exactly two arms;
   // anything else (an arm or the particle deleted) drops it
   const tidyBranches = (g) => {
-    if (!g.branches) return;
-    for (const k of Object.keys(g.branches))
-      if (!g.particles[k] || srcCount(g, k) !== 2) delete g.branches[k];
-    if (!Object.keys(g.branches).length) delete g.branches;
+    if (g.branches) {
+      for (const k of Object.keys(g.branches))
+        if (!g.particles[k] || srcCount(g, k) !== 2) delete g.branches[k];
+      if (!Object.keys(g.branches).length) delete g.branches;
+    }
+    // weights per destination stay only for arms that still exist
+    if (g.arm_weights) {
+      for (const k of Object.keys(g.arm_weights)) {
+        if (!g.particles[k]) { delete g.arm_weights[k]; continue; }
+        for (const d of Object.keys(g.arm_weights[k]))
+          if (!g.links.some((l) => l[0] === k && l[1] === d))
+            delete g.arm_weights[k][d];
+        if (!Object.keys(g.arm_weights[k]).length) delete g.arm_weights[k];
+      }
+      if (!Object.keys(g.arm_weights).length) delete g.arm_weights;
+    }
   };
   const commit = (g, before) => {
     tidyBranches(g);
@@ -612,6 +624,11 @@ function render({ model, el }) {
   };
   // a gate output feeds one input; a particle may branch two ways
   const srcCount = (g, src) => g.links.filter((l) => l[0] === src).length;
+  // a particle in a superposition of its two signs: a 'plus; minus'
+  // weight, or weights per destination on its links
+  const bothSigns = (g, name) =>
+    String(g.particles[name]?.weight ?? '').includes(';') ||
+    !!(g.arm_weights || {})[name];
   const srcFree = (g, src) =>
     srcCount(g, src) < (g.particles[src] ? 2 : 1);
   const usedSrc = (g) => new Set(
@@ -878,11 +895,18 @@ function render({ model, el }) {
       const arms = g.particles[l[0]] ? armsOf(l[0]) : [];
       let label = arms.length === 2 ? wl[`${l[0]}>${l[1]}`] : wl[l[0]];
       if (arms.length === 2) {
-        const p = (g.branches || {})[l[0]] ?? 0.5;
-        const first = arms[0][1] === l[1];
-        const ptxt = typeof p === 'number'
-          ? `${first ? p : Math.round((1 - p) * 1e6) / 1e6}`
-          : (first ? `${p}` : `1-(${p})`);
+        const aw = (g.arm_weights || {})[l[0]];
+        let ptxt;
+        if (aw) {
+          // a weight per destination shows as written: 'plus; minus'
+          ptxt = `${aw[l[1]] ?? ''}`;
+        } else {
+          const p = (g.branches || {})[l[0]] ?? 0.5;
+          const first = arms[0][1] === l[1];
+          ptxt = typeof p === 'number'
+            ? `${first ? p : Math.round((1 - p) * 1e6) / 1e6}`
+            : (first ? `${p}` : `1-(${p})`);
+        }
         label = label ? `${label} (${ptxt})` : ptxt;
       }
       if (!label) return;
@@ -1048,7 +1072,8 @@ function render({ model, el }) {
         x: p.x + pw / 2, y: p.y + PR + 4, 'text-anchor': 'middle',
         'font-size': 14, 'font-weight': 600, fill: '#000',
         'data-name': name,
-      }, (p.sign < 0 ? '−' : '+') + (p.display_string || name)));
+      }, (bothSigns(g, name) ? '±' : p.sign < 0 ? '−' : '+')
+         + (p.display_string || name)));
       if (String(p.weight ?? 1) !== '1') {
         // a non-unit weight is worth seeing on the canvas
         grp.appendChild(h('text', {
@@ -1266,24 +1291,60 @@ function render({ model, el }) {
       if (pred(key.startsWith('>') ? key.slice(1) : key))
         delete copy.wire_labels[key];
   };
+  // wire labels follow the wire: a wire drawn into a labeled null-input
+  // stub inherits the stub's label, and deleting a labeled wire leaves
+  // its label on the now-stub input. A branching particle's arms are
+  // labeled 'p1>g2.control'; a bare 'p1' labels its first arm
+  const labelKeyOf = (g, src, dst) =>
+    g.particles[src] && g.links.filter((l) => l[0] === src).length === 2
+      ? `${src}>${dst}` : src;
+  const tidyLabels = (copy) => {
+    if (copy.wire_labels && !Object.keys(copy.wire_labels).length)
+      delete copy.wire_labels;
+  };
+  const inheritStubLabel = (copy, src, dst) => {
+    // after the link is in copy.links
+    const wl = copy.wire_labels || {};
+    const stub = '>' + dst;
+    if (!(stub in wl)) return;
+    const key = labelKeyOf(copy, src, dst);
+    if (!(key in wl) && !(src in wl)) wl[key] = wl[stub];
+    delete wl[stub];
+    tidyLabels(copy);
+  };
+  const stubLabels = (copy, removed) => {
+    // before the links leave copy.links
+    const wl = copy.wire_labels || {};
+    for (const [src, dst] of removed) {
+      const key = labelKeyOf(copy, src, dst);
+      if (!(key in wl)) continue;
+      wl['>' + dst] = wl[key];
+      delete wl[key];
+    }
+  };
+  const removeLinks = (copy, pred) => {
+    stubLabels(copy, copy.links.filter(pred));
+    copy.links = copy.links.filter((l) => !pred(l));
+  };
   const dropGate = (copy, k) => {
     delete copy.gates[k];
-    copy.links = copy.links.filter(
-      (l) => l[0] !== k && l[1] !== k &&
-             !l[0].startsWith(k + '.') && !l[1].startsWith(k + '.'));
+    removeLinks(copy, (l) => l[0] === k || l[1] === k ||
+                             l[0].startsWith(k + '.') || l[1].startsWith(k + '.'));
     dropLabels(copy, (e) => e === k || e.startsWith(k + '.'));
+    tidyLabels(copy);
   };
   const dropParticle = (copy, k) => {
     delete copy.particles[k];
-    copy.links = copy.links.filter((l) => l[0] !== k);
+    removeLinks(copy, (l) => l[0] === k);
     dropLabels(copy, (e) => e === k);
+    tidyLabels(copy);
   };
 
   function deleteSelected() {
     if (multi.size) {
       const copy = JSON.parse(JSON.stringify(graph()));
       if (multiKind === 'link')
-        copy.links = copy.links.filter((_, i) => !multi.has(i));
+        removeLinks(copy, (l) => multi.has(copy.links.indexOf(l)));
       else for (const k of multi)
         (multiKind === 'gate' ? dropGate : dropParticle)(copy, k);
       clearMulti();
@@ -1293,7 +1354,10 @@ function render({ model, el }) {
     }
     if (!selected) return;
     const copy = JSON.parse(JSON.stringify(graph()));
-    if (selected.kind === 'link') copy.links.splice(selected.key, 1);
+    if (selected.kind === 'link') {
+      stubLabels(copy, [copy.links[selected.key]]);
+      copy.links.splice(selected.key, 1);
+    }
     else if (selected.kind === 'gate') dropGate(copy, selected.key);
     else dropParticle(copy, selected.key);
     selected = null;
@@ -1395,6 +1459,17 @@ function render({ model, el }) {
     return null;
   };
   const previewWeight = (s) => {
+    if (s.includes(';')) {
+      // a two-sign weight 'plus; minus': the probability of each sign
+      // and their sum, which must reach 1 over the particle's starts
+      const halves = s.split(';');
+      if (halves.length !== 2) return '= ? (plus; minus — two components)';
+      const ws = halves.map((h) => h.trim() === '' ? { re: 0, im: 0 } : parseWeight(h.trim()));
+      if (ws.some((w) => !w)) return '= ? (checked by the app)';
+      const pr = ws.map((w) => Math.round((w.re * w.re + w.im * w.im) * 1000) / 1000);
+      return `|w₊|² = ${pr[0]}, |w₋|² = ${pr[1]}, Σ = `
+        + `${Math.round((pr[0] + pr[1]) * 1000) / 1000}`;
+    }
     const w = parseWeight(s);
     if (!w) return '= ? (checked by the app)';
     const mag = Math.hypot(w.re, w.im);
@@ -1603,6 +1678,10 @@ function render({ model, el }) {
         copy.branches[nn] = copy.branches[name];
         delete copy.branches[name];
       }
+      if (copy.arm_weights && copy.arm_weights[name] !== undefined) {
+        copy.arm_weights[nn] = copy.arm_weights[name];
+        delete copy.arm_weights[name];
+      }
       selected = null;
     }
     copy.particles[nn].sign = sign;
@@ -1649,6 +1728,8 @@ function render({ model, el }) {
       const p = copy.particles[pname];
       let nameInput = null;
       let branchInput = null;
+      let modeSelect = null;
+      let armInputs = null;   // [[destination, input], ...] in weight mode
       const nameRow = (input) => {
         // a two-column form: labels left, both fields sharing one
         // left edge; the dialog's own weight input joins the grid
@@ -1667,23 +1748,59 @@ function render({ model, el }) {
           + 'may follow after a space (+p1 $p_1$)';
         input.title = 'a number, a complex literal (0.5+0.87j), a '
           + 'magnitude and phase (0.7@30°), an expression, or a '
-          + 'variable name';
+          + 'variable name; or both signs at once as plus; minus '
+          + '(3/4; sqrt(3)*i/4 — either half may be empty)';
         grid.append(cell('name'), nameInput, cell('weight'), input);
         const arms = copy.links.filter((l) => l[0] === pname).map((l) => l[1]);
         if (arms.length === 2) {
-          // a branching particle: the probability of its FIRST arm; the
-          // rest goes down the second
+          // a branching particle splits by a probability (real
+          // amplitudes, the first arm's share) or carries a weight per
+          // destination, each 'plus; minus' — a gate's four-way output
+          // fed back in. The weight field above is then a plain factor
+          const armW = (copy.arm_weights || {})[pname];
+          modeSelect = document.createElement('select');
+          for (const [v, t] of [['prob', 'split by probability'],
+                                ['weights', 'weight per destination']]) {
+            const o = document.createElement('option');
+            o.value = v; o.textContent = t;
+            modeSelect.append(o);
+          }
+          modeSelect.value = armW ? 'weights' : 'prob';
+          grid.append(cell('branch'), modeSelect);
           branchInput = document.createElement('input');
           branchInput.type = 'text';
           branchInput.value = `${(copy.branches || {})[pname] ?? 0.5}`;
           branchInput.title = `probability of going to ${arms[0]} `
             + `(the rest goes to ${arms[1]}): a number from 0 to 1, an `
             + 'expression, or a variable name';
-          grid.append(cell(`→ ${arms[0]}`), branchInput);
+          const probCells = [cell(`→ ${arms[0]}`), branchInput];
           const note = cell(`the rest → ${arms[1]}`);
           note.style.gridColumn = '2';
           note.style.fontSize = '12px';
-          grid.append(note);
+          probCells.push(note);
+          armInputs = arms.map((d) => {
+            const inp = document.createElement('input');
+            inp.type = 'text';
+            inp.value = `${(armW || {})[d] ?? ''}`;
+            inp.placeholder = 'plus; minus';
+            inp.title = `the weight arriving at ${d}, by sign: plus; `
+              + 'minus (either half may be empty). The squared '
+              + 'magnitudes over both destinations must sum to 1';
+            return [d, inp];
+          });
+          const weightCells = armInputs.flatMap(([d, inp]) => [cell(`→ ${d}`), inp]);
+          const wnote = cell('the weight field above multiplies both (usually 1)');
+          wnote.style.gridColumn = '2';
+          wnote.style.fontSize = '12px';
+          weightCells.push(wnote);
+          grid.append(...probCells, ...weightCells);
+          const showMode = () => {
+            const w = modeSelect.value === 'weights';
+            for (const c of probCells) c.hidden = w;
+            for (const c of weightCells) c.hidden = !w;
+          };
+          modeSelect.addEventListener('change', showMode);
+          showMode();
         }
         return grid;
       };
@@ -1696,12 +1813,20 @@ function render({ model, el }) {
           // a plain number stores as a number, anything else verbatim
           const asSpec = (v) => /^[+-]?\d*\.?\d+$/.test(v) ? parseFloat(v) : v;
           fresh.particles[nn].weight = asSpec(s);
-          if (branchInput) {
+          if (modeSelect && modeSelect.value === 'weights') {
+            // weights per destination replace any branch probability
+            if (fresh.branches) delete fresh.branches[nn];
+            fresh.arm_weights = fresh.arm_weights || {};
+            fresh.arm_weights[nn] = Object.fromEntries(
+              armInputs.map(([d, inp]) => [d, inp.value.trim()]));
+          } else if (branchInput) {
+            if (fresh.arm_weights) delete fresh.arm_weights[nn];
             const b = branchInput.value.trim();
             fresh.branches = fresh.branches || {};
             if (b === '' || b === '0.5') delete fresh.branches[nn];
             else fresh.branches[nn] = asSpec(b);
           }
+          tidyBranches(fresh);
           commit(fresh);
         },
         { preview: previewWeight, aux: nameRow });
@@ -1938,6 +2063,7 @@ function render({ model, el }) {
           srcFree(g, wire.src)) {
         const copy = JSON.parse(JSON.stringify(g));
         copy.links.push([wire.src, t.dataset.inport]);
+        inheritStubLabel(copy, wire.src, t.dataset.inport);
         wire = null;
         commit(copy);
       } else {

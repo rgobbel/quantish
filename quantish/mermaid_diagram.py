@@ -8,7 +8,7 @@ import python_mermaid.link as pml
 import python_mermaid.node as pm
 
 import quantish.qnumber as qn
-from quantish.display import pos_sign_lines
+from quantish.display import entry_summary, pos_sign_lines
 from quantish.simulation import Simulation
 from quantish.util import (
     SEP,
@@ -65,11 +65,8 @@ def make_gate_node(sim, gname, inout, wire, mermaid_nodes, show_outputs=True):
         # in the port rectangle ('+p1 1.00'); interior ports stay bare,
         # their values being visible as the upstream gate's outputs
         src = sim.sources.get(position)
-        if src is not None and SEP not in src and src in sim.particles:
-            particle = sim.particles[src]
-            sign = '+' if qn.to_float(particle.sign) >= 0 else '-'
-            weight = qn.to_float(particle.weight.real)
-            return f'\n{sign}{src} {weight:.{sim.precision}f}'
+        if src is not None and SEP not in src and base_name(src) in sim.particles:
+            return '\n' + entry_summary(sim, src)
         return ''
 
     if inout == 'in':
@@ -188,7 +185,8 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
         pname = particle_name.split('<')[0]
         particle_node = pmd.Node(id=pname, shape='stadium-shape')
         # name + sign only; the weight shows at the entry port instead
-        psign = '+' if qn.to_float(particle.sign) >= 0 else '-'
+        psign = ('±' if particle.superposed
+                 else '+' if qn.to_float(particle.sign) >= 0 else '-')
         particle_node.content = f'{psign}{pname}'
         mermaid_nodes[pname] = particle_node
         diag.add_nodes([particle_node])

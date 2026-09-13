@@ -14,12 +14,13 @@ from quantish.config_space import (
     Position,
 )
 from quantish.gate import DelayGate, FredkinGate, PhasePlate
-from quantish.particle import Particle
-from quantish.qnumber import Complex, qify
+from quantish.particle import Particle, sign_components
+from quantish.qnumber import qify
 from quantish.util import (
     BRANCH_MARK,
     SEP,
     WIRES,
+    Sign,
     base_name,
     flat_list,
     log_seq,
@@ -139,10 +140,28 @@ class Simulation:
         # The first arm is linked under the particle's own name, the
         # second under the name plus BRANCH_MARK; the probability spec
         # waits in branch_specs until the variables can resolve it.
+        # A particle's link may instead map each destination to a weight
+        # spec — `p1: {g1.upper: '3/16; 1/16i', g1.lower: '9/16; -3/16i'}`
+        # — the general form: one complex amplitude per (destination,
+        # sign), the shape of a gate's four-way output fed back in. The
+        # specs wait in arm_specs (a list in arm order, resolved with
+        # the variables in load_elements).
         self.links = {}
         self.branch_specs = {}
+        self.arm_specs = {}
         for src, dst in config.links.items():
-            if isinstance(dst, (list, tuple)):
+            if isinstance(dst, dict):
+                arms = list(dst)
+                if src not in config.particles or not 1 <= len(arms) <= 2:
+                    raise ValueError(
+                        f"link '{src}': a weighted link is a particle with "
+                        f"one or two destinations, each mapped to a weight "
+                        f"({{g1.upper: '3/16; 1/16i', g1.lower: '9/16; "
+                        f"-3/16i'}}), got {dict(dst)!r}")
+                for arm, mark in zip(arms, ('', BRANCH_MARK)):
+                    self.links[f'{src}{mark}'] = canon(arm)
+                self.arm_specs[src] = [dst[arm] for arm in arms]
+            elif isinstance(dst, (list, tuple)):
                 arms = [d for d in dst if isinstance(d, str)]
                 probs = [d for d in dst if not isinstance(d, str)]
                 if src not in config.particles or len(arms) != 2 \
@@ -178,12 +197,19 @@ class Simulation:
                 if port not in ports:
                     problems.append(f"'>{key[1:]}' names no gate port")
                 elif port in self.sources:
-                    problems.append(
-                        f"'>{key[1:]}' has an incoming link — label its "
-                        f"source ('{self.sources[port]}') instead")
+                    # the stub grew a wire: the wire inherits the stub's
+                    # label (unless the wire's source is labeled itself)
+                    src = self.sources[port]
+                    if src in self.wire_labels or src in config.get('wire_labels', {}):
+                        log.warning(f"wire label '>{key[1:]}': {port} now has an "
+                                    f"incoming link from {src}, which carries its "
+                                    f"own label; the stub label is dropped")
+                    else:
+                        self.wire_labels[src] = str(label)
                 else:
                     self.wire_labels[f'>{port}'] = str(label)
-            elif '>' in key and key.split('>', 1)[0] in self.branch_specs:
+            elif '>' in key and key.split('>', 1)[0] in (
+                    self.branch_specs.keys() | self.arm_specs.keys()):
                 # one arm of a branching particle, named by where it
                 # goes: 'p1>g2.control'
                 pname, dst = key.split('>', 1)
@@ -222,8 +248,11 @@ class Simulation:
             if qn.inexact(plate.phase):
                 out.append(f'{pname} phase')
         for pname, particle in self.particles.items():
-            if qn.inexact(particle.weight):
+            if any(qn.inexact(w) for w in particle.components.values()):
                 out.append(f'{pname} weight')
+        for pname, amps in getattr(self, 'arm_comps', {}).items():
+            if any(qn.inexact(w) for comps in amps for w in comps.values()):
+                out.append(f'{pname} link weight')
         for pname, amps in getattr(self, 'branch_amps', {}).items():
             if any(qn.inexact(a) for a in amps):
                 out.append(f'{pname} branch probability')
@@ -359,6 +388,24 @@ class Simulation:
         if problems:
             raise ValueError('bad model wiring:\n  ' + '\n  '.join(sorted(problems)))
 
+    def entry_components(self, source: str) -> dict:
+        """The nonzero amplitudes a particle enters the circuit with
+        along one link source ('p1', or 'p1|2' for a second arm), by
+        sign — what a circuit-entry port shows."""
+        pname = base_name(source)
+        particle = self.particles[pname]
+        arm_i = 0 if source == pname else 1
+        if pname in self.arm_comps:
+            comps = {s: particle.weight * w
+                     for s, w in self.arm_comps[pname][arm_i].items()}
+        else:
+            comps = dict(particle.components)
+            if pname in self.branch_amps:
+                amp = self.branch_amps[pname][arm_i]
+                comps = {s: w * amp for s, w in comps.items()}
+        return {s: w for s, w in sorted(comps.items(), reverse=True)
+                if not qn.zerop(w)}
+
     def load_elements(self, config):
         links = self.links
         log.debug('links:')
@@ -372,10 +419,20 @@ class Simulation:
                     f"particle '{pname}': display_string moved to the "
                     f"top-level display_strings section "
                     f"({{{pname}: ...}})")
-            pweight = Complex(qify(pval.get('weight', 1), self.qvars))
-            new_particle = Particle(pname, pweight, qify(pval.sign, self.qvars),
-                                    precision=self.precision)
-            self.particles[pname] = new_particle
+            sign = pval.get('sign')
+            if sign is not None:
+                sign = Sign(int(qn.to_float(qify(sign, self.qvars))))
+            try:
+                comps = sign_components(pval.get('weight', 1), sign, self.qvars)
+            except ValueError as exc:
+                raise ValueError(f"particle '{pname}': {exc}") from None
+            if pname in self.arm_specs and (sign is not None or len(comps) > 1):
+                raise ValueError(
+                    f"particle '{pname}': its link carries the weights "
+                    f"per destination, so declare no sign and at most a "
+                    f"plain weight factor here")
+            self.particles[pname] = Particle(pname, components=comps,
+                                             precision=self.precision)
         gates = config.gates
         # angle_unit says how plain-number angle specs read: 'radians'
         # (the default) or 'degrees'. Degree-marked expressions ('30°',
@@ -464,7 +521,26 @@ class Simulation:
                               (f'{pname}{BRANCH_MARK}', _prob_text(spec, rest=True))):
                 lab = self.wire_labels.get(arm)
                 self.wire_labels[arm] = f'{lab} ({ptxt})' if lab else ptxt
-        # each particle's possible starts: [(coordinate, amplitude)]
+        # weighted arms: each arm's spec resolves to {sign: amplitude};
+        # the wire shows the spec as written (alongside any model label)
+        self.arm_comps = {}
+        for pname, specs in self.arm_specs.items():
+            try:
+                self.arm_comps[pname] = [sign_components(spec, None, self.qvars)
+                                         for spec in specs]
+            except ValueError as exc:
+                raise ValueError(f"link '{pname}': {exc}") from None
+            for arm, spec in zip((pname, f'{pname}{BRANCH_MARK}'), specs):
+                lab = self.wire_labels.get(arm)
+                self.wire_labels[arm] = f'{lab} ({spec})' if lab else str(spec)
+            self.particles[pname].arms = self.arm_comps[pname]
+        # each particle's possible starts: [(coordinate, amplitude)] —
+        # one per (destination, sign) with a nonzero amplitude, the
+        # amplitude being the particle's weight component for that sign
+        # times the arm's (branch amplitude or weighted-link component).
+        # A particle with no start is ABSENT (e.g. fig 4.4's zero-weight
+        # control): no coordinate, so control-presence checks read False
+        # and no weight branches from it.
         starts = {}
         for source, dest in links.items():
             source_parts = source.split(SEP)
@@ -481,42 +557,54 @@ class Simulation:
                     raise ValueError(
                         f"link source '{source}' is neither a gate port nor "
                         f"a declared particle ({sorted(self.particles.keys())})")
-                if qn.zerop(particle.weight):
-                    # a zero-weight particle marks an ABSENT occupant (e.g.
-                    # fig 4.4's control): no coordinate, so control-presence
-                    # checks read False and no weight branches from it
-                    log.debug(f'PARTICLE {particle} has zero weight: absent')
-                    continue
-                pcoord = PCoordinate(particle.name, particle.sign, dest_pos)
-                amp = None
-                if pname in self.branch_amps:
-                    amp = self.branch_amps[pname][0 if source == pname else 1]
-                starts.setdefault(pname, []).append((pcoord, amp))
-                log.debug(f'PARTICLE {particle}, INITIAL POSITION: {pcoord}'
-                          + (f' (branch amplitude {amp})' if amp is not None else ''))
+                arm_i = 0 if source == pname else 1
+                if pname in self.arm_comps:
+                    factor = particle.weight   # a plain factor, default 1
+                    comps = {s: factor * w
+                             for s, w in self.arm_comps[pname][arm_i].items()}
+                else:
+                    comps = dict(particle.components)
+                    if pname in self.branch_amps:
+                        amp = self.branch_amps[pname][arm_i]
+                        comps = {s: w * amp for s, w in comps.items()}
+                for sign, amp in sorted(comps.items(), reverse=True):
+                    if qn.zerop(amp):
+                        continue
+                    pcoord = PCoordinate(particle.name, sign, dest_pos)
+                    starts.setdefault(pname, []).append((pcoord, amp))
+                    log.debug(f'PARTICLE {particle}, INITIAL POSITION: {pcoord}'
+                              f' (amplitude {amp})')
+        for pname, particle in self.particles.items():
+            if pname not in starts:
+                log.debug(f'PARTICLE {particle} has zero weight: absent')
+        # the constraint, checked per particle before any run: the
+        # squared magnitudes of a particle's start amplitudes sum to 1
+        # (the initial points are the cartesian product of the
+        # particles' starts, so the total is the product of these)
+        for pname, alts in starts.items():
+            norm = qn.to_float(sum(qn.probability(amp) for _, amp in alts))
+            if abs(norm - 1) > 1e-6:
+                raise ValueError(
+                    f"particle '{pname}': the squared magnitudes of its "
+                    f"weights sum to {norm:.6g}, not 1")
         log.debug(' ')
         # the initial configuration-space points: one per combination of
-        # the particles' starts (a single point unless something
-        # branches), each weighted by the product of the configured
-        # particle weights and its branch amplitudes. Absent
-        # (zero-weight) particles route gates by their absence but must
-        # not zero the weight, so they stay out of the product.
-        base_weight = qn.prod([p.weight for p in self.particles.values()
-                               if not qn.zerop(p.weight)])
+        # the particles' starts (a single point unless something branches
+        # or carries both signs), each weighted by the product of the
+        # start amplitudes
         combos = [[]]
         for pname, alts in starts.items():
             combos = [c + [(pname, coord, amp)] for c in combos
                       for coord, amp in alts]
         self.initial_points = []
         for combo in combos:
-            weight = base_weight
-            for _, _, amp in combo:
-                if amp is not None:
-                    weight = weight * amp
+            weight = qn.prod([amp for _, _, amp in combo])
             point = ConfigSpacePoint(0, [coord for _, coord, _ in combo], weight)
             # display data: each particle's initial "component" is its
-            # configured weight (see the weight-evolution graph's band glyphs)
+            # start amplitude in this point (see the weight-evolution
+            # graph's band glyphs); an absent particle's is its weight, 0
             point.particles = {p.name: p.weight for p in self.particles.values()}
+            point.particles.update({pname: amp for pname, _, amp in combo})
             self.initial_points.append(point)
         self.initial_point = self.initial_points[0]
         self.initial_coords = {pname: coord for pname, coord, _ in combos[0]}

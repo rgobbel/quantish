@@ -9,6 +9,7 @@ The builder widget edits a plain dict:
       'particles': {name: {'x': …, 'y': …, 'sign': 1 | -1, 'weight': 1.0}},
       'links':     [[src, dst], …],
       'branches':  {particle: probability-spec},   # optional
+      'arm_weights': {particle: {destination: weight-spec}},  # optional
     }
 
 A particle with two links branches: it starts in a superposition over
@@ -43,6 +44,7 @@ import re
 
 import yaml
 
+from quantish.particle import SIGN_SEP, sign_components
 from quantish.qnumber import angle_expr, qify, reserved_name
 from quantish.util import SEP, WIRES
 
@@ -234,11 +236,28 @@ def validate_graph(graph, variables=None,
     for name, p in sorted(particles.items()):
         spec = p.get('weight', 1)
         try:
-            qify(spec, env)
+            sign_components(spec, p.get('sign', 1), env)
         except Exception as exc:  # noqa: BLE001 — qify's message informs
             reason = str(exc).splitlines()[0]
             problems.append(f'{name}: cannot use weight {spec!r} — '
                             f'{reason}')
+    # weights per destination (the general form of a branching link):
+    # each arm's spec is a weight, plain or two-sign
+    for pname, arms in (graph.get('arm_weights') or {}).items():
+        if pname in (graph.get('branches') or {}):
+            problems.append(f'{pname}: both a branch probability and '
+                            f'weights per destination — one or the other')
+        for dst, spec in arms.items():
+            if (pname, dst) not in links:
+                problems.append(f'{pname}: a link weight for {dst}, '
+                                f'where it does not go')
+                continue
+            try:
+                sign_components(spec, None, env)
+            except Exception as exc:  # noqa: BLE001
+                reason = str(exc).splitlines()[0]
+                problems.append(f'{pname} → {dst}: cannot use weight '
+                                f'{spec!r} — {reason}')
     return problems
 
 
@@ -434,11 +453,18 @@ def graph_to_config(graph, title: str, caption: str | None = None,
     if symbolic is not None:
         config['calculation_mode'] = 'symbolic' if symbolic else 'float'
     config['run_stages'] = derive_stages(graph)
-    def _particle_entry(p):
-        return {'weight': p.get('weight', 1), 'sign': p.get('sign', 1)}
+    arm_weights = graph.get('arm_weights') or {}
+
+    def _particle_entry(name, p):
+        # a two-sign weight carries its signs; so do weights on the
+        # links — neither declares a sign
+        w = p.get('weight', 1)
+        if name in arm_weights or (isinstance(w, str) and SIGN_SEP in w):
+            return {'weight': w} if str(w) != '1' else {}
+        return {'weight': w, 'sign': p.get('sign', 1)}
 
     config['particles'] = {
-        name: _particle_entry(p)
+        name: _particle_entry(name, p)
         for name, p in sorted(graph.get('particles', {}).items())}
     def _spec(v):
         # degree-marked entries ('30°') are engine-legal specs and pass
@@ -499,6 +525,14 @@ def graph_to_config(graph, title: str, caption: str | None = None,
             config['links'][src] = arms if prob is None else arms + [_spec(prob)]
         else:
             config['links'][src] = dst
+    # weights per destination: the link maps each arm to its weight
+    for src, arms in arm_weights.items():
+        dst = config['links'].get(src)
+        if dst is None:
+            continue
+        dsts = [d for d in dst if isinstance(d, str)] \
+            if isinstance(dst, list) else [dst]
+        config['links'][src] = {d: arms.get(d, 1) for d in dsts}
     if graph.get('wire_labels'):
         config['wire_labels'] = {str(k): str(v) for k, v
                                  in graph['wire_labels'].items()}
@@ -719,7 +753,12 @@ def config_to_graph(config) -> tuple[dict, list[str]]:
 
     for src, dst in config['links'].items():
         src = _port(src)
-        if isinstance(dst, (list, tuple)):
+        if isinstance(dst, dict):
+            graph['links'] += [[src, _port(d)] for d in dst]
+            graph.setdefault('arm_weights', {})[src] = {
+                _port(d): (w if isinstance(w, (int, float)) else str(w))
+                for d, w in dst.items()}
+        elif isinstance(dst, (list, tuple)):
             arms = [_port(d) for d in dst if isinstance(d, str)]
             probs = [d for d in dst if not isinstance(d, str)]
             graph['links'] += [[src, d] for d in arms]
@@ -802,11 +841,15 @@ def config_to_yaml(config, raw_sections: dict[str, str] | None = None) -> str:
             lines.append(f"  {group}: [{', '.join(gates)}]")
     lines += ['', 'particles:']
     for name, p in config['particles'].items():
-        w = p['weight']
-        wtxt = (f'{w:.12g}' if isinstance(w, (int, float))
-                else f"'{w}'")
-        opts = f"weight: {wtxt}, sign: {p['sign']}"
-        lines.append(f'  {name}: {{{opts}}}')
+        opts = []
+        if 'weight' in p:
+            w = p['weight']
+            wtxt = (f'{w:.12g}' if isinstance(w, (int, float))
+                    else f"'{w}'")
+            opts.append(f'weight: {wtxt}')
+        if 'sign' in p:
+            opts.append(f"sign: {p['sign']}")
+        lines.append(f"  {name}: {{{', '.join(opts)}}}")
     lines += ['', 'gates:']
     for name, g in config['gates'].items():
         opts = f"angle: {g['angle']}"
@@ -835,7 +878,10 @@ def config_to_yaml(config, raw_sections: dict[str, str] | None = None) -> str:
             lines.append(f'  {vname}: {_scalar(vval)}')
     lines += ['', 'links:']
     for src, dst in config['links'].items():
-        if isinstance(dst, (list, tuple)):
+        if isinstance(dst, dict):
+            items = [f'{d}: {_scalar(w)}' for d, w in dst.items()]
+            lines.append(f"  {src}: {{{', '.join(items)}}}")
+        elif isinstance(dst, (list, tuple)):
             items = [d if isinstance(d, str) else _scalar(d) for d in dst]
             lines.append(f"  {src}: [{', '.join(items)}]")
         else:
