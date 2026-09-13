@@ -10,7 +10,8 @@
 #
 # Angle, weight, and phase specs are strings (expressions like
 # 'rad(30)', 'pi/8', degree-marked forms '30°' / '(q5+q6)°', polar
-# literals '0.7@30°' (magnitude and phase, for weights), or the
+# literals '0.7@30°' (magnitude and phase, for weights), complex
+# numbers with the unit as i or I ('9/16+3/16i', '(9+3*I)/16'), or the
 # bare name of a variable) or plain numbers, read in angle_unit
 # ('radians' unless the model says 'degrees'; expression specs carry
 # their own units). Option keys
@@ -20,7 +21,7 @@ $schema: "https://json-schema.org/draft/2020-12/schema"
 title: Quantish model configuration
 type: object
 additionalProperties: false
-required: [title, run_stages, particles, gates, links]
+required: [title, particles, gates, links]
 
 properties:
   title: {type: string}
@@ -36,12 +37,11 @@ properties:
   sample: {type: boolean}
   n_samples: {type: integer, minimum: 0}
   epr_stats: {type: boolean}
-  # loose mode: run whatever the particles reach, drop unreachable
-  # gates and unlinked particles, derive any run_stages left out
-  loose: {type: boolean}
   variables:
     type: object
     additionalProperties: {$ref: '#/$defs/spec'}
+  # optional: a model without run_stages runs in wiring order, one
+  # stage per topological layer, and the apps say so
   run_stages: {$ref: '#/$defs/groups'}
   diagram_groups: {$ref: '#/$defs/groups'}
   delay_gates:

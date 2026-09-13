@@ -40,12 +40,10 @@ topological layering over stage groups (ungrouped gates merge per
 layer), and emits the same config shape the YAML model files load into.
 """
 import re
-from fractions import Fraction
 
-import sympy as sym
 import yaml
 
-from quantish.qnumber import qify, reserved_name, sym_text
+from quantish.qnumber import angle_expr, qify, reserved_name
 from quantish.util import SEP, WIRES
 
 
@@ -90,17 +88,9 @@ def angle_degrees(spec, env=None, unit: str = 'radians') -> float:
 
 
 def _angle_expr(deg) -> str:
-    """The model-file spelling of an angle given in degrees: sympy's
-    own rendering ('0', 'PI/6', '3*PI/8', '-PI/4') when the angle is an
-    exact fraction of pi, rad(<degrees>) only otherwise. The canvas
-    stores degrees as floats, so they are rationalized first — going
-    straight through Real(deg).radians would drag a sympy Float along
-    ('0.1666...*pi')."""
-    frac = Fraction(deg / 180).limit_denominator(360)
-    if abs(float(frac) - deg / 180) < 1e-12:
-        return sym_text(sym.Rational(frac.numerator, frac.denominator)
-                        * sym.pi)
-    return f'rad({deg:.12g})'
+    """The model-file spelling of an angle given in degrees (see
+    qnumber.angle_expr)."""
+    return angle_expr(deg)
 
 
 def _natural(name: str):
@@ -125,10 +115,10 @@ def _endpoint(e: str, gates) -> tuple:
     return None, None
 
 
-def loose_ends(graph) -> list[str]:
-    """The graph's loose ends: particles connected to nothing and gates
-    nothing feeds — wiring errors in a strict run, ignored in a loose
-    one (the engine drops them and whatever only they reach)."""
+def unwired(graph) -> list[str]:
+    """Particles connected to nothing and gates nothing feeds — wiring
+    errors the engine refuses (switch a component off instead of
+    disconnecting it)."""
     gates = graph.get('gates', {})
     particles = graph.get('particles', {})
     links = [tuple(l) for l in graph.get('links', [])]
@@ -141,13 +131,10 @@ def loose_ends(graph) -> list[str]:
 
 
 def validate_graph(graph, variables=None,
-                   angle_unit: str = 'radians', loose: bool = False) -> list[str]:
+                   angle_unit: str = 'radians') -> list[str]:
     """Human-readable problems that keep the graph from running.
     Angle and phase specs resolve through the model's variables and
-    read plain numbers in angle_unit, as the engine does. In loose
-    mode the loose ends the engine's loose run tolerates — a particle
-    connected to nothing, a gate nothing feeds — are not problems (the
-    run ignores them; see loose_ends)."""
+    read plain numbers in angle_unit, as the engine does."""
     env, problems = variables_env(variables)
     gates = graph.get('gates', {})
     particles = graph.get('particles', {})
@@ -203,8 +190,7 @@ def validate_graph(graph, variables=None,
         elif dw not in WIRES:
             problems.append(f'unknown input wire {dst}')
 
-    if not loose:
-        problems.extend(loose_ends(graph))
+    problems.extend(unwired(graph))
 
     plates = {n for n, g in gates.items() if g.get('kind') == 'phase'}
     for end in sorted({e for l in links for e in l}):
@@ -240,9 +226,6 @@ def validate_graph(graph, variables=None,
                     f'{name}: {field} {g.get(field)!r} is '
                     f'{_deg:.0f}° — more than a full turn, usually a '
                     'degrees-vs-radians mix-up')
-        except sym.SympifyError:  # sympy's own message is noise
-            problems.append(f'{name}: {field} {g.get(field)!r} is not '
-                            'a valid expression')
         except Exception as exc:  # noqa: BLE001 — qify's message informs
             reason = str(exc).splitlines()[0]
             problems.append(f'{name}: cannot use {field} '
@@ -252,9 +235,6 @@ def validate_graph(graph, variables=None,
         spec = p.get('weight', 1)
         try:
             qify(spec, env)
-        except sym.SympifyError:
-            problems.append(f'{name}: weight {spec!r} is not a valid '
-                            'expression')
         except Exception as exc:  # noqa: BLE001 — qify's message informs
             reason = str(exc).splitlines()[0]
             problems.append(f'{name}: cannot use weight {spec!r} — '
@@ -368,7 +348,7 @@ HANDLED_KEYS = frozenset((
     'title', 'caption', 'notes', 'calculation_mode', 'angle_unit',
     'run_stages', 'diagram_groups', 'particles', 'gates', 'delay_gates',
     'phase_plates', 'display_strings', 'variables', 'links',
-    'wire_labels', 'loose'))
+    'wire_labels'))
 
 
 def config_extras(config) -> dict:
@@ -432,12 +412,10 @@ def graph_to_config(graph, title: str, caption: str | None = None,
                     symbolic: bool | None = None,
                     angle_unit: str | None = None,
                     notes: str | None = None,
-                    extras: dict | None = None,
-                    loose: bool = False) -> dict:
+                    extras: dict | None = None) -> dict:
     """The model-config dict the Simulation loads (no defaults mixed
-    in). caption, variables, symbolic, angle_unit, notes, and the loose
-    flag (loose: true — run what the particles reach) ride along when
-    given; angle and weight specs referencing the variables
+    in). caption, variables, symbolic, angle_unit, and notes ride along
+    when given; angle and weight specs referencing the variables
     stay verbatim. symbolic is tri-state: None leaves the key out of
     the YAML entirely (the loader's defaults decide), True/False write
     it explicitly; angle_unit None likewise omits the key (plain
@@ -455,8 +433,6 @@ def graph_to_config(graph, title: str, caption: str | None = None,
         config['angle_unit'] = str(angle_unit).lower()
     if symbolic is not None:
         config['calculation_mode'] = 'symbolic' if symbolic else 'float'
-    if loose:
-        config['loose'] = True
     config['run_stages'] = derive_stages(graph)
     def _particle_entry(p):
         return {'weight': p.get('weight', 1), 'sign': p.get('sign', 1)}
@@ -608,14 +584,17 @@ def config_to_graph(config) -> tuple[dict, list[str]]:
             'loglevel': 'warning'}
     base.update(config)
     base['config_path'] = 'builder-load'
-    # resolves variables, checks wiring; a loose model loads loosely,
-    # so its loose ends open on the canvas instead of refusing to
-    sim = Simulation(Addict(base), loose=bool(config.get('loose')))
+    # resolves variables, checks wiring
+    sim = Simulation(Addict(base))
 
     notes = []
     env, _ = variables_env(config.get('variables'))
 
-    stage_of = {g: s for s, gs in config['run_stages'].items() for g in gs}
+    # the model's stages, or the wiring-order ones the engine derived
+    stages = sim.declared_run_stages
+    if sim.run_stages_derived:
+        notes.append('no run_stages declared: stages taken from the wiring order')
+    stage_of = {g: s for s, gs in stages.items() for g in gs}
     # diagram groups, minus the singleton padding graph_to_config adds
     dgroup_of = {g: d
                  for d, gs in (config.get('diagram_groups') or {}).items()
@@ -624,20 +603,19 @@ def config_to_graph(config) -> tuple[dict, list[str]]:
     graph = {'gates': {}, 'particles': {}, 'links': []}
     _displays = {str(k): str(v) for k, v
                  in dict(config.get('display_strings') or {}).items()}
-    col_of = {s: i for i, s in enumerate(config['run_stages'])}
+    col_of = {s: i for i, s in enumerate(stages)}
     row_count = {}
     _unit = str(config.get('angle_unit') or 'radians').lower()
 
     def _resolved(spec, fallback=0.0):
-        # degrees of a spec the loaded Simulation did not resolve (a gate
-        # a loose load dropped): through the variables, else the fallback
+        # degrees of a spec the loaded Simulation did not resolve:
+        # through the variables, else the fallback
         try:
             return round(float(angle_degrees(spec, env, _unit)), 10)
         except Exception:  # noqa: BLE001 — an unparseable spec
             return fallback
 
-    # every declared gate reaches the canvas, the ones a loose load
-    # dropped included (their angles resolve here instead)
+    # every declared gate reaches the canvas
     for name in config['gates']:
         gate = sim.fredkin_gates.get(name)
         if gate is not None:
@@ -754,7 +732,7 @@ def config_to_graph(config) -> tuple[dict, list[str]]:
     if config.get('wire_labels'):
         graph['wire_labels'] = {str(k): str(v) for k, v
                                 in config['wire_labels'].items()}
-    graph['stage_order'] = list(config['run_stages'])
+    graph['stage_order'] = list(stages)
     graph['dgroup_order'] = [d for d in (config.get('diagram_groups')
                                          or {})]
     return graph, notes
@@ -813,8 +791,6 @@ def config_to_yaml(config, raw_sections: dict[str, str] | None = None) -> str:
             lines += ['', f'notes: {txt}']
     _opts = [f'{k}: {config[k]}'
              for k in ('calculation_mode', 'angle_unit') if k in config]
-    if config.get('loose'):
-        _opts.append('loose: true')
     if _opts:
         lines += [''] + _opts
     lines += ['', 'run_stages:']

@@ -8,7 +8,6 @@ from quantish.builder import (
     config_to_graph,
     config_to_yaml,
     graph_to_config,
-    loose_ends,
     validate_graph,
 )
 
@@ -242,40 +241,3 @@ variables:
     # without the editor text the section is regenerated as before
     assert '# added' not in config_to_yaml(out)
 
-
-def test_loose_mode_tolerates_loose_ends_and_rides_into_the_yaml():
-    # an orphan gate and an unlinked particle: strict problems, loose fine
-    graph = {
-        'gates': {'g1': {'angle': '30°'}, 'g_orphan': {'angle': '10°'}},
-        'particles': {'p1': {'sign': 1, 'weight': 1}, 'p_lost': {'sign': 1, 'weight': 1}},
-        'links': [['p1', 'g1.upper']],
-    }
-    strict = validate_graph(graph)
-    assert strict == ['particle p_lost is not connected to anything',
-                      'gate g_orphan has no inputs']
-    assert loose_ends(graph) == strict
-    assert validate_graph(graph, loose=True) == []
-    config = graph_to_config(graph, 'Loose', loose=True)
-    assert config['loose'] is True
-    assert 'g_orphan' in config['gates'] and 'p_lost' in config['particles']
-    text = config_to_yaml(config)
-    assert 'loose: true' in text
-    back = yaml.safe_load(text)
-    assert back['loose'] is True
-    # the engine loads it loosely, dropping exactly the loose ends
-    from addict import Dict as Addict
-
-    from quantish.simulation import Simulation
-    sim = Simulation(Addict({'loglevel': 'warning', **back}))
-    assert sim.loose and sim.dropped['gates'] == ['g_orphan']
-    assert sim.dropped['particles'] == ['p_lost']
-    # and the builder opens it with every declared element on the canvas
-    graph2, _notes = config_to_graph(back)
-    assert set(graph2['gates']) == {'g1', 'g_orphan'}
-    assert set(graph2['particles']) == {'p1', 'p_lost'}
-    assert graph2['gates']['g_orphan']['angle'] == '10°'
-    # strict mode still refuses the same file
-    strict_cfg = {k: v for k, v in back.items() if k != 'loose'}
-    import pytest
-    with pytest.raises(ValueError):
-        config_to_graph(strict_cfg)

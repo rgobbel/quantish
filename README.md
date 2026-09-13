@@ -225,12 +225,6 @@ Some useful options (see `--help` for the full list):
 - `--qubits` — compile the model to a qubit circuit, draw it, and check
   the circuit's statevector against the engine (see *Quantish as qubits*)
 - `--set NAME=EXPR` — override a model variable, e.g. `--set theta2=pi/8`
-- `--loose` — loose mode: run whatever the particles reach and drop the
-  rest (gates nothing feeds, particles with no link, links into
-  undeclared gates), deriving any `run_stages` the model leaves out
-  from the wiring; the strict default refuses all of those. A model
-  can set `loose: true` itself. The dropped names are logged and kept
-  in `Simulation.dropped`
 - `--loglevel debug` — a detailed trace of every gate firing and
   configuration-space point split, with checkable weight arithmetic
 
@@ -240,7 +234,7 @@ Some useful options (see `--help` for the full list):
 
 A model is a YAML file, containing definitions of particles with initial weights,
 Fredkin gates with
-rotation angles, links wiring gate outputs to gate inputs, and explicit `run_stages` specifying the order in which gates will be run, possibly (virtually) simultaneously (in loose mode, `--loose` or `loose: true`, any stages left out are derived from the wiring).
+rotation angles, links wiring gate outputs to gate inputs, and explicit `run_stages` specifying the order in which gates will be run, possibly (virtually) simultaneously.
 `models/defaults.yaml` supplies shared settings. `models/gr2026` holds models corresponding to the 2026 revision of Chapter 4 of *Good and Real*, `models/gr2006` has models whose numbering corresponds to the 2006 edition of the book, and `models/extras/` holds
 circuits not corresponding to any book figure. `models/README.md` documents the
 2006/2026 figure correspondence.

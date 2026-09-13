@@ -195,7 +195,7 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(build_sim, inexact_note, mo, mode_pick, model_pick, run_btn, run_problem):
+def _(build_sim, inexact_note, mo, mode_pick, model_pick, run_btn, run_problem, sim_model):
     # Gated on the button. Rather than mo.stop (whose descendants all
     # display "this cell wasn't run because an ancestor was stopped"),
     # sim is None until the button is pressed, and each results cell
@@ -235,7 +235,13 @@ def _(build_sim, inexact_note, mo, mode_pick, model_pick, run_btn, run_problem):
         button = (mo.hstack([run_btn, mo.md(f'<span style="color: #b00020">{run_problem}</span>')],
                             justify='start', align='center', gap=1)
                   if run_problem else run_btn)
-        return mo.vstack([msg, button], align='start')
+        derived = ([mo.md('<span style="color: #b00020">⚠ this model declares no '
+                          '`run_stages`: the gates run in wiring order, one stage per '
+                          'layer — ' + ' | '.join(f"{n}: {', '.join(gs)}" for n, gs
+                                                  in sim_model.declared_run_stages.items())
+                          + '</span>')]
+                   if sim_model.run_stages_derived else [])
+        return mo.vstack([*derived, msg, button], align='start')
 
     _()
     return (sim,)
@@ -1779,8 +1785,7 @@ def _(
             if mode_pick.value == 'Symbolic':
                 if cur['expr']:
                     return cur['expr']
-                return str(qn.sym.Rational(str(cur['deg'])) *
-                           qn.sym.pi / 180)
+                return qn.angle_expr(cur['deg'])
             if units_pick.value == 'degrees':
                 return f"{cur['deg']:.1f}º"
             return f"{math.radians(cur['deg']):.4f}"
@@ -1802,15 +1807,14 @@ def _(cmath, mo, qn):
         # inputs can produce unreadably long expressions, and those fall
         # back to the numeric form below.
         if qn.CalcMode.default() == 'Symbolic' and qn.isq(w):
-            import sympy
             # sympy's simplify can choke on an odd but valid expression:
             # the unsimplified form is still exact and still symbolic
             try:
-                expr = qn.simplify(w).v
+                expr = qn.simplify(w)
             except Exception:  # noqa: BLE001 — keep the exact form
-                expr = w.v
-            if len(str(expr)) <= max_len and not qn.inexact(expr):
-                return sympy.latex(expr)
+                expr = w
+            if len(qn.sym_text(expr)) <= max_len and not qn.inexact(expr):
+                return qn.latex(expr)
         wc = complex(w)
         # always the full pair re±im·i at exactly prec decimals (0 is
         # 0.0000+0.0000i): every weight in a column has the same shape,
@@ -1844,13 +1848,12 @@ def _(cmath, mo, qn):
         # a probability as inline math: the exact form in Symbolic mode
         # when it is short (9/16), the fixed-precision float otherwise
         if qn.CalcMode.default() == 'Symbolic' and qn.isq(pr):
-            import sympy
             try:
-                expr = qn.simplify(pr).v
+                expr = qn.simplify(pr)
             except Exception:  # noqa: BLE001 — keep the exact form
-                expr = pr.v
-            if len(str(expr)) <= 40 and not qn.inexact(expr):
-                return f'${sympy.latex(expr)}$'
+                expr = pr
+            if len(qn.sym_text(expr)) <= 40 and not qn.inexact(expr):
+                return f'${qn.latex(expr)}$'
         return f'${float(pr):.{prec}f}$'
 
     def md_cell(text: str) -> str:

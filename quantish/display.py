@@ -70,7 +70,7 @@ def sym_or_float(value, float_str, max_len=None) -> str:
     # input leaked into the symbolic run — so it shows as a float too,
     # at the display precision, not as 0.750000000000000
     inner = getattr(e, 'v', e)
-    if qn.issym(inner) and inner.has(qn.sym.Float):
+    if qn.has_float(inner):
         return float_str
     s = str(e)
     limit = MAX_SYMBOLIC_LEN if max_len is None else max_len

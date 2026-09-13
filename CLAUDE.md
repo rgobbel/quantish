@@ -139,7 +139,10 @@ Model files define:
 - `caption` (optional): a one-line description, typically the book
   figure's caption — shown as a box in the Mermaid diagram, under the
   title in the app, and in the model-load log
-- `run_stages`: named execution stages (every linked gate must appear)
+- `run_stages` (optional): named execution stages (every linked gate
+  must appear). A model without them runs in wiring order, one stage
+  per topological layer of the link graph, with a warning in the log
+  and a notice in the apps (`Simulation.run_stages_derived`)
 - `diagram_groups` (optional): display grouping when it differs from
   `run_stages`
 - `variables`: Symbolic constants (angles, weights) using YAML anchors
@@ -183,15 +186,6 @@ Configuration options (usually in defaults.yaml):
   as floats (display.sym_or_float)
 - `sample` / `n_samples`: enable sampling mode
 - `epr_stats`: collect EPR statistics (the fig4.17 models set it)
-- `loose`: loose mode (also `Simulation(cfg, loose=True)`, CLI
-  `--loose`): `simulation.loose_config` prunes gates no particle
-  reaches, particles with no link, links into undeclared gates, and the
-  labels/display strings/stage entries naming them (recorded in
-  `Simulation.dropped`); `loose_run_stages` slots unscheduled gates in
-  ahead of the first declared stage that depends on them, the rest at
-  the end (stages `auto_N`). Strict mode (the default) refuses all of
-  those as wiring errors. Built for the lab's builder: pull a gate out
-  and run what is left
 
 ### Important Patterns
 

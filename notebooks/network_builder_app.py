@@ -66,7 +66,6 @@ async def initialization():
         config_to_yaml,
         extract_sections,
         graph_to_config,
-        loose_ends,
         section_body,
         validate_graph,
         variables_block,
@@ -133,7 +132,6 @@ async def initialization():
         cs_point_sort_key,
         diagram_geometry,
         graph_to_config,
-        loose_ends,
         html_table,
         mo,
         particle_names,
@@ -408,7 +406,7 @@ def _(
                          'notes': [], 'title': 'my_network',
                          'file': 'my_network', 'caption': '',
                          'variables': {}, 'variables_text': '',
-                         'symbolic': None, 'loose': False,
+                         'symbolic': None,
                          'angle_unit': None, 'model_notes': '',
                          'extras': {}, 'extras_text': {},
                          'source': 'a new empty model'})
@@ -439,7 +437,6 @@ def _(
                      'variables_text': section_body(
                          extract_sections(text).get('variables', '')),
                      'symbolic': _tri_mode(config),
-                     'loose': bool(config.get('loose')),
                      'angle_unit': config.get('angle_unit'),
                      'model_notes': config.get('notes') or '',
                      # sections the builder does not edit (a sweep,
@@ -542,12 +539,6 @@ def _(get_loaded, mo):
         value={None: '-', False: 'Float',
                True: 'Symbolic'}[_loaded.get('symbolic')],
         label='calculation mode (default: Float)')
-    # loose mode (the model's `loose: true`): run what the particles
-    # reach and ignore the rest — for trying a network with parts of it
-    # temporarily disconnected
-    loose_sw = mo.ui.switch(value=bool(_loaded.get('loose')),
-                            label='loose mode: run what the particles reach, '
-                                  'ignore the rest')
     # tri-state like the mode: '-' omits angle_unit from the YAML
     # (plain-number angles then read as radians)
     unit_pick = mo.ui.dropdown(
@@ -587,15 +578,13 @@ def _(get_loaded, mo):
         ([_report] if _report is not None else [])
         + [mo.vstack([file_name,
                       mo.hstack([model_title, mode_pick, unit_pick],
-                                justify='start', gap=0.75, wrap=True),
-                      loose_sw])],
+                                justify='start', gap=0.75, wrap=True)])],
         align='stretch')
     return (
         caption_input,
         file_name,
         loaded_extras,
         loaded_extras_text,
-        loose_sw,
         mode_pick,
         model_title,
         notes_input,
@@ -656,8 +645,6 @@ def _(
     graph_to_config,
     loaded_extras,
     loaded_extras_text,
-    loose_ends,
-    loose_sw,
     mo,
     mode_pick,
     model_title,
@@ -678,17 +665,12 @@ def _(
     # model's other sections (extras) included.
     _graph = builder.value.get('graph') or {}
     _unit = None if unit_pick.value == '-' else unit_pick.value
-    _loose = bool(loose_sw.value)
     problems = validate_graph(_graph, variables=model_vars,
-                              angle_unit=_unit or 'radians', loose=_loose)
+                              angle_unit=_unit or 'radians')
     if switch_off_particles and all(
             not switch_off.value.get(f'p:{p}', True) for p in switch_off_particles):
         problems.append('every particle is switched off — nothing would enter')
     builder_config = None
-    # loose mode's diagnosis: what a run would ignore, from the engine
-    # itself (a loose load prunes exactly what a loose run would)
-    ignored = {}
-    loose_stages = None
     if not problems:
         try:
             builder_config = graph_to_config(
@@ -700,32 +682,16 @@ def _(
                 angle_unit=_unit,
                 notes=notes_input.value.strip() or None,
                 extras={**{k: v for k, v in loaded_extras.items() if k != 'sweep'},
-                        **({'sweep': sweep_cfg} if sweep_cfg else {})},
-                loose=_loose)
+                        **({'sweep': sweep_cfg} if sweep_cfg else {})})
         except ValueError as exc:  # a wiring loop
             problems = [str(exc)]
     if builder_config is not None and sweep_cfg:
         # the sweep must name the model's own variable, particle, and gate
         try:
-            check_sweep(Simulation(Addict({'loglevel': 'warning', **builder_config}),
-                                   loose=_loose), sweep_cfg)
+            check_sweep(Simulation(Addict({'loglevel': 'warning', **builder_config})),
+                        sweep_cfg)
         except Exception as exc:  # noqa: BLE001 — the engine's own wording
             problems = [f'sweep: {exc}']
-            builder_config = None
-    if builder_config is not None and _loose:
-        try:
-            _probe = Simulation(Addict({'string_precision': 2, 'max_symbolic_len': 40,
-                                        'loglevel': 'warning', **builder_config}),
-                                loose=True)
-            ignored = {k: v for k, v in _probe.dropped.items() if v}
-            loose_stages = _probe.declared_run_stages
-            if not _probe.run_stages:
-                problems = ['no particle feeds any gate — nothing would execute'
-                            + (' (every gate is ignored)' if ignored.get('gates')
-                               else '')]
-                builder_config = None
-        except Exception as exc:  # noqa: BLE001 — the engine's own wording
-            problems = [str(exc)]
             builder_config = None
     _env, _ = variables_env(model_vars)
 
@@ -764,26 +730,12 @@ def _(
         if problems:
             msg = (summary + ' — **not runnable yet:**\n'
                    + '\n'.join(f'- {p}' for p in problems))
-            # only loose ends in the way: loose mode would run around them
-            if not _loose and set(problems) <= set(loose_ends(_graph)):
-                msg += ('\n\nSwitch on loose mode to run what the particles '
-                        'reach and ignore these.')
             # bright red: this is the one message that says why the Run
             # button is disabled
             return mo.Html(f'<div class="not-runnable">{mo.md(msg).text}</div>')
-        stages = ' | '.join(
-            f"{name}: {', '.join(gs)}"
-            for name, gs in (loose_stages
-                             or builder_config['run_stages']).items())
-        if _loose and ignored:
-            what = '; '.join(f"{kind} {', '.join(names)}"
-                             for kind, names in ignored.items())
-            msg = (f'{summary} — runnable in loose mode, ignoring {what}. '
-                   f'Stages: {stages}')
-        elif _loose:
-            msg = f'{summary} — runnable (loose mode, nothing to ignore). Stages: {stages}'
-        else:
-            msg = f'{summary} — runnable. Stages: {stages}'
+        stages = ' | '.join(f"{name}: {', '.join(gs)}"
+                            for name, gs in builder_config['run_stages'].items())
+        msg = f'{summary} — runnable. Stages: {stages}'
         warns = coherence_warnings(_graph)
         if warns:
             msg += '\n' + '\n'.join(f'- ⚠ {w}' for w in warns)
@@ -957,10 +909,10 @@ def _(builder, graph_to_config, mo, off_memory):
     # try a configuration without rewiring; the canvas crosses out
     # whatever is off
     _graph = builder.value.get('graph') or {}
-    # gates in run order (the stages a loose translation derives), any
-    # the translation cannot place after, by name
+    # gates in run order (the stages the translation derives), any it
+    # cannot place after, by name
     try:
-        _staged = [g for stage in graph_to_config(_graph, 'x', loose=True)
+        _staged = [g for stage in graph_to_config(_graph, 'x')
                    .get('run_stages', {}).values() for g in stage]
     except Exception:  # noqa: BLE001 — a wiring loop: no order to speak of
         _staged = []
@@ -1045,11 +997,6 @@ def _(
                 + ', '.join(bad) + (' is' if len(bad) == 1 else ' are')
                 + ' not exact (a floating-point or long decimal value), '
                 'so these results carry floating point.</span>')
-        ignored = {k: v for k, v in s.dropped.items() if v}
-        loose_note = ('' if not ignored else
-                      ' (loose mode ignored ' + '; '.join(
-                          f"{kind} {', '.join(names)}"
-                          for kind, names in ignored.items()) + ')')
         off_note = ''.join(
             f' — {what} off: {", ".join(names)}'
             for what, names in (('gates', _inert), ('particles', _absent)) if names)
@@ -1057,7 +1004,7 @@ def _(
             f'Ran **{config.title}** — '
             f'{len(s.run_stages)} stage(s), '
             f'{len(s.result_space.index)} final configuration-space '
-            f'point(s), total probability {total:.6f}' + off_note + loose_note + note)
+            f'point(s), total probability {total:.6f}' + off_note + note)
 
     sim_built, _msg = _build()
     _msg  # noqa: B018 — the cell's output

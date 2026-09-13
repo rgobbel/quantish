@@ -449,8 +449,11 @@ def _(
         # two views: the screen (readout above the panel) for the
         # side-by-side row, and the details (notes, angles, diagram)
         # for the slot's own accordion below
+        _sim0 = spec.simulation({})
         screen = mo.vstack([
-            mo.md(f'**Slot {slot}** — {spec.title}'),
+            mo.md(f'**Slot {slot}** — {spec.title}'
+                  + ('<br><span style="color: #b00020">⚠ no `run_stages` declared: the '
+                     'gates run in wiring order</span>' if _sim0.run_stages_derived else '')),
             mo.ui.anywidget(readout),
             (mo.ui.anywidget(panel) if panel is not None
              else mo.md('_This model declares no screen (no `sweep` on a '

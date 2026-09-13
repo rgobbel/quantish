@@ -44,8 +44,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-import sympy as sym
-
+from quantish.qnumber import to_complex
 from quantish.sweep import group_label
 
 REAL_TOL = 1e-9     # an imaginary part below this is display noise
@@ -131,7 +130,7 @@ def _coherence(points, observe: str) -> complex | None:
                 continue
             key = tuple((n, int(c.sign), str(c.position))
                         for n, c in pt.coords.items() if n != observe)
-            vec[key] += _to_complex(pt.weight)
+            vec[key] += to_complex(pt.weight)
         vectors.append(vec)
     left, right = vectors
     inner = sum(left[k].conjugate() * right.get(k, 0j) for k in left)
@@ -150,10 +149,3 @@ def _stage_name(sim, gates: list[str]) -> str:
             return name
     return ', '.join(gates)
 
-
-def _to_complex(w) -> complex:
-    x = getattr(w, 'v', w)
-    try:
-        return complex(x)
-    except TypeError:
-        return complex(sym.N(x))

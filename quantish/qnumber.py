@@ -167,13 +167,31 @@ def polar_at_to_rotate(s: str) -> str:
     return s
 
 
+# the imaginary unit written the everyday way: a postfix i on a number
+# or a parenthesized term ('3/16i', '(1/2)i'), or i standing alone as a
+# term ('3/16*i', 'i/4') — never the i inside another name (sin, pi)
+_POSTFIX_I = rex.compile(r'(\d|\))\s*i\b(?![\w.(])')
+_BARE_I = rex.compile(r'(?<![\w.])i\b(?![\w.(])')
+
+
+def imaginary_i_to_I(s: str) -> str:
+    """Rewrite the everyday imaginary unit into sympy's: '9/16+3/16i'
+    → '9/16+3/16*I', 'i/4' → 'I/4'. A postfix i multiplies the term it
+    follows, so '3/16i' is (3/16)·i, as it reads."""
+    s = _POSTFIX_I.sub(r'\1*I', s)
+    return _BARE_I.sub('I', s)
+
+
 def spec_rewrites(s: str) -> str:
     """The expression sugar qnumber understands beyond sympy's own
-    syntax: polar literals ('0.7@30°') and postfix degree marks."""
+    syntax: polar literals ('0.7@30°'), postfix degree marks, and the
+    imaginary unit as i."""
     if '@' in s:
         s = polar_at_to_rotate(s)
     if any(m in s for m in '°º˚'):
         s = degrees_marks_to_radians(s)
+    if 'i' in s:
+        s = imaginary_i_to_I(s)
     return s
 
 
@@ -197,7 +215,44 @@ def sym_text(v) -> str:
     """The printed form of a value: sympy's text with the constant
     spelled PI, the way qnumber exports it and model expressions
     write it — never sympy's lowercase pi."""
-    return _PI_WORD.sub('PI', str(v))
+    return _PI_WORD.sub('PI', str(getattr(v, 'v', v)))
+
+
+def latex(v) -> str:
+    """The LaTeX form of a value (a Q number or a bare sympy value),
+    for the apps' math displays."""
+    return sym.latex(getattr(v, 'v', v))
+
+
+def to_complex(x) -> complex:
+    """x as a Python complex: a Q number unwrapped first, a symbolic
+    value evaluated numerically."""
+    x = getattr(x, 'v', x)
+    try:
+        return complex(x)
+    except TypeError:
+        return complex(sym.N(x))
+
+
+def has_float(x) -> bool:
+    """True when a symbolic value carries a sympy Float — an inexact
+    input leaked into a Symbolic-mode expression."""
+    x = getattr(x, 'v', x)
+    return issym(x) and x.has(sym.Float)
+
+
+def angle_expr(deg) -> str:
+    """The model-file spelling of an angle given in degrees: sympy's
+    own rendering ('0', 'PI/6', '3*PI/8', '-PI/4') when the angle is an
+    exact fraction of pi, rad(<degrees>) only otherwise. Degrees arrive
+    as floats (a slider), so they are rationalized first — going
+    straight through Real(deg).radians would drag a sympy Float along
+    ('0.1666...*pi')."""
+    from fractions import Fraction
+    frac = Fraction(float(deg) / 180).limit_denominator(360)
+    if abs(float(frac) - float(deg) / 180) < 1e-12:
+        return sym_text(sym.Rational(frac.numerator, frac.denominator) * sym.pi)
+    return f'rad({float(deg):.12g})'
 
 
 def degrees_marks_to_radians(s: str) -> str:
@@ -233,7 +288,11 @@ def qify(x, env: dict | None = None) -> 'Complex':
     if env:
         local_env.update({name: (val.v if isq(val) else val)
                           for name, val in env.items()})
-    xval = _sympify(x, rational=True, locals=local_env)
+    try:
+        xval = _sympify(x, rational=True, locals=local_env)
+    except sym.SympifyError as exc:
+        # sympy's own message is noise: the spec, and that it does not parse
+        raise ValueError(f'{x!r} is not a valid expression') from exc
     free = getattr(xval, 'free_symbols', None)
     if free:
         unknown = ', '.join(sorted(str(sy) for sy in free))
@@ -253,7 +312,7 @@ def qify(x, env: dict | None = None) -> 'Complex':
 # ... — are fair game: sympify's locals take precedence, so the model's
 # meaning wins consistently.)
 RESERVED_NAMES = frozenset({
-    'pi', 'PI', 'E', 'I', 'oo', 'zoo', 'nan',
+    'pi', 'PI', 'E', 'I', 'i', 'oo', 'zoo', 'nan',
     'rad', 'deg', 'sqrt', 'exp', 'log', 'conj', 'conjugate', 'rotate',
     'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'atan2',
 })

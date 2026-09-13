@@ -1464,11 +1464,20 @@ function render({ model, el }) {
     const what = kind === 'stage' ? 'run stage' : 'diagram group';
     const raw = window.prompt(
       `new name for ${what} ${name} (renaming onto an existing ${what} `
-      + 'merges them)', name);
+      + 'merges them; empty dissolves it, its gates untouched)', name);
     if (raw === null) return;
     const nn = raw.trim();
-    if (!nn || nn === name) return;
+    if (nn === name) return;
     const copy = JSON.parse(JSON.stringify(graph()));
+    if (!nn) {
+      // dissolve: the gates lose the assignment, the frame goes
+      for (const gd of Object.values(copy.gates))
+        if (gd[field] === name) delete gd[field];
+      if (Array.isArray(copy[orderKey]))
+        copy[orderKey] = copy[orderKey].filter((x) => x !== name);
+      commit(copy);
+      return;
+    }
     for (const gd of Object.values(copy.gates))
       if (gd[field] === name) gd[field] = nn;
     if (Array.isArray(copy[orderKey]))

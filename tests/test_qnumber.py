@@ -476,3 +476,16 @@ def test_polar_literal_with_variables():
     w = qify('mag@ph', env)
     assert abs(float(abs(w)) - 0.5) < 1e-9
     assert abs(float(w.phase.degrees) - 60) < 1e-9
+
+
+def test_imaginary_unit_written_as_i():
+    for mode in ('Float', 'Symbolic'):
+        CalcMode.default(mode)
+        ref = qify('9/16 + 3/16*I')
+        for s in ('9/16+3/16i', '9/16 + 3/16 i', '9/16+(3/16)i', '9/16+3/16*i', '9/16+3*i/16',
+                  '(9+3i)/16', 'i*3/16+9/16', '9/16+i/16*3'):
+            assert close(qify(s), ref), (mode, s)
+        assert close(qify('2i'), qify('2*I')) and close(qify('i'), qify('I'))
+        # the i inside a name is not the unit
+        assert close(qify('sin(pi/6)'), qify('1/2')) and close(qify('pi'), qify('PI'))
+    CalcMode.default('Float')
