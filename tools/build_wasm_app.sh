@@ -150,10 +150,17 @@ cat > "$OUT/index.html" <<'HTML'
   </a>
   <a class="app" href="quantish_app/">
     <b>Quantish app</b><br>
-    An exposition of the quantish framework. In this app you can load any figure
-    from the chapter as a live circuit, run it, and explore the results.
-    This app includes, in addition to other tools, a simulation of the
-    Einstein-Podolsky-Rosen (EPR) / Bell experiment.
+    This app presents the chapter's figures as live circuits. Load any figure
+    from the chapter, run it, and follow the weights through the gates,
+    including configuration-space points at every stage, the interference
+    where they merge, and the final probabilities. A Weight-split Explorer
+    shows what one Fredkin gate does to a weight at any measurement angle.
+    Monte Carlo sampling runs a model many times to imitate the inexact
+    statistics of a real experiment, and a sweep runs it across a range of
+    one variable. The app also includes a simulation of the
+    Einstein-Podolsky-Rosen (EPR) / Bell experiment, with Bell's and the
+    CHSH inequalities tested against the quantish and the local
+    hidden-variable predictions.
   </a>
   <a class="app" href="builder_app/">
     <b>Network builder</b><br>
