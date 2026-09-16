@@ -33,16 +33,18 @@ WHEEL=$(ls -t dist/quantish-*.whl | head -1)
 (cd notebooks && uv run marimo export html-wasm double_slit_app.py -o "$OUT/double_slit_app" --mode run -f)
 (cd notebooks && uv run marimo export html-wasm network_builder_app.py -o "$OUT/builder_app" --mode run -f)
 (cd notebooks && uv run marimo export html-wasm decoherence_app.py -o "$OUT/decoherence_app" --mode run -f)
+(cd notebooks && uv run marimo export html-wasm weight_split_app.py -o "$OUT/weight_split_app" --mode run -f)
 (cd notebooks && uv run marimo export html-wasm quantish_app.py -o "$OUT/quantish_app_edit" --mode edit -f)
 (cd notebooks && uv run marimo export html-wasm double_slit_app.py -o "$OUT/double_slit_app_edit" --mode edit -f)
 (cd notebooks && uv run marimo export html-wasm network_builder_app.py -o "$OUT/builder_app_edit" --mode edit -f)
 (cd notebooks && uv run marimo export html-wasm decoherence_app.py -o "$OUT/decoherence_app_edit" --mode edit -f)
+(cd notebooks && uv run marimo export html-wasm weight_split_app.py -o "$OUT/weight_split_app_edit" --mode edit -f)
 # Two config patches on the exported pages. The exporter pins
 # auto_instantiate off for editable exports; we want the notebooks to
 # run on load. And it bakes in theme "system", which hands dark-mode
 # visitors marimo's dark theme under stylesheets tuned for the light
 # one — pin every app to light.
-python3 - "$OUT"/quantish_app*/index.html "$OUT"/double_slit_app*/index.html "$OUT"/builder_app*/index.html "$OUT"/decoherence_app*/index.html <<'PYPATCH'
+python3 - "$OUT"/quantish_app*/index.html "$OUT"/double_slit_app*/index.html "$OUT"/builder_app*/index.html "$OUT"/decoherence_app*/index.html "$OUT"/weight_split_app*/index.html <<'PYPATCH'
 import os
 import sys
 for path in sys.argv[1:]:
@@ -60,7 +62,8 @@ PYPATCH
 for W in "$OUT"/quantish_app/public/wheels "$OUT"/double_slit_app/public/wheels \
          "$OUT"/builder_app/public/wheels "$OUT"/builder_app_edit/public/wheels \
          "$OUT"/quantish_app_edit/public/wheels "$OUT"/double_slit_app_edit/public/wheels \
-         "$OUT"/decoherence_app/public/wheels "$OUT"/decoherence_app_edit/public/wheels; do
+         "$OUT"/decoherence_app/public/wheels "$OUT"/decoherence_app_edit/public/wheels \
+         "$OUT"/weight_split_app/public/wheels "$OUT"/weight_split_app_edit/public/wheels; do
   mkdir -p "$W"
   cp "$WHEEL" "$W/"
   if [ ! -f "$W/addict-2.4.0-py3-none-any.whl" ]; then
@@ -72,7 +75,8 @@ done
 # 3b) the build stamp beside each app, and at the site root
 for D in "$OUT"/quantish_app "$OUT"/quantish_app_edit "$OUT"/double_slit_app \
          "$OUT"/double_slit_app_edit "$OUT"/builder_app "$OUT"/builder_app_edit \
-         "$OUT"/decoherence_app "$OUT"/decoherence_app_edit; do
+         "$OUT"/decoherence_app "$OUT"/decoherence_app_edit \
+         "$OUT"/weight_split_app "$OUT"/weight_split_app_edit; do
   echo "$VERSION_JSON" > "$D/public/version.json"
 done
 echo "$VERSION_JSON" > "$OUT/version.json"
@@ -111,8 +115,8 @@ for app_dir in ('quantish_app', 'quantish_app_edit', 'builder_app',
 print(f'bundled {len(models)} model files')
 PYEOF
 
-# 5) the site root: a landing page linking to the apps (the double-slit
-#    demo first, as the introductory example), a serve
+# 5) the site root: a landing page linking to the apps (the explorer
+#    first — one gate — then the double-slit demo), a serve
 #    script, and a short readme
 cat > "$OUT/index.html" <<'HTML'
 <!DOCTYPE html>
@@ -141,6 +145,12 @@ cat > "$OUT/index.html" <<'HTML'
      run everything in
      your browser. The first visit downloads the Python runtime
      and may take a minute or two. Subsequent visits should start much more quickly.</p>
+  <a class="app" href="weight_split_app/">
+    <b>Weight-split Explorer</b><br>
+    What one quantish Fredkin gate does to a weight: the four-way split at any
+    measurement angle, for either sign, drawn as vectors and listed as
+    numbers, with the two destinations' sums.
+  </a>
   <a class="app" href="double_slit_app/">
     <b>The double-slit experiment</b><br>
     The classic double-slit experiment, demonstrating interference between streams of
@@ -153,8 +163,7 @@ cat > "$OUT/index.html" <<'HTML'
     This app presents the chapter's figures as live circuits. Load any figure
     from the chapter, run it, and follow the weights through the gates,
     including configuration-space points at every stage, the interference
-    where they merge, and the final probabilities. A Weight-split Explorer
-    shows what one Fredkin gate does to a weight at any measurement angle.
+    where they merge, and the final probabilities.
     Monte Carlo sampling runs a model many times to imitate the inexact
     statistics of a real experiment, and a sweep runs it across a range of
     one variable. The app also includes a simulation of the
@@ -181,7 +190,8 @@ cat > "$OUT/index.html" <<'HTML'
      re-run cells. Edits run entirely in your browser and affect
      only your copy. Reload to start fresh, or use the editor's
      download button to keep your changes.</p>
-  <p><a href="double_slit_app_edit/">Double-slit app (editable)</a> &middot;
+  <p><a href="weight_split_app_edit/">Weight-split Explorer (editable)</a> &middot;
+     <a href="double_slit_app_edit/">Double-slit app (editable)</a> &middot;
      <a href="quantish_app_edit/">Quantish app (editable)</a> &middot;
      <a href="builder_app_edit/">Network builder (editable)</a> &middot;
      <a href="decoherence_app_edit/">Decoherence lab (editable)</a></p>
@@ -211,6 +221,7 @@ Serves the app directory over HTTP. One server covers both apps:
     http://<host>:<port>/double_slit_app/   the double-slit app
     http://<host>:<port>/builder_app/       the network builder
     http://<host>:<port>/decoherence_app/   the decoherence lab
+    http://<host>:<port>/weight_split_app/  the weight-split explorer
     (plus the *_edit/ variants: the same notebooks in the in-browser
     editor)
 
@@ -263,6 +274,7 @@ echo "  quantish app:    http://localhost:$PORT/quantish_app/"
 echo "  double-slit app: http://localhost:$PORT/double_slit_app/"
 echo "  network builder: http://localhost:$PORT/builder_app/"
 echo "  decoherence lab: http://localhost:$PORT/decoherence_app/"
+echo "  weight split:    http://localhost:$PORT/weight_split_app/"
 exec python3 -m http.server --directory "$DIR" "$PORT"
 SH
 chmod +x "$OUT/serve.sh"
@@ -275,9 +287,10 @@ Quantish apps, compiled to WebAssembly (static site).
 then open  http://<host>:<port>/  in a browser: the root is a landing
 page linking to the quantish app (quantish_app/), the double-slit app
 (double_slit_app/), the network builder (builder_app/), the decoherence
-lab (decoherence_app/), and editable-notebook variants of all four
-(quantish_app_edit/, double_slit_app_edit/, builder_app_edit/,
-decoherence_app_edit/). Edits run entirely in the
+lab (decoherence_app/), the weight-split explorer (weight_split_app/),
+and editable-notebook variants of all five (quantish_app_edit/,
+double_slit_app_edit/, builder_app_edit/, decoherence_app_edit/,
+weight_split_app_edit/). Edits run entirely in the
 visitor's browser and affect only their own copy.
 
 Notes:

@@ -70,6 +70,21 @@ class FredkinGate:
             return f'{self.name}({self.theta.degrees:.2f}º)'
         return f'{self.name}({self.theta.degrees:.2f}º, φ={self.phase.degrees:.2f}º)'
 
+    def components(self, weight, plus_sign: bool = True) -> tuple:
+        """
+        The four split components of *weight* through this gate, in the
+        book's order c2a, c2b, c3a, c3b (AIM-1026a's precomputed
+        values). The minus-sign column is the twist — cos/sin of θ−π/2,
+        i.e. sin/cos of θ — the same four values with the parallel and
+        perpendicular pairs' roles swapped, which is how a minus sign
+        moves a particle's destinations in switch_components().
+        """
+        if plus_sign:
+            return (weight * self.cos2_theta, weight * self.cos_sin_theta,
+                    weight * self.sin2_theta, weight * self.mcos_sin_theta)
+        return (weight * self.cos2_twist, weight * self.cos_sin_twist,
+                weight * self.sin2_twist, weight * self.mcos_sin_twist)
+
     def switch_components(self, port:str, sign:Sign, control_present:bool):
         """
         The four-way split for a particle entering switch wire *port* with

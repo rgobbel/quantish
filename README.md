@@ -93,7 +93,6 @@ This will open a [marimo](https://marimo.io) notebook app, including
   interactive circuit diagrams, tables showing numeric results, and a few other demos:
 - a way to run a model using Monte Carlo sampling to collect classical-world statistics, in either of two modes — two interpretations sampling the same wave (see below)
 - (for networks that model the full EPR setup) a simulation of a full Bell/CHSH sweep, comparing observed values with analytically-derived expected values from a quantum world, as well as expected values from classical non-quantum physics
-- an interactive weight-split explorer to clarify the effect of weight-splitting in quantish gates
 
 There is also a demonstration of the classic [double-slit experiment](https://en.wikipedia.org/wiki/Double-slit_experiment) implemented in the quantish framework:
 
@@ -117,6 +116,13 @@ decoherence chain, and the chain with an eraser on one recorder:
 ```bash
 uv run marimo run notebooks/decoherence_app.py
 ```
+The Weight-split Explorer shows what one quantish Fredkin gate does to a weight —
+the four-way split at any measurement angle, for either sign, as vectors
+and as numbers:
+
+```bash
+uv run marimo run notebooks/weight_split_app.py
+```
 Any of these notebooks can also be run using `marimo edit` in place of `marimo run`, to allow viewing and editing of the code.
 
 ## Browser-only builds (WebAssembly)
@@ -137,7 +143,8 @@ tools/build_wasm_app.sh . /path/to/output-dir
 The script builds a wheel of the `quantish` package, exports the
 notebooks with `marimo export html-wasm`, and bundles the wheels and the
 model library into the output. The apps land in `quantish_app/`,
-`double_slit_app/`, `decoherence_app/` and `builder_app/`, with a landing
+`double_slit_app/`, `decoherence_app/`, `builder_app/` and
+`weight_split_app/`, with a landing
 page at the site root linking to all of them. The output includes a
 small `serve.sh`; to try it locally:
 

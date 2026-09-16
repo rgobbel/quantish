@@ -3,8 +3,8 @@
 Pick a model, adjust gate angles with sliders, and everything downstream
 reacts: exact final configuration-space points (LaTeX weights), marginal summaries, circuit
 diagrams (TikZ + Mermaid), the weight-evolution graph, Monte Carlo
-sampling, the Bell/CHSH experiment, and the four-way weight-split
-explorer.
+sampling, and the Bell/CHSH experiment. (The four-way weight-split
+explorer is its own app, notebooks/weight_split_app.py.)
 
 Run with:  marimo edit notebooks/quantish_app.py   (or `marimo run` to serve)
 """
@@ -34,7 +34,6 @@ def _(mo):
       probabilities of outputs at each gate, and tabulated to show statistics to simulate inexact results from real-world experiments
     - a simulation of the Einstein-Podolsky-Rosen (EPR) experiment, including results for both Bell's inequality and
       the Clauser–Horne–Shimony–Holt (CHSH) inequality
-    - a Weight-split Explorer, to show concretely the effects of various inputs to quantish Fredkin gates
     """)
 
 
@@ -783,27 +782,6 @@ def _(editor_rows, mo, qa_sweep_button, qa_sweep_decl, qa_sweep_editor, qa_sweep
 
 
 @app.cell(hide_code=True)
-def _(mo, ws_components, ws_sign, ws_theta, ws_view, ws_wmag, ws_wphase):
-    mo.accordion({'## Weight-split Explorer\n\n'
-                  '<span style="font-size:0.85em">An interactive tool '
-                  'showing what happens to weights going through a '
-                  'Fredkin gate</span>': mo.vstack([
-        mo.md(r"""
-    This tool demonstrates the four-way split of one Fredkin gate measurement at angle $\theta$:
-    $c_{2a} = w\cos^2\theta$, $c_{2b} = i\,w\sin\theta\cos\theta$
-    (straight), $c_{3a} = w\sin^2\theta$,
-    $c_{3b} = -i\,w\sin\theta\cos\theta$ (cross); $c_2 = c_{2a}+c_{2b}$,
-    $c_3 = c_{3a}+c_{3b}$. A minus-sign particle swaps the roles.
-
-    **Note:** Individual components can be selected by clicking on either their vectors on the chart or their entry in the legend. Shift-click toggles a component's selected state. Drag the chart's bottom-right corner to resize it; double-click the chart to reset the zoom.
-    """),
-        mo.hstack([ws_theta, ws_sign, ws_wmag, ws_wphase, ws_components],
-                  wrap=True),
-        ws_view,
-    ])})
-
-
-@app.cell(hide_code=True)
 def _(QA_EDITOR_UI, mo):
     # the end-of-page mark (Ann's request): a small flourish so readers
     # know nothing further is loading. The editor genuinely has more
@@ -840,8 +818,6 @@ def _(QA_EDITOR_UI, mo):
 
 @app.cell(hide_code=True)
 async def initialization():
-    import cmath
-    import math
     import sys
     from pathlib import Path
 
@@ -936,16 +912,12 @@ async def initialization():
     from quantish.builder_widget import (
         DiagramWidget,
         NetworkGraphWidget,
-        WeightSplitWidget,
     )
     from quantish.diagram_layout import diagram_geometry
     from quantish.display import (
         inexact_note,
-        latex_weight,
-        phase_deg,
     )
     from quantish.epr import supports_epr
-    from quantish.gate import FredkinGate
     from quantish.network_graph import NetworkGraph
     from quantish.screen import model_label, model_title
 
@@ -958,24 +930,18 @@ async def initialization():
         DiagramWidget,
         NetworkGraphWidget,
         QA_EDITOR_UI,
-        FredkinGate,
         MODELS_TOP,
         NetworkGraph,
         model_label,
         model_title,
         WASM_MODE,
-        WeightSplitWidget,
         build_stamp,
-        cmath,
         diagram_geometry,
         in_div,
         inexact_note,
-        latex_weight,
         load_config,
-        math,
         mo,
         parse_vars,
-        phase_deg,
         qn,
         stamp_html,
         supports_epr,
@@ -1285,129 +1251,6 @@ def _(
 
     qa_epr_view = _()
     return (qa_epr_view,)
-
-
-@app.cell(hide_code=True)
-def _(mo):
-    ws_theta = mo.ui.slider(-90, 90, step=5, value=30, label='θ (º)',
-                            show_value=True)
-    ws_sign = mo.ui.switch(value=True, label='sign + (off = −)')
-    ws_wmag = mo.ui.slider(0.0, 1.0, step=0.05, value=1.0, label='|w|',
-                           show_value=True)
-    ws_wphase = mo.ui.slider(-180, 180, step=5, value=0, label='φ(w) (º)',
-                             show_value=True)
-    ws_components = mo.ui.multiselect(
-        options=['c2', 'c3', 'c2a', 'c2b', 'c3a', 'c3b'],
-        value=['c2', 'c3', 'c2a', 'c2b', 'c3a', 'c3b'],
-        label='components')
-    # the mouse selection, persisted across parameter changes (the chart
-    # is rebuilt on every slider move; the param is reseeded from here)
-    ws_sel_get, ws_sel_set = mo.state(())
-    return (
-        ws_components,
-        ws_sel_get,
-        ws_sel_set,
-        ws_sign,
-        ws_theta,
-        ws_wmag,
-        ws_wphase,
-    )
-
-
-@app.cell(hide_code=True)
-def _(
-    FredkinGate,
-    WeightSplitWidget,
-    cmath,
-    qa_cpair,
-    latex_weight,
-    math,
-    mo,
-    phase_deg,
-    qn,
-    ws_components,
-    ws_sel_get,
-    ws_sign,
-    ws_theta,
-    ws_wmag,
-    ws_wphase,
-):
-    def _():
-        gate = FredkinGate('ws', qn.qify(math.radians(ws_theta.value)))
-        w = ws_wmag.value * cmath.exp(1j * math.radians(ws_wphase.value))
-        c2a, c2b, c3a, c3b = (complex(x) for x in
-            qa_cpair(gate, qn.Complex(w), twist=not ws_sign.value))
-        data = {'c2': c2a + c2b, 'c3': c3a + c3b,
-                'c2a': c2a, 'c2b': c2b, 'c3a': c3a, 'c3b': c3b}
-        order = ['c2', 'c3', 'c2a', 'c2b', 'c3a', 'c3b']
-        sel = [c for c in order if c in ws_components.value]
-        sign_str = '+' if ws_sign.value else '−'
-        lines = []
-        for name in sel:
-            val = data[name]
-            lines.append(
-                rf"{name} &= {latex_weight(val, prec=2)}"
-                rf" &\quad \texttt{{Pr}} &= {abs(val)**2:.2f} & \phi &= {phase_deg(val):.1f}\degree\\")
-        joined = '\n'.join(lines)
-        latex = rf"""
-    $$
-    \begin{{aligned}}
-    {joined}
-    \end{{aligned}}
-    $$
-    """
-        # native SVG (builder-renderer idiom): Finder-style selection
-        # synced through the widget's `selected` trait, wheel zoom, drag
-        # pan, and a resizable frame in place of the old size slider
-        native = mo.ui.anywidget(WeightSplitWidget(
-            data={'vectors': {c: [data[c].real, data[c].imag]
-                              for c in sel},
-                  'order': sel,
-                  'title': f'θ = {ws_theta.value}º, sign = {sign_str}',
-                  'size': 500},
-            selected=[c for c in ws_sel_get() if c in sel]))
-        view = mo.hstack([native, mo.md(latex)],
-                         align='center', justify='start', wrap=True)
-        return native, view
-
-    ws_native, ws_view = _()
-    return ws_native, ws_view
-
-
-@app.cell(hide_code=True)
-def _(ws_native, ws_sel_get, ws_sel_set):
-    # Persist the explorer's mouse selection across parameter changes:
-    # the widget is rebuilt on every slider move and reseeded from this
-    # state. An explicit empty (clicking empty plot space) clears it.
-    def _():
-        _nsel = (ws_native.value or {}).get('selected')
-        if _nsel is not None and tuple(_nsel) != tuple(ws_sel_get()):
-            ws_sel_set(tuple(_nsel))
-
-    _()
-
-
-@app.cell(hide_code=True)
-def _(FredkinGate, qn):
-    def qa_cpair(g: FredkinGate, w:qn.Complex, twist=False):
-        """
-        From AIM-1026a: the four split components of weight w.
-        Values are precomputed for speed. twist=True gives the minus-sign
-        column (cos/sin of theta - pi/2, i.e. sin/cos of theta).
-        """
-        if not twist:
-            c2a = w * g.cos2_theta
-            c2b = w * g.cos_sin_theta
-            c3a = w * g.sin2_theta
-            c3b = w * g.mcos_sin_theta
-        else:
-            c2a = w * g.cos2_twist
-            c2b = w * g.cos_sin_twist
-            c3a = w * g.sin2_twist
-            c3b = w * g.mcos_sin_twist
-        return c2a, c2b, c3a, c3b
-
-    return (qa_cpair,)
 
 
 if __name__ == "__main__":

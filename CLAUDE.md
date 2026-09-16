@@ -238,7 +238,10 @@ Configuration options (usually in defaults.yaml):
     views), `epr_ui.py` (the EPR angle entries and report); the
     builder's `builder_ui.py` (a loaded model as a dict, the canvas's
     translation into a runnable config, its status line and angle
-    labels, the run, the sweep run, the final-points table)). `import
+    labels, the run, the sweep run, the final-points table);
+    `explorer.py`: the Weight-split Explorer — one gate's split of a
+    weight by name (`FredkinGate.components`), the seedable controls,
+    the chart and table view, the chart's selection). `import
     marimo` is allowed here and nowhere else in the package; the
     notebooks keep only widget bindings, `mo.state`, and layout
     (marimo tracks a widget only as a cell global, so builders here
@@ -246,7 +249,7 @@ Configuration options (usually in defaults.yaml):
     globals carry its prefix — `qa_` quantish app, `ds_` double slit,
     `nb_` builder, `dl_` decoherence lab — so the notebooks can later
     share one kernel without name collisions (the `ws_` explorer cells
-    in the quantish app are leaving for their own app)
+    in the weight-split explorer)
   - `epr.py`: EPR experiment sweeps and statistics
   - `montecarlo.py`: Monte Carlo sampling mode
   - `mermaid_diagram.py`, `network_graph.py`, `tikz_diagram.py`: Diagrams
@@ -263,7 +266,7 @@ Configuration options (usually in defaults.yaml):
   - `gr2006/`, `gr2026/`, `extras/`, `decoherence/`: per-edition book figures, non-book circuits, and the decoherence demos (see `models/README.md`)
 - `tests/`: Unit tests (golden states, wiring validation, EPR, Monte
   Carlo, variables, double slit)
-- `notebooks/`: the marimo apps (`quantish_app.py`, `double_slit_app.py`, `decoherence_app.py`, `network_builder_app.py`)
+- `notebooks/`: the marimo apps (`quantish_app.py`, `double_slit_app.py`, `decoherence_app.py`, `network_builder_app.py`, `weight_split_app.py`)
   Each starts with the same WASM install cell (the only code that
   cannot move into the package: the wheel is not importable until
   micropip has installed it), then imports from `quantish.apps`
