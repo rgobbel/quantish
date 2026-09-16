@@ -275,16 +275,23 @@ Configuration options (usually in defaults.yaml):
   Each starts with the same WASM install cell (the only code that
   cannot move into the package: the wheel is not importable until
   micropip has installed it), then imports from `quantish.apps`.
-  `quantish_suite_app.py` is the five as the tabs of one notebook
-  (`mo.ui.tabs`, the chosen tab remembered across rebuilds), each
-  embedded with `App.embed` in one kernel; the hand-offs ride `embed(defs=…)`: every notebook defines
+  `quantish_suite_app.py` is the five as the sections of one
+  notebook, each embedded with `App.embed` in a cell of its own (an
+  interaction reruns that app alone) and wrapped as a
+  `div.suite-sec-<key>`; the section row (`apps/suite_nav.py`, an
+  anywidget) keeps the chosen key in `data-section` on the page root
+  and as the URL fragment `#sec-<key>`, `css/suite.css` shows that
+  section, and any markdown link to `#sec-<key>` opens it (CSS
+  `:target` cannot serve: marimo moves the address through the
+  history API). The hand-offs ride `mo.state` in the suite and
+  `embed(defs=…)` into the apps: every notebook defines
   its hand-ins as single-definition cells the suite overrides
   (`qa_suite`, `qa_model_in`, `nb_suite`, `ws_seed_in`,
   `dl_model_in`) and hands out through its globals (`nb_sent`, the
   builder's last sent `ModelSlot`; `qa_seed`, the quantish app's
   picked gate as an `ExplorerSeed`). Its stylesheet
   `css/quantish_suite_app.css` is generated (gitignored) by the build
-  from the two apps' stylesheets
+  from the two apps' stylesheets plus `css/suite.css`
 - `HIDEME/`: Historical/experimental code and archived dead code (ignore)
 
 ## Notes for Development

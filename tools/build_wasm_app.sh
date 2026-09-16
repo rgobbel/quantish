@@ -30,7 +30,7 @@ WHEEL=$(ls -t dist/quantish-*.whl | head -1)
 #    read-only app view and the full in-browser editor. The site root
 #    is a landing page linking to all of them. The suite's stylesheet
 #    is the two apps' stylesheets joined.
-cat notebooks/css/quantish_app.css notebooks/css/double_slit_app.css > notebooks/css/quantish_suite_app.css
+cat notebooks/css/quantish_app.css notebooks/css/double_slit_app.css notebooks/css/suite.css > notebooks/css/quantish_suite_app.css
 (cd notebooks && uv run marimo export html-wasm quantish_suite_app.py -o "$OUT/suite" --mode run -f)
 (cd notebooks && uv run marimo export html-wasm quantish_suite_app.py -o "$OUT/suite_edit" --mode edit -f)
 (cd notebooks && uv run marimo export html-wasm quantish_app.py -o "$OUT/quantish_app" --mode run -f)

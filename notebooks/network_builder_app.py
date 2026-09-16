@@ -471,8 +471,9 @@ def _(MODELS_TOP, mo, nb_send_btn, nb_slot, nb_suite):
         except Exception as exc:  # noqa: BLE001 — show, don't crash the app
             return None, mo.md(f'**could not send** — {exc}')
         if nb_suite:
-            return nb_slot, mo.md('<span style="font-size: 0.9em">sent — the quantish app '
-                                  'and the decoherence lab open it: see their tabs</span>')
+            return nb_slot, mo.md('<span style="font-size: 0.9em">sent — the '
+                                  '[quantish app](#sec-quantish) and the '
+                                  '[decoherence lab](#sec-lab) open it</span>')
         return nb_slot, mo.md('<span style="font-size: 0.9em">sent as '
                               f'**{dest}** — rescan the models in the quantish app or the '
                               'decoherence lab to open it</span>')

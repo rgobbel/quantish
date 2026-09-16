@@ -1,0 +1,31 @@
+/* The suite: every app's output is one section; the section row
+   (quantish.apps.suite_nav.SectionNav) keeps the chosen one in
+   data-section on the page's root element, and these rules show it —
+   a switch touches no cell, and any link to #sec-<key> opens a
+   section. Home shows until a section is chosen. Appended to the two
+   apps' stylesheets by the build. */
+.suite-sec { display: none; }
+:root:not([data-section]) .suite-sec-home,
+:root[data-section="home"] .suite-sec-home,
+:root[data-section="explorer"] .suite-sec-explorer,
+:root[data-section="double-slit"] .suite-sec-double-slit,
+:root[data-section="quantish"] .suite-sec-quantish,
+:root[data-section="builder"] .suite-sec-builder,
+:root[data-section="lab"] .suite-sec-lab { display: block; }
+
+.suite-nav { display: flex; flex-wrap: wrap; gap: 0.2em; align-items: flex-end;
+             border-bottom: 1px solid #c8c8c8; margin: 0.4em 0 1.2em;
+             /* stays in view while a long section scrolls */
+             position: sticky; top: 0; z-index: 20; background: #fff; }
+.suite-nav a { display: inline-block; padding: 0.45em 0.95em; margin-bottom: -1px;
+               color: #333 !important; text-decoration: none !important;
+               border: 1px solid transparent; border-bottom: 1px solid #c8c8c8;
+               border-radius: 7px 7px 0 0; font-size: 0.95em; cursor: pointer; }
+.suite-nav a:hover { background: #f4f5fb; }
+.suite-nav a.active { background: #fff; border-color: #c8c8c8; border-bottom-color: #fff;
+                      color: #2b3aa0 !important; font-weight: 600; }
+
+/* Links to sections in prose read as links: blue and underlined */
+.suite-sec a[href^="#sec-"] { color: var(--link, #0b68cb) !important;
+                              text-decoration: underline !important;
+                              text-underline-offset: 0.15em; }

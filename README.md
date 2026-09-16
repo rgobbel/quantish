@@ -123,14 +123,14 @@ and as numbers:
 ```bash
 uv run marimo run notebooks/weight_split_app.py
 ```
-All five apps also run as the tabs of one notebook, the suite, in one
-kernel: a model built in the network builder is *sent* to the quantish
+All five apps also run as the sections of one notebook, the suite, in
+one kernel: a model built in the network builder is *sent* to the quantish
 app and the decoherence lab, and a gate clicked in a run opens in the
-Weight-split Explorer. Its stylesheet is the two apps' joined (the site
-build writes it):
+Weight-split Explorer. Its stylesheet is the two apps' plus the suite's
+own, joined (the site build writes it):
 
 ```bash
-cat notebooks/css/quantish_app.css notebooks/css/double_slit_app.css > notebooks/css/quantish_suite_app.css
+cat notebooks/css/quantish_app.css notebooks/css/double_slit_app.css notebooks/css/suite.css > notebooks/css/quantish_suite_app.css
 uv run marimo run notebooks/quantish_suite_app.py
 ```
 Any of these notebooks can also be run using `marimo edit` in place of `marimo run`, to allow viewing and editing of the code.
