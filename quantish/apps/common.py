@@ -25,11 +25,15 @@ __all__ = [
     'CONSTANTS', 'MODELS_TOP', 'REPO_DIR', 'WASM_MODE', 'build_stamp', 'collections',
     'editor_ui', 'in_div', 'init_engine', 'load_config', 'md_cell',
     'model_files', 'model_label', 'model_title', 'parse_vars',
-    'remember_in', 'settable', 'stamp_html', 'switch_off_boxes',
+    'merge_defaults', 'remember_in', 'settable', 'stamp_html', 'switch_off_boxes',
     'switched_off', 'vars_text',
 ]
 
 WASM_MODE = sys.platform == 'emscripten'
+# True while the notebooks run embedded in the suite (the suite sets it
+# before embedding them): the editor-only sections stay hidden there,
+# whatever the runtime reports for an embedded app
+EMBEDDED = False
 REPO_DIR = Path(__file__).resolve().parents[2]
 # the model library: the copy materialized into the page's virtual
 # filesystem under WASM (by the notebook's install cell), else the repo's
@@ -71,6 +75,8 @@ def editor_ui(wasm_editor: bool | None = None) -> bool:
     install cell detects from the page (under WASM `mo.app_meta().mode`
     reports 'edit' for both export modes). Editor-only sections key
     off this."""
+    if EMBEDDED:
+        return False
     if WASM_MODE:
         return bool(wasm_editor)
     return mo.app_meta().mode == 'edit'
@@ -97,22 +103,28 @@ def model_files(top: Path = MODELS_TOP) -> dict[str, Path]:
             and not p.name.startswith(('.', '#'))}
 
 
-def load_config(path, top: Path = MODELS_TOP) -> tuple[Addict, dict]:
-    """A model file over the defaults: (the merged config, the model as
-    written). Variables merge deeply, so the defaults' standard names
-    (zero, one, eye) stay available underneath the model's own; the
-    log level is pinned to warning for the apps."""
+def merge_defaults(model: dict, top: Path = MODELS_TOP) -> Addict:
+    """A model (parsed) over the defaults. Variables merge deeply, so
+    the defaults' standard names (zero, one, eye) stay available
+    underneath the model's own; the log level is pinned to warning for
+    the apps."""
     with open(top / 'defaults.yaml') as f:
         cfg = yaml.safe_load(f) or {}
-    with open(path) as f:
-        model = yaml.safe_load(f) or {}
     default_vars = dict(cfg.get('variables') or {})
     cfg.update(model)
     if default_vars:
         cfg['variables'] = {**default_vars,
                             **(model.get('variables') or {})}
     cfg['loglevel'] = 'warning'
-    return Addict(cfg), model
+    return Addict(cfg)
+
+
+def load_config(path, top: Path = MODELS_TOP) -> tuple[Addict, dict]:
+    """A model file over the defaults: (the merged config, the model as
+    written) — see merge_defaults."""
+    with open(path) as f:
+        model = yaml.safe_load(f) or {}
+    return merge_defaults(model, top), model
 
 
 def vars_text(vs) -> str:

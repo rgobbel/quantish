@@ -2259,6 +2259,9 @@ function render({ model, el }) {
           + (b.pr ? `\nPr: ${b.pr}` : '');
         rect.appendChild(tip);
       }
+      // a gate's frame is clickable: the pick goes out through the
+      // `picked` trait (the quantish app seeds the explorer from it)
+      if (b.gate) rect.setAttribute('data-gate', b.gate);
       svg.appendChild(rect);
     }
     for (const seg of g.dots || [])
@@ -2469,6 +2472,15 @@ function render({ model, el }) {
         if (pan && !ev.gestureMoved && noHover(ev))
           showTip(root, valueTip(pan.target), ev.clientX, ev.clientY);
         else if (pan && ev.gestureMoved) hideTip(root);
+        // a tap on a gate's frame picks that gate
+        if (pan && !ev.gestureMoved) {
+          const gate = pan.target && pan.target.closest
+            && pan.target.closest('[data-gate]');
+          if (gate) {
+            model.set('picked', gate.getAttribute('data-gate'));
+            model.save_changes();
+          }
+        }
         pan = null;
         svg.classList.remove('panning');
       },
@@ -2522,6 +2534,9 @@ class DiagramWidget(anywidget.AnyWidget):
     _esm = _DIAGRAM_ESM
     _css = _DIAGRAM_CSS
     geometry = traitlets.Dict({}).tag(sync=True)
+    # the gate whose frame was last clicked ('' before any): the quantish
+    # app reads it to seed the weight-split explorer with that gate
+    picked = traitlets.Unicode('').tag(sync=True)
 
 
 _WSPLIT_CSS = """

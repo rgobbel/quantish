@@ -119,7 +119,15 @@ def library() -> list[str]:
         if d.is_dir():
             ids += [f'{coll}/{p.stem}' for p in sorted(d.glob('*.yaml'))
                     if not p.name.startswith(('.', '#'))]
-    ids += [k for k in _CACHE if k.startswith('upload:')]
+    # model files saved beside the library at runtime — the builder's
+    # send, the quantish app's uploads — under models/uploads/
+    d = root / 'uploads'
+    if d.is_dir():
+        ids += [f'uploads/{p.stem}' for p in sorted(d.glob('*.yaml'))
+                if not p.name.startswith(('.', '#'))]
+    # registered without a file under this root (an upload's contents,
+    # a slot sent from the builder in the same kernel)
+    ids += [k for k in _CACHE if k.startswith(('upload:', 'uploads/')) and k not in ids]
     return ids
 
 

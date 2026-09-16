@@ -373,7 +373,10 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
         frames[gname] = (left, bottom, right, top)
         boxes.insert(0, {'x': left, 'x2': right, 'y': bottom, 'y2': top,
                              'fill': GATE_FILL, 'stroke': GATE_STROKE, 'corner': 4,
-                             'amp': '', 'pr': ''})
+                             'amp': '', 'pr': '',
+                             # the frame names its gate: a click on it
+                             # picks the gate (DiagramWidget.picked)
+                             'gate': gname})
         # dotted X between the switch port columns, box edge to box edge
         uy = top + PORT_DY['upper'] * KY
         ly = top + PORT_DY['lower'] * KY

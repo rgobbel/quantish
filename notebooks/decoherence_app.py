@@ -169,7 +169,17 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
+def _():
+    # a model sent from the network builder — None on its own; the
+    # suite passes the builder's slot in (a cell of its own: the suite
+    # overrides this one definition)
+    dl_model_in = None
+    return (dl_model_in,)
+
+
+@app.cell(hide_code=True)
 def _(
+    dl_model_in,
     dl_chosen,
     library,
     mo,
@@ -188,6 +198,10 @@ def _(
     # id. The collection pickers open on the remembered models' collections.
     if dl_rescan.value:
         reload()
+    # a model sent from the network builder (the suite passes it in) is
+    # already in the `uploads` collection: slot A opens on it
+    if dl_model_in is not None:
+        dl_chosen['A'] = dl_model_in.model_id
     _bad = []
     for _f in dl_uploads.value or []:
         try:

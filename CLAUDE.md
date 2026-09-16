@@ -241,7 +241,12 @@ Configuration options (usually in defaults.yaml):
     labels, the run, the sweep run, the final-points table);
     `explorer.py`: the Weight-split Explorer — one gate's split of a
     weight by name (`FredkinGate.components`), the seedable controls,
-    the chart and table view, the chart's selection). `import
+    the chart and table view, the chart's selection; `session.py`:
+    what passes between the apps — `ModelSlot`, a model as a value
+    the builder sends into the shared `uploads` collection and the
+    other apps open like any file, and `ExplorerSeed`, a gate out of
+    a run with its arriving weight, carried to the explorer page in
+    its query string, `DiagramWidget.picked` naming the clicked gate). `import
     marimo` is allowed here and nowhere else in the package; the
     notebooks keep only widget bindings, `mo.state`, and layout
     (marimo tracks a widget only as a cell global, so builders here
@@ -269,7 +274,17 @@ Configuration options (usually in defaults.yaml):
 - `notebooks/`: the marimo apps (`quantish_app.py`, `double_slit_app.py`, `decoherence_app.py`, `network_builder_app.py`, `weight_split_app.py`)
   Each starts with the same WASM install cell (the only code that
   cannot move into the package: the wheel is not importable until
-  micropip has installed it), then imports from `quantish.apps`
+  micropip has installed it), then imports from `quantish.apps`.
+  `quantish_suite_app.py` is the five as the tabs of one notebook
+  (`mo.ui.tabs`, the chosen tab remembered across rebuilds), each
+  embedded with `App.embed` in one kernel; the hand-offs ride `embed(defs=…)`: every notebook defines
+  its hand-ins as single-definition cells the suite overrides
+  (`qa_suite`, `qa_model_in`, `nb_suite`, `ws_seed_in`,
+  `dl_model_in`) and hands out through its globals (`nb_sent`, the
+  builder's last sent `ModelSlot`; `qa_seed`, the quantish app's
+  picked gate as an `ExplorerSeed`). Its stylesheet
+  `css/quantish_suite_app.css` is generated (gitignored) by the build
+  from the two apps' stylesheets
 - `HIDEME/`: Historical/experimental code and archived dead code (ignore)
 
 ## Notes for Development

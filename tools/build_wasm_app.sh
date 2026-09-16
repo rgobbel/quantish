@@ -25,10 +25,14 @@ echo "build $BUILD ($BUILT_AT)"
 uv build --wheel -q
 WHEEL=$(ls -t dist/quantish-*.whl | head -1)
 
-# 2) export both apps (from notebooks/ so the relative css_file
+# 2) export the apps (from notebooks/ so the relative css_file
 #    resolves), each into its own subdirectory, in two variants: the
 #    read-only app view and the full in-browser editor. The site root
-#    is a landing page linking to all of them.
+#    is a landing page linking to all of them. The suite's stylesheet
+#    is the two apps' stylesheets joined.
+cat notebooks/css/quantish_app.css notebooks/css/double_slit_app.css > notebooks/css/quantish_suite_app.css
+(cd notebooks && uv run marimo export html-wasm quantish_suite_app.py -o "$OUT/suite" --mode run -f)
+(cd notebooks && uv run marimo export html-wasm quantish_suite_app.py -o "$OUT/suite_edit" --mode edit -f)
 (cd notebooks && uv run marimo export html-wasm quantish_app.py -o "$OUT/quantish_app" --mode run -f)
 (cd notebooks && uv run marimo export html-wasm double_slit_app.py -o "$OUT/double_slit_app" --mode run -f)
 (cd notebooks && uv run marimo export html-wasm network_builder_app.py -o "$OUT/builder_app" --mode run -f)
@@ -44,7 +48,7 @@ WHEEL=$(ls -t dist/quantish-*.whl | head -1)
 # run on load. And it bakes in theme "system", which hands dark-mode
 # visitors marimo's dark theme under stylesheets tuned for the light
 # one — pin every app to light.
-python3 - "$OUT"/quantish_app*/index.html "$OUT"/double_slit_app*/index.html "$OUT"/builder_app*/index.html "$OUT"/decoherence_app*/index.html "$OUT"/weight_split_app*/index.html <<'PYPATCH'
+python3 - "$OUT"/quantish_app*/index.html "$OUT"/double_slit_app*/index.html "$OUT"/builder_app*/index.html "$OUT"/decoherence_app*/index.html "$OUT"/weight_split_app*/index.html "$OUT"/suite*/index.html <<'PYPATCH'
 import os
 import sys
 for path in sys.argv[1:]:
@@ -63,7 +67,8 @@ for W in "$OUT"/quantish_app/public/wheels "$OUT"/double_slit_app/public/wheels 
          "$OUT"/builder_app/public/wheels "$OUT"/builder_app_edit/public/wheels \
          "$OUT"/quantish_app_edit/public/wheels "$OUT"/double_slit_app_edit/public/wheels \
          "$OUT"/decoherence_app/public/wheels "$OUT"/decoherence_app_edit/public/wheels \
-         "$OUT"/weight_split_app/public/wheels "$OUT"/weight_split_app_edit/public/wheels; do
+         "$OUT"/weight_split_app/public/wheels "$OUT"/weight_split_app_edit/public/wheels \
+         "$OUT"/suite/public/wheels "$OUT"/suite_edit/public/wheels; do
   mkdir -p "$W"
   cp "$WHEEL" "$W/"
   if [ ! -f "$W/addict-2.4.0-py3-none-any.whl" ]; then
@@ -76,8 +81,15 @@ done
 for D in "$OUT"/quantish_app "$OUT"/quantish_app_edit "$OUT"/double_slit_app \
          "$OUT"/double_slit_app_edit "$OUT"/builder_app "$OUT"/builder_app_edit \
          "$OUT"/decoherence_app "$OUT"/decoherence_app_edit \
-         "$OUT"/weight_split_app "$OUT"/weight_split_app_edit; do
+         "$OUT"/weight_split_app "$OUT"/weight_split_app_edit \
+         "$OUT"/suite "$OUT"/suite_edit; do
   echo "$VERSION_JSON" > "$D/public/version.json"
+done
+# the suite embeds the five notebooks: it fetches them from its page
+for D in "$OUT"/suite "$OUT"/suite_edit; do
+  mkdir -p "$D/public/notebooks"
+  cp notebooks/weight_split_app.py notebooks/double_slit_app.py notebooks/quantish_app.py \
+     notebooks/network_builder_app.py notebooks/decoherence_app.py "$D/public/notebooks/"
 done
 echo "$VERSION_JSON" > "$OUT/version.json"
 
@@ -110,7 +122,7 @@ payload = json.dumps(models)
 for app_dir in ('quantish_app', 'quantish_app_edit', 'builder_app',
                 'builder_app_edit', 'double_slit_app',
                 'double_slit_app_edit', 'decoherence_app',
-                'decoherence_app_edit'):
+                'decoherence_app_edit', 'suite', 'suite_edit'):
     (out / app_dir / 'public' / 'models.json').write_text(payload)
 print(f'bundled {len(models)} model files')
 PYEOF
@@ -145,6 +157,14 @@ cat > "$OUT/index.html" <<'HTML'
      run everything in
      your browser. The first visit downloads the Python runtime
      and may take a minute or two. Subsequent visits should start much more quickly.</p>
+  <a class="app" href="suite/">
+    <b>The suite</b><br>
+    Every app below on one page, in one running kernel, under tabs: a
+    model built in the network builder opens in the quantish app and the
+    decoherence lab, and a gate clicked in a run opens in the Weight-split
+    Explorer. Each tab keeps its state while you visit the others. One
+    download serves all of them, so the first load is the longest.
+  </a>
   <a class="app" href="weight_split_app/">
     <b>Weight-split Explorer</b><br>
     What one quantish Fredkin gate does to a weight: the four-way split at any
@@ -190,7 +210,8 @@ cat > "$OUT/index.html" <<'HTML'
      re-run cells. Edits run entirely in your browser and affect
      only your copy. Reload to start fresh, or use the editor's
      download button to keep your changes.</p>
-  <p><a href="weight_split_app_edit/">Weight-split Explorer (editable)</a> &middot;
+  <p><a href="suite_edit/">The suite (editable)</a> &middot;
+     <a href="weight_split_app_edit/">Weight-split Explorer (editable)</a> &middot;
      <a href="double_slit_app_edit/">Double-slit app (editable)</a> &middot;
      <a href="quantish_app_edit/">Quantish app (editable)</a> &middot;
      <a href="builder_app_edit/">Network builder (editable)</a> &middot;
@@ -222,6 +243,7 @@ Serves the app directory over HTTP. One server covers both apps:
     http://<host>:<port>/builder_app/       the network builder
     http://<host>:<port>/decoherence_app/   the decoherence lab
     http://<host>:<port>/weight_split_app/  the weight-split explorer
+    http://<host>:<port>/suite/             all of them as one app
     (plus the *_edit/ variants: the same notebooks in the in-browser
     editor)
 
@@ -275,6 +297,7 @@ echo "  double-slit app: http://localhost:$PORT/double_slit_app/"
 echo "  network builder: http://localhost:$PORT/builder_app/"
 echo "  decoherence lab: http://localhost:$PORT/decoherence_app/"
 echo "  weight split:    http://localhost:$PORT/weight_split_app/"
+echo "  the suite:       http://localhost:$PORT/suite/"
 exec python3 -m http.server --directory "$DIR" "$PORT"
 SH
 chmod +x "$OUT/serve.sh"
@@ -288,9 +311,9 @@ then open  http://<host>:<port>/  in a browser: the root is a landing
 page linking to the quantish app (quantish_app/), the double-slit app
 (double_slit_app/), the network builder (builder_app/), the decoherence
 lab (decoherence_app/), the weight-split explorer (weight_split_app/),
-and editable-notebook variants of all five (quantish_app_edit/,
-double_slit_app_edit/, builder_app_edit/, decoherence_app_edit/,
-weight_split_app_edit/). Edits run entirely in the
+all five as pages of one app (suite/), and editable-notebook variants
+of each (quantish_app_edit/, double_slit_app_edit/, builder_app_edit/,
+decoherence_app_edit/, weight_split_app_edit/, suite_edit/). Edits run entirely in the
 visitor's browser and affect only their own copy.
 
 Notes:

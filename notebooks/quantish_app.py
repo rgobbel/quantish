@@ -167,17 +167,79 @@ def _(
 
     _s0 = qa_sim if qa_sim is not None else qa_sim_model
     _cap = getattr(_s0, 'caption', '') or ''
+    # the widget is a cell global so its `picked` gate comes back
+    qa_diagram = _native()
     mo.vstack(
         [
             mo.md(f'**{_s0.title}**' + (f' — {_cap}' if _cap else '')),
-            _native(),
+            qa_diagram,
             mo.md('_Scroll or pinch to zoom, drag to pan, double-click '
                   '(double-tap) to reset; drag the frame\'s bottom-right '
                   'corner to make room; after a run, hover over or tap '
-                  'a port for its values._'),
+                  'a port for its values, or click a gate\'s frame to open '
+                  'its split in the Weight-split Explorer._'),
         ] +
         ([mo.hstack([qa_show_values], justify='start')]
          if qa_sim is not None else []), align='stretch')
+    return (qa_diagram,)
+
+
+@app.cell(hide_code=True)
+def _():
+    # True when this notebook runs embedded in the suite (the suite
+    # overrides it): the explorer is then a page of the same app
+    qa_suite = False
+    return (qa_suite,)
+
+
+@app.cell(hide_code=True)
+def _():
+    # a model sent from the network builder — None on its own; the
+    # suite passes the builder's slot in
+    qa_model_in = None
+    return (qa_model_in,)
+
+
+@app.cell(hide_code=True)
+def _(qa_last_collection_set, qa_last_models_get, qa_last_models_set, qa_model_in):
+    # a sent model opens as the current selection, the way an upload
+    # does: it is already saved in the `uploads` collection
+    if qa_model_in is not None:
+        qa_last_models_set({**qa_last_models_get(), 'uploads': qa_model_in.file})
+        qa_last_collection_set('uploads')
+
+
+@app.cell(hide_code=True)
+def _(ExplorerSeed, WASM_MODE, explorer_url, mo, qa_diagram, qa_sim, qa_suite):
+    # a gate picked on the diagram after a run: its angle and the weight
+    # arriving on its switch wires, handed to the Weight-split Explorer
+    # (in the suite: its tab; on the site: the page next door, by its
+    # query string; from the repo the values are shown to carry over)
+    def _():
+        _picked = (getattr(qa_diagram, 'value', None) or {}).get('picked')
+        if not _picked or qa_sim is None:
+            return None, None
+        _seed = ExplorerSeed.from_run(qa_sim, _picked)
+        if _seed is None:
+            return None, mo.md(f'_{_picked}: nothing arrives on its switch wires to split_')
+        _mine = (_seed.particle, 1 if _seed.plus_sign else -1)
+        _others = [f'{p} ({"+" if sg > 0 else "−"})' for p, sg in _seed.arrivals
+                   if (p, sg) != _mine]
+        _more = f' — also arriving: {", ".join(_others)}' if _others else ''
+        if qa_suite:
+            _link = 'open the **Weight-split Explorer** tab'
+        elif WASM_MODE:
+            _link = f'[open in the Weight-split Explorer ↗]({explorer_url(_seed)})'
+        else:
+            _link = ('set these on the Weight-split Explorer (`marimo run '
+                     'notebooks/weight_split_app.py`)')
+        return _seed, mo.md(f'<span style="font-size: 0.9em">**{_seed.describe()}**'
+                            f'{_more} · {_link}</span>')
+
+    # qa_seed: the picked gate's split, None until one is picked
+    qa_seed, _note = _()
+    _note  # noqa: B018 — the cell's output
+    return (qa_seed,)
 
 
 @app.cell(hide_code=True)
@@ -880,6 +942,7 @@ async def initialization():
     )
     from quantish.apps.epr_ui import epr_angle_entries, epr_report
     from quantish.apps.results import detailed_results
+    from quantish.apps.session import ExplorerSeed, explorer_url
     from quantish.apps.run import (
         angle_entries,
         angle_sliders,
@@ -928,7 +991,9 @@ async def initialization():
     QA_EDITOR_UI = editor_ui(_wasm_editor) if WASM_MODE else editor_ui()
     return (
         DiagramWidget,
+        ExplorerSeed,
         NetworkGraphWidget,
+        explorer_url,
         QA_EDITOR_UI,
         MODELS_TOP,
         NetworkGraph,

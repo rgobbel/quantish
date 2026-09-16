@@ -123,6 +123,16 @@ and as numbers:
 ```bash
 uv run marimo run notebooks/weight_split_app.py
 ```
+All five apps also run as the tabs of one notebook, the suite, in one
+kernel: a model built in the network builder is *sent* to the quantish
+app and the decoherence lab, and a gate clicked in a run opens in the
+Weight-split Explorer. Its stylesheet is the two apps' joined (the site
+build writes it):
+
+```bash
+cat notebooks/css/quantish_app.css notebooks/css/double_slit_app.css > notebooks/css/quantish_suite_app.css
+uv run marimo run notebooks/quantish_suite_app.py
+```
 Any of these notebooks can also be run using `marimo edit` in place of `marimo run`, to allow viewing and editing of the code.
 
 ## Browser-only builds (WebAssembly)
@@ -143,8 +153,8 @@ tools/build_wasm_app.sh . /path/to/output-dir
 The script builds a wheel of the `quantish` package, exports the
 notebooks with `marimo export html-wasm`, and bundles the wheels and the
 model library into the output. The apps land in `quantish_app/`,
-`double_slit_app/`, `decoherence_app/`, `builder_app/` and
-`weight_split_app/`, with a landing
+`double_slit_app/`, `decoherence_app/`, `builder_app/`,
+`weight_split_app/` and `suite/`, with a landing
 page at the site root linking to all of them. The output includes a
 small `serve.sh`; to try it locally:
 

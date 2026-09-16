@@ -46,10 +46,12 @@ async def initialization():
         explorer_controls,
         explorer_view,
     )
+    from quantish.apps.session import ExplorerSeed
 
     init_engine()
     return (
         EXPLANATION,
+        ExplorerSeed,
         build_stamp,
         chart_selection,
         explorer_controls,
@@ -74,12 +76,32 @@ async def _(build_stamp, stamp_html):
 
 
 @app.cell(hide_code=True)
-def _(explorer_controls, mo):
-    ws_controls = explorer_controls()
+def _():
+    # a gate out of a run, handed in by the suite (the quantish app's
+    # picked gate); None on its own
+    ws_seed_in = None
+    return (ws_seed_in,)
+
+
+@app.cell(hide_code=True)
+def _(ExplorerSeed, mo, ws_seed_in):
+    # a gate out of a run: the suite's, else one handed over in the
+    # page's query string by the quantish app's "open in the explorer"
+    # link; None when the page opened on its own
+    ws_seed = ws_seed_in or ExplorerSeed.from_query(mo.query_params())
+    return (ws_seed,)
+
+
+@app.cell(hide_code=True)
+def _(explorer_controls, mo, ws_seed):
+    ws_controls = explorer_controls(ws_seed.as_controls() if ws_seed else None)
     # the chart's mouse selection, persisted across parameter changes
     # (the chart is rebuilt on every slider move and reseeded from here)
     ws_sel_get, ws_sel_set = mo.state(())
-    mo.hstack(list(ws_controls.elements.values()), wrap=True)
+    mo.vstack(
+        ([mo.md(f'<span style="font-size: 0.9em">opened on **{ws_seed.describe()}**'
+                '</span>')] if ws_seed else [])
+        + [mo.hstack(list(ws_controls.elements.values()), wrap=True)], align='stretch')
     return ws_controls, ws_sel_get, ws_sel_set
 
 

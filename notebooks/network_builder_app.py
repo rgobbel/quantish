@@ -63,6 +63,7 @@ async def initialization():
         run_sweep,
         status_view,
     )
+    from quantish.apps.session import ModelSlot
     from quantish.apps.common import (
         MODELS_TOP,
         WASM_MODE,
@@ -97,6 +98,7 @@ async def initialization():
         BuilderWidget,
         DiagramWidget,
         MODE_LABELS,
+        ModelSlot,
         NetworkGraph,
         NetworkGraphWidget,
         WASM_MODE,
@@ -271,6 +273,7 @@ def _(
     mo,
     nb_model_paths,
     nb_sections,
+    nb_suite,
 ):
     # the File row, in the spirit of a Mac File menu: New, Open a
     # predefined model, Upload one, Save into the local models
@@ -283,6 +286,11 @@ def _(
     nb_save_btn = mo.ui.run_button(label='💾 save',
                                 disabled=(nb_builder_config is None
                                           or not nb_model_paths))
+    # send: the model into the `uploads` collection the quantish app and
+    # the decoherence lab read (from the repo: a rescan there finds it;
+    # in the browser each page has its own files, so download instead)
+    nb_send_btn = mo.ui.run_button(label='⇢ send to the apps',
+                                   disabled=nb_builder_config is None)
     _download = (
         mo.download(data=config_to_yaml(nb_builder_config,
                                         raw_sections=nb_sections).encode(),
@@ -292,8 +300,10 @@ def _(
         else mo.ui.run_button(label='⬇ download', disabled=True))
     mo.hstack([mo.md('**File:**'), nb_new_btn, nb_open_btn, nb_upload_btn]
               + ([] if WASM_MODE else [nb_save_btn])
-              + [_download], justify='start', gap=0.75, wrap=True)
-    return nb_new_btn, nb_open_btn, nb_save_btn, nb_upload_btn
+              + [_download]
+              + ([nb_send_btn] if nb_suite or not WASM_MODE else []),
+              justify='start', gap=0.75, wrap=True)
+    return nb_new_btn, nb_open_btn, nb_save_btn, nb_send_btn, nb_upload_btn
 
 
 @app.cell(hide_code=True)
@@ -441,6 +451,38 @@ def _(
 
 
 @app.cell(hide_code=True)
+def _():
+    # True when this notebook runs embedded in the suite (the suite
+    # overrides it): the sent model then opens in the other tabs
+    nb_suite = False
+    return (nb_suite,)
+
+
+@app.cell(hide_code=True)
+def _(MODELS_TOP, mo, nb_send_btn, nb_slot, nb_suite):
+    # send writes the slot into the shared `uploads` collection; nb_sent
+    # is the slot last sent (None before any) — what the suite hands to
+    # the quantish app and the lab
+    def _():
+        if not (nb_send_btn.value and nb_slot):
+            return None, None
+        try:
+            dest = nb_slot.save(MODELS_TOP)
+        except Exception as exc:  # noqa: BLE001 — show, don't crash the app
+            return None, mo.md(f'**could not send** — {exc}')
+        if nb_suite:
+            return nb_slot, mo.md('<span style="font-size: 0.9em">sent — the quantish app '
+                                  'and the decoherence lab open it: see their tabs</span>')
+        return nb_slot, mo.md('<span style="font-size: 0.9em">sent as '
+                              f'**{dest}** — rescan the models in the quantish app or the '
+                              'decoherence lab to open it</span>')
+
+    nb_sent, _note = _()
+    _note  # noqa: B018 — the cell's output
+    return (nb_sent,)
+
+
+@app.cell(hide_code=True)
 def _(MODE_LABELS, nb_get_loaded, loaded_report, mo, vars_text):
     # the model's whole header is editable: title (into the YAML) and
     # file name (of the saved file) are separate; caption, variables,
@@ -533,10 +575,12 @@ def _(
     nb_loaded_extras_text,
     nb_mode_pick,
     nb_model_title,
+    ModelSlot,
     nb_model_vars,
     nb_notes_input,
     raw_sections,
     status_view,
+    nb_file_name,
     nb_sweep_cfg,
     nb_switch_off,
     nb_switch_off_particles,
@@ -560,7 +604,10 @@ def _(
     # what the save writes verbatim
     nb_sections = raw_sections(nb_loaded_extras_text, nb_model_vars, nb_variables_editor.value)
     status_view(_graph, problems, nb_builder_config)
-    return nb_builder_config, nb_sections
+    # the model as a value the other apps take (see quantish.apps.session)
+    nb_slot = (ModelSlot.from_builder(nb_builder_config, nb_sections, nb_file_name.value)
+               if nb_builder_config is not None else None)
+    return nb_builder_config, nb_sections, nb_slot
 
 @app.cell(hide_code=True)
 def _(nb_builder, nb_loaded_extras, nb_model_vars, sweep_controls, nb_sweep_memory):
