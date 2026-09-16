@@ -178,7 +178,14 @@ def test_the_diagram_crosses_out_what_is_off():
     from quantish.diagram_layout import DISABLED_FILL, diagram_geometry
     spec = ScreenSpec.load('decoherence/double_slit_tunable')
     geom = diagram_geometry(spec.simulation({}), disabled=('g_obs',), absent=('p2',))
-    assert len(geom['marks']) == 4            # two lines per X, a gate and a particle
+    # two lines per X (a gate and a particle) plus one line per wire
+    # of the switched-off gate that is fed in and linked onward
+    sim = spec.simulation({})
+    fed = set(sim.links.values())
+    thru = [w for w in ('control', 'upper', 'lower')
+            if f'g_obs.{w}' in fed and f'g_obs.{w}' in sim.links]
+    assert thru
+    assert len(geom['marks']) == 4 + len(thru)
     assert sum(b['fill'] == DISABLED_FILL for b in geom['boxes']) >= 6   # frame, ports, blob
     assert diagram_geometry(spec.simulation({}))['marks'] == []
 

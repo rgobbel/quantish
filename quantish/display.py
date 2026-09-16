@@ -395,3 +395,81 @@ def pos_value_str(sim, pos):
     if not amps:
         return None
     return '\n'.join(amp_value_str(sim, p, amps[p]) for p in sorted(amps))
+
+
+# --- weights and probabilities as text, the apps' shared formatting ---
+
+def latex_weight(w, prec=3, max_len=MAX_SYMBOLIC_LEN) -> str:
+    """A weight for a table: in Symbolic mode the exact expression as
+    LaTeX — unless its plain-text form is longer than max_len
+    characters (the sym_or_float policy: complex models and awkward
+    inputs produce unreadably long expressions, which fall back to the
+    numeric form); otherwise always the full pair re±im·i at exactly
+    prec decimals (0 is 0.000+0.000i), so every weight in a column has
+    the same shape and right-aligned cells line their decimal points
+    up. No forced leading '+' on the real part — that would read as a
+    particle sign; the sign between the parts is the imaginary part's."""
+    if qn.CalcMode.default() == 'Symbolic' and qn.isq(w):
+        # sympy's simplify can choke on an odd but valid expression:
+        # the unsimplified form is still exact and still symbolic
+        try:
+            expr = qn.simplify(w)
+        except Exception:  # noqa: BLE001 — keep the exact form
+            expr = w
+        if len(qn.sym_text(expr)) <= max_len and not qn.inexact(expr):
+            return qn.latex(expr)
+    wc = complex(w)
+    real = 0.0 if abs(wc.real) < 1e-12 else wc.real     # no '-0.000'
+    imag = 0.0 if abs(wc.imag) < 1e-12 else wc.imag
+    return f'{real:.{prec}f}{imag:+.{prec}f}i'
+
+
+def math_weight(w, prec=3) -> str:
+    """latex_weight wrapped as inline math. Whitespace is normalized
+    because markdown doesn't recognize '$ x$' (leading space) as math —
+    symbolic LaTeX often leads with '- \\frac{...}'."""
+    return f'${" ".join(latex_weight(w, prec).split())}$'
+
+
+def math_prob(pr, prec=4, max_len=MAX_SYMBOLIC_LEN) -> str:
+    """A probability as inline math: the exact form in Symbolic mode
+    when it is short (9/16), the fixed-precision float otherwise."""
+    if qn.CalcMode.default() == 'Symbolic' and qn.isq(pr):
+        try:
+            expr = qn.simplify(pr)
+        except Exception:  # noqa: BLE001 — keep the exact form
+            expr = pr
+        if len(qn.sym_text(expr)) <= max_len and not qn.inexact(expr):
+            return f'${qn.latex(expr)}$'
+    return f'${float(pr):.{prec}f}$'
+
+
+def phase_deg(w) -> float:
+    """A weight's phase in degrees, (-180, 180]."""
+    return cmath.phase(complex(w)) * 180.0 / cmath.pi
+
+
+def inexact_note(sim) -> str:
+    """Symbolic mode with inputs that cannot be exact: say so, gently
+    (an HTML line for under the run button), or '' when all is exact."""
+    bad = sim.inexact_inputs()
+    if not bad:
+        return ''
+    return ('<br><span style="color: #b00020">⚠ Symbolic mode, but '
+            + ', '.join(bad) + (' is' if len(bad) == 1 else ' are')
+            + ' not exact (a floating-point or long decimal '
+            'value), so these results carry floating point.</span>')
+
+
+def md_table(headers, rows) -> str:
+    """A Markdown table. NB: markdown needs a blank line before a
+    table, and a literal '|' inside a cell (configuration-space point
+    keys use it as a separator) must be escaped or it reads as a column
+    break."""
+    def cell(c):
+        return str(c).replace('|', r'\|')
+    lines = ['',
+             '| ' + ' | '.join(headers) + ' |',
+             '|' + '|'.join(['---'] * len(headers)) + '|']
+    lines += ['| ' + ' | '.join(cell(c) for c in row) + ' |' for row in rows]
+    return '\n'.join(lines)

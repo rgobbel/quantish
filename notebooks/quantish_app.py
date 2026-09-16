@@ -39,23 +39,10 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-async def build_stamp(mo, sys):
-    # Which build is this? The site build (tools/build_wasm_app.sh)
-    # writes public/version.json beside the page; a development copy
-    # says so instead.
-    _stamp = 'development copy'
-    if sys.platform == 'emscripten':
-        try:
-            import json as _json
-
-            from pyodide.http import pyfetch as _pyfetch
-            _v = _json.loads(await (await _pyfetch(
-                f'{mo.notebook_location()}/public/version.json')).string())
-            _stamp = f"build {_v['build']} · {_v['built_at']}"
-        except Exception:  # noqa: BLE001 — an unstamped site shows nothing
-            _stamp = ''
-    mo.md(f'<span style="font-size: 0.8em; color: #444">{_stamp}</span>') \
-        if _stamp else None
+async def _(build_stamp, stamp_html):
+    # which build is this? (the site build writes public/version.json
+    # beside the page; a development copy says so instead)
+    stamp_html(await build_stamp())
 
 
 @app.cell(hide_code=True)
@@ -195,14 +182,14 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(build_sim, inexact_note, mo, mode_pick, model_pick, run_btn, run_problem, sim_model):
+def _(inexact_note, mo, mode_pick, model_pick, new_sim, run_btn, run_problem, sim_model):
     # Gated on the button. Rather than mo.stop (whose descendants all
     # display "this cell wasn't run because an ancestor was stopped"),
     # sim is None until the button is pressed, and each results cell
     # silently renders nothing while it is.
     def _():
         try:
-            run = build_sim()
+            run = new_sim()
             run.run()
             return run
         except Exception as exc:  # noqa: BLE001 — old-format models raise all sorts
@@ -277,20 +264,15 @@ def _(particle_names_model, switch_off):
 
 
 @app.cell(hide_code=True)
-def _(gate_names, mo, off_memory, particle_names_model, plate_names_model):
+def _(gate_names, off_memory, particle_names_model, plate_names_model, switch_off_boxes):
     # switch off for the run: a gate or phase plate goes inert (a plain
     # wire), a particle absent (a null input) — the quick way to try a
     # configuration without editing the model
-    def _remember(key):
-        def cb(v):
-            off_memory[key] = bool(v)
-        return cb
-
-    switch_off = mo.ui.dictionary({
-        key: mo.ui.checkbox(value=off_memory.get(key, True), label=name,
-                            on_change=_remember(key))
-        for key, name in ([(f'g:{n}', n) for n in gate_names + plate_names_model]
-                          + [(f'p:{n}', n) for n in particle_names_model])})
+    # a gate's box sits after its name in its slider row, so it is bare;
+    # the phase plates' and particles' boxes carry their names
+    switch_off = switch_off_boxes(off_memory, gate_names + plate_names_model,
+                                  particle_names_model,
+                                  gate_label=lambda n: '' if n in gate_names else n)
     return (switch_off,)
 
 
@@ -352,11 +334,16 @@ def _(
     """)
 
     def _():
-        # each gate's row: its slider, its text entry, and its on/off
-        # box (unchecked, the gate is a plain wire for the run)
-        rows = [mo.hstack([angle_slider_elems[g], angle_text_elems[g],
-                           switch_off.elements[f'g:{g}']],
-                          widths=[5, 1, 1], align='center', wrap=True)
+        # each gate's row: its name with its on/off box (unchecked, the
+        # gate is a plain wire for the run and its controls go gray),
+        # its slider, and its text entry
+        # a label column (name and box, right-aligned, so the box sits
+        # against the slider and the column's slack is before the
+        # name), the slider, and the entry
+        rows = [mo.hstack([mo.hstack([mo.md(f'**{g}**'), switch_off.elements[f'g:{g}']],
+                                     justify='end', align='center', gap=0.5),
+                           angle_slider_elems[g], angle_text_elems[g]],
+                          widths=[1, 6, 1], align='center', gap=0.75)
                 for g in gate_names]
         # the model's caption (typically the book figure's) is Markdown
         # and passes through verbatim — no added styling
@@ -371,7 +358,7 @@ def _(
                   "expression (`pi/8`, `rad(30)`, `acos(4/5)`)."),
             mo.hstack([mode_pick, units_pick], wrap=True, justify='start', gap=2),
             mo.vstack(rows),
-            mo.md("**Switch off**: uncheck a gate (the box beside its slider) "
+            mo.md("**Switch off**: uncheck a gate (the box after its name) "
                   "to make it a plain wire that every particle passes straight "
                   "through, a particle to leave it out of the run (a null "
                   "input); the diagram grays and crosses out whatever is off."),
@@ -402,369 +389,68 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(
-    short_label,
-    GatePort,
-    coord_sort_key,
-    cs_point_sort_key,
-    gate_io,
-    html_table,
-    math_prob,
-    math_weight,
-    md_cell,
-    md_table,
-    mo,
-    particle_names,
-    particle_tokens,
-    phase_deg,
-    qn,
-    sim,
-):
+def _(detailed_results, mo, sim):
     mo.stop(sim is None)  # nothing to show until ▶ Run
-
-    # All the detailed-results subsections live under one outer
-    # accordion; each keeps its own inner accordion, so a reader can
-    # open the section and then just the tables they care about.
-
-    def _evolution_table():
-        # Tabular twin of the weight-evolution graph: per stage, one row per
-        # parent→child branch — the input configuration-space point and its weight, the
-        # per-particle components the gate applied (cos²θ, ±i·sinθcosθ, sin²θ),
-        # the branch amplitude, and the output configuration-space point's total weight. Where
-        # branch w ≠ point w, interfering branches merged into that configuration-space point.
-        pnames = particle_names(sim)
-
-        def label(p):
-            # one cell per particle (particle-name order), each the
-            # abbreviated position; the header names the particle
-            return [f'`{tok}`' for _, tok in particle_tokens(sim, p)]
-
-        # the product sign, in a math serif so it doesn't read as a
-        # gateway glyph, with the explanation on hover
-        _prod = ('<span title="the product of this branch&#39;s '
-                 'per-particle components, shown as one multiplier: a '
-                 'merged configuration-space point stores only its '
-                 'first branch&#39;s per-particle components" '
-                 'style="font-family: STIXTwoMath, STIXGeneral, '
-                 '\'Cambria Math\', \'Times New Roman\', serif">'
-                 '∏</span>')
-
-        def particle_cell(w, parent, contrib):
-            # A merged configuration-space point stores only its FIRST branch's per-particle
-            # components; for other branches show just the branch's overall
-            # multiplier ∏ (recovered as branch w / input w).
-            facts = {name: f for name, f in w.particles.items() if f is not None}
-            try:
-                expected = complex(parent.weight)
-                for f in facts.values():
-                    expected *= complex(f)
-                stored_ok = abs(expected - complex(contrib)) < 1e-9
-            except (TypeError, ValueError):
-                stored_ok = True  # symbolic with free symbols: trust the stored components
-            if stored_ok:
-                return '<br>'.join(f'{name}: {math_weight(f)}'
-                                   for name, f in facts.items()) or '—'
-            try:
-                return (f'{_prod}: '
-                        f'{math_weight(complex(contrib) / complex(parent.weight))}')
-            except (TypeError, ValueError, ZeroDivisionError):
-                return f'{_prod}: ?'
-
-        def controlled_gates(cs_point, stage):
-            # per-configuration-space point positional check, as in the engine
-            return [g for g in stage
-                    if any(c.position.endpoint == GatePort(g, 'control')
-                           for c in cs_point.coords.values())]
-
-        def control_header(stage, parents):
-            # per-gate control occupancy: source port and merged Pr, the
-            # same summary the debug log's CONTROL suffix shows
-            parts = []
-            for g in stage:
-                amp, source = None, None
-                for w in parents:
-                    for c in w.coords.values():
-                        if c.position.endpoint == GatePort(g, 'control'):
-                            amp = w.weight if amp is None else amp + w.weight
-                            source = c.position.origin or c.name
-                if amp is not None:
-                    pr = qn.to_float(qn.probability(amp))
-                    parts.append(f'`{source}` → {g}, Pr {pr:.2f}')
-            return 'control: ' + (', '.join(parts) if parts else '∅')
-
-        by_step = {}
-        for pt in sim.all_points.index.values():
-            by_step.setdefault(pt.step, []).append(pt)
-        sections = {}
-        for step in sorted(by_step):
-            points = sorted(by_step[step], key=lambda p: cs_point_sort_key(sim, p))
-            if step == 0:
-                sections['Step 0 — initial configuration-space point'] = mo.md(html_table(
-                    [('configuration-space point', pnames), ('weight $w$', None)],
-                    [label(w) + [math_weight(w.weight)] for w in points], md_cell))
-                continue
-            stage = sim.run_stages[step - 1]
-            parents = by_step.get(step - 1, [])
-            rows = []
-            n = len(pnames)
-            for w in points:
-                out_label = label(w)
-                if w.canceled:
-                    out_label = out_label[:-1] + [out_label[-1] + ' _(canceled)_']
-                branches = sorted(w.contributions.items(),
-                                  key=lambda kv: cs_point_sort_key(sim, kv[0]))
-                if len(branches) == 1:
-                    parent, contrib = branches[0]
-                    rows.append(label(parent) + [
-                                 ', '.join(controlled_gates(parent, stage)) or '∅',
-                                 math_weight(parent.weight),
-                                 particle_cell(w, parent, contrib),
-                                 math_weight(contrib)] + out_label + [
-                                 math_weight(w.weight)])
-                    continue
-                # a merged output: its weight belongs to the SUM of the
-                # branches, not to each branch — blank the output columns
-                # on branch rows and close the group with a merged row
-                # showing the addition
-                for parent, contrib in branches:
-                    rows.append(label(parent) + [
-                                 ', '.join(controlled_gates(parent, stage)) or '∅',
-                                 math_weight(parent.weight),
-                                 particle_cell(w, parent, contrib),
-                                 math_weight(contrib), ('', n), ''])
-                rows.append([('**merged**', n), '', '', '',
-                             ' '.join(math_weight(c) for _, c in branches)]
-                            + out_label + [math_weight(w.weight)])
-            total = qn.to_float(sum(w.probability for w in points
-                                    if not w.canceled))
-            # md_table needs a blank line before it; its output starts
-            # with one newline, so add the other after the header text
-            sections[f'Step {step} — {", ".join(stage)}'] = mo.md(
-                control_header(stage, parents) + '\n\n' +
-                html_table([('input configuration-space point', pnames),
-                            ('control', None), ('$w_{in}$', None),
-                            ('particles', None), ('branch $w$', None),
-                            ('output configuration-space point', pnames),
-                            ('$w_{out}$', None)], rows, md_cell) +
-                f'\n\ntotal probability after step: {total:.6f}')
-        return mo.accordion({'### Weight evolution table (configuration-space points)':
-                             mo.accordion(sections, multiple=True, lazy=True)})
-
-    def _final_points():
-        # Worlds sorted canonically: gate (in evaluation order), then port
-        # (upper before lower), then sign (+ before −); the configuration
-        # label's coordinates are reordered to match.
-        # weights and probabilities at one fixed precision (three
-        # decimals); the phase is an angle, which gets at most two
-        rows = [[f'`{tok}`' for _, tok in particle_tokens(sim, p)] + [
-            math_weight(p.weight, prec=3),
-            math_prob(p.probability, prec=3),
-            f'${phase_deg(p.weight):.2f}º$',
-        ] for p in sorted(sim.result_space.index.values(),
-                          key=lambda p: cs_point_sort_key(sim, p))]
-        return mo.accordion({'### Final configuration-space points\n': mo.md(html_table(
-            [('configuration', particle_names(sim)), ('weight $w$', None),
-             (r'$\lvert w\rvert^2$', None), ('phase', None)], rows, md_cell))})
-
-    def _marginals():
-        # Marginal in the statistics sense: each row sums |w|² over every
-        # final configuration-space point containing that coordinate — the chance of finding that
-        # particle, with that sign, at that port, regardless of where the
-        # other particles ended up. Rows follow gate evaluation order (upper
-        # before lower, + before −), so a port's +/− pair sits together and
-        # sums to the port's total output probability.
-        acc = {}
-        for p in sim.result_space.index.values():
-            prob = float(p.probability)
-            for coord in p.coords.values():
-                entry = acc.setdefault(f'{coord.pkey}@{coord.position.origin}',
-                                       [coord, 0.0])
-                entry[1] += prob
-        rows = [(f'`{key}`', f'{entry[1]:.4f}')
-                for key, entry in sorted(acc.items(),
-                                         key=lambda kv: coord_sort_key(sim, kv[1][0]))]
-        return mo.accordion({
-            '### Marginal probabilities (one coordinate at a time)':
-                mo.md(r'Each row sums $\lvert w\rvert^2$ over every final configuration-space point '
-                      'in which that particle, with that sign, sits at that '
-                      'port — its probability there *regardless of where the '
-                      'other particles ended up* (the marginal over the rest '
-                      "of the configuration). The +/− rows at one port "
-                      "together give the port's total output probability.\n" +
-                      md_table(['coordinate', 'probability'], rows))
-        })
-
-    def _gate_io_table():
-        # Per-step gate traffic: what arrived at each port (previous step's
-        # coordinate endpoints) and what left it (that step's origins), with
-        # per-sign probabilities and the aggregate Σ (|Σ|² and phase).
-        rows = [(row['step'], row['gate'], row['port'],
-                 row['input'].replace('\n', '<br>'),
-                 row['output'].replace('\n', '<br>'))
-                for row in gate_io(sim)]
-        return mo.accordion({
-            '### Gate inputs and outputs by step':
-                mo.md(md_table(['step', 'gate', 'port', 'input', 'output'], rows))
-        })
-
-    mo.accordion({'## Detailed Results\n\n<span style="font-size:0.85em">Numerical simulation results</span>': mo.vstack([
-        _evolution_table(),
-        _final_points(),
-        _marginals(),
-        _gate_io_table(),
-    ])})
+    # the detailed-results subsections (quantish.apps.results), each
+    # in its own accordion under one outer one
+    detailed_results(sim)
 
 
 @app.cell(hide_code=True)
 def _(
-    short_label,
-    coord_sort_key,
     SAMPLER_LABELS,
-    html_table,
     mc_button,
     mc_cancel,
     mc_job_slot,
     mc_modes,
+    mc_note,
     mc_seed,
     mc_tick_get,
     mc_trials,
     mc_trials_text,
     mo,
-    particle_names,
-    particle_tokens,
     picked_modes,
+    progress_view,
     projection,
+    results_view,
+    sampling_explanation,
     sampling_seconds,
     sim,
+    trial_count,
 ):
     mc_button      # noqa: B018 — re-render when a job starts
     mc_tick_get()  # ...and on every worker chunk and at completion
-    _explanation = mo.md(r"""
-    The engine always computes the whole wave: every final
-    configuration-space point with its exact weight. Sampling asks what
-    a **single run** of the experiment looks like. Each trial makes one
-    random draw, whose rule is the interpretation; tallying many trials
-    gives observed frequencies that converge on the exact probabilities
-    as the trial count grows, with a spread of about $1/\sqrt{n}$ from
-    the finite count — the *sampling noise*. Two interpretations of the
-    same wave are offered here:
-
-    - **Terminal (Everett).** *One trial:* one final configuration-space
-      point is drawn from the evolved superposition, with probability
-      $\lvert w\rvert^2$ — "which branch am I in". Converges to the
-      exact probabilities. The faithful simulation of a real experiment:
-      interference stays intact until the observation at the end.
-    - **Pilot wave (Bohm, nonlocal).** *One trial:* one actual
-      configuration starts at the initial configuration-space point
-      and advances one stage at a time. At each stage its next point
-      is drawn from transition probabilities fitted to the wave, so
-      that over many trials the configurations are distributed as
-      $\lvert w\rvert^2$ at every stage. Converges to the exact
-      probabilities, the same as terminal. The difference is that a
-      single trial has one definite configuration at every stage, and
-      the transition probabilities at each stage depend on the whole
-      wave — both branches — which is the model's nonlocality.
-      (Discrete pilot-wave dynamics are not unique; this is the
-      maximum-entropy coupling on the graph's edges, in the stochastic
-      form of Bell 1984 / Vink 1993.)
-
-    A third model, Bell's local hidden-variable example, samples no
-    wave at all; it belongs to the EPR section below, where the
-    comparison is the point.
-    """)
-    # .tight-list (css/quantish_app.css): the list follows its lead-in
-    _explanation = mo.Html('<div class="tight-list">' + _explanation.text
-                           + '</div>')
 
     def _projection():
         chosen = picked_modes(mc_modes, SAMPLER_LABELS)
         if sim is None or not chosen:
             return mo.md('')
-        try:
-            n = max(1, int(mc_trials_text.value.strip()))
-        except ValueError:
-            n = int(mc_trials.value)
-        return projection(sampling_seconds(sim, chosen, n))
-
-    def _progress(_job):
-        pct = 100 * _job['progress'] / max(1, _job['total'])
-        return mo.hstack([
-            mo.Html(f'<progress value="{_job["progress"]}" '
-                    f'max="{_job["total"]}" '
-                    'style="width: 24em; max-width: 100%">'
-                    '</progress>'),
-            mo.md(f'{pct:.0f}% — {_job["progress"]:,} of '
-                  f'{_job["total"]:,} draws'),
-            mc_cancel,
-        ], justify='start', gap=1, align='center', wrap=True)
-
-    def _results(_job):
-        if _job['error'] is not None:
-            return mo.md(f'**Monte Carlo failed** — `{_job["error"]}`')
-        results = _job['results']
-        job_sim = _job['sim']
-        pred = results['predicted']
-        # compact row labels: one abbreviated position per particle, the
-        # form the final-points table uses, looked up from the terminal
-        # points (raw keys are unreadably long for multi-particle models)
-        pnames = particle_names(job_sim)
-        tokens = {p.key: [tok for _, tok in particle_tokens(job_sim, p)]
-                  for p in job_sim.result_space.index.values()}
-        sections = []
-        if _job['cancel'].is_set():
-            sections.append('_canceled — partial tallies below_')
-        for label, note in (
-                ('terminal', 'Everett — one draw from the final superposition per trial'),
-                ('pilot', 'Bohm — one wave-guided trajectory per trial, nonlocal')):
-            if label not in results:
-                continue
-            n_done = _job['n_done'].get(label, 0)
-            if not n_done:
-                continue
-            tally = results[label]
-            rows = []
-            tvd = 0.0
-            for key in sorted(set(tally) | set(pred), key=lambda k: -pred.get(k, 0)):
-                freq = tally.get(key, 0) / n_done
-                tvd += abs(freq - pred.get(key, 0.0))
-                bare = key.split(':')[0]
-                toks = tokens.get(bare, [bare[:60].replace('|', ' ')] + [''] * (len(pnames) - 1))
-                rows.append([f'<code>{_esc(t)}</code>' for t in toks] + [
-                             str(tally.get(key, 0)),
-                             f'{freq:.4f}', f'{pred.get(key, 0.0):.4f}'])
-            # an HTML table (markdown tables cannot span columns): the
-            # particle columns share the 'point' heading, the two
-            # frequency columns share theirs
-            table = html_table([('configuration-space point', pnames),
-                                ('count', None),
-                                ('frequencies', ['observed', 'analytical'])],
-                               rows)
-            sections.append(f'**{label}** — {note}; {n_done:,} trials, '
-                            f'total variation distance {tvd / 2:.4f}\n\n'
-                            + table)
-        return mo.md('\n\n'.join(sections))
-
-    from html import escape as _esc
+        n = trial_count(mc_trials_text.value, mc_trials.value)
+        return projection(sampling_seconds(sim, chosen, n), n)
 
     def _results_area():
         if sim is None:
             return mo.md('_run the model first (**▶ Run simulation** '
                          'above) to have something to sample_')
         _job = mc_job_slot.get('job')
+        if mc_note is not None:
+            return mc_note
         if _job is None:
             return mo.md('_press **Run Monte Carlo** to sample_')
-        return _progress(_job) if not _job['done'] else _results(_job)
+        return progress_view(_job, mc_cancel) if not _job['done'] else results_view(_job)
 
     mo.accordion({'## Monte Carlo Sampling\n\n<span style="font-size:0.85em">Optional sampled trials on top of the exact run above</span>':
         mo.vstack([
-            _explanation,
-            mo.hstack([mc_trials, mc_trials_text,
+            sampling_explanation(),
+            # the slider's count formatted here (1,000,000), not by the
+            # slider's own show_value, which shows 1e6 at the top step
+            mo.hstack([mc_trials, mo.md(f'{int(mc_trials.value):,}'), mc_trials_text,
                        mo.Html('<div class="mode-boxes">' + mo.hstack(
                            [mo.md('interpretations:'),
                             *mc_modes.elements.values()],
                            gap=0.75, align='center').text + '</div>'),
                        mc_seed, mc_button, _projection()],
-                      wrap=True, align='center'),
+                      justify='start', gap=1, wrap=True, align='center'),
             _results_area(),
         ])})
 
@@ -772,140 +458,71 @@ def _(
 @app.cell(hide_code=True)
 def _(
     SAMPLER_LABELS,
+    WASM_MODE,
     mc_button,
     mc_job_slot,
     mc_modes,
     mc_seed,
-    picked_modes,
     mc_tick_set,
     mc_trials,
     mc_trials_text,
     mo,
+    new_job,
+    picked_modes,
+    run_job,
+    run_job_async,
     sim,
+    trial_count,
 ):
     # Pressing Run starts the sampling in a background thread, chunk by
     # chunk, so the app stays responsive, progress is visible, and
     # Cancel can stop it between chunks (keeping the partial tallies).
-    # Under Pyodide (the WASM export) threads cannot start, so the same
-    # chunked run happens synchronously with marimo's progress bar
-    # instead (no Cancel — closing the tab is the escape hatch). This
-    # cell sits right after the Monte Carlo display cell so that bar
-    # appears under the sampling section, not at the foot of the page.
-    mo.stop(sim is None)
-    if mc_button.value:
-        import sys as _sys
-        import threading
-        import time as _time
-
+    # The display cell depends on mc_note, so it always renders after
+    # this cell: the progress row appears the moment Run is pressed,
+    # not at the worker's first tick.
+    mc_note = None
+    _modes = picked_modes(mc_modes, SAMPLER_LABELS) if sim is not None and mc_button.value else None
+    if _modes == []:
+        mc_note = mo.md('_tick at least one interpretation to sample_')
+    elif _modes:
         _prev = mc_job_slot.get('job')
         if _prev is not None and not _prev['done']:
             _prev['cancel'].set()
-
-        try:  # the text entry, when it parses, overrides the slider
-            _n = max(1, int(mc_trials_text.value.strip()))
-        except ValueError:
-            _n = int(mc_trials.value)
-        _modes = picked_modes(mc_modes, SAMPLER_LABELS)
-        mo.stop(not _modes, mo.md('_tick at least one interpretation to sample_'))
-        _job = {'cancel': threading.Event(), 'done': False,
-                'progress': 0, 'total': _n * len(_modes),
-                'n_trials': _n, 'modes': _modes, 'sim': sim,
-                'results': None, 'n_done': {}, 'error': None}
+        _job = new_job(sim, trial_count(mc_trials_text.value, mc_trials.value), _modes)
         mc_job_slot['job'] = _job
-
-        # Everything the worker touches is bound through parameter
-        # defaults: cell-local names are module globals under marimo's
-        # per-cell mangling, and a rerun of this cell (any control
-        # change) deletes them — a thread still holding them by name
-        # would die with NameError mid-run.
-        def _worker(tick=None, job=_job, job_n=_n, job_sim=sim,
-                    seed=int(mc_seed.value), bump=mc_tick_set,
-                    clock=_time.monotonic):
-            import random
-            from collections import Counter
-
-            from quantish.montecarlo import (
-                pilot_transitions,
-                predicted_distribution,
-                sample_pilot,
-                sample_terminal,
-            )
-            last_bump = 0.0
-            try:
-                rng = random.Random(seed)
-                res = {'predicted':
-                       predicted_distribution(job_sim.result_space)}
-                chunk_size = 2000
-                done = 0
-                for m in job['modes']:
-                    tally = Counter()
-                    remaining = job_n
-                    # the pilot wave's guidance is fitted once per job
-                    guidance = (pilot_transitions(job_sim.initial_points)
-                                if m == 'pilot' else None)
-                    while remaining and not job['cancel'].is_set():
-                        k = min(chunk_size, remaining)
-                        if m == 'terminal':
-                            tally += sample_terminal(job_sim.result_space,
-                                                     k, rng)
-                        else:
-                            tally += sample_pilot(job_sim.initial_points, k,
-                                                  rng, transitions=guidance)
-                        remaining -= k
-                        done += k
-                        job['progress'] = done
-                        if tick is not None:
-                            tick(k)
-                        elif clock() - last_bump > 0.25:
-                            last_bump = clock()
-                            bump(lambda v: v + 1)
-                    res[m] = tally
-                    job['n_done'][m] = job_n - remaining
-                job['results'] = res
-            except Exception as exc:  # noqa: BLE001 — surface in the display
-                job['error'] = repr(exc)
-            finally:
-                job['done'] = True
-                if tick is None:
-                    bump(lambda v: v + 1)  # final render, full results
-
-        if _sys.platform == 'emscripten':
-            with mo.status.progress_bar(total=_job['total'],
-                                        title='sampling…') as _bar:
-                _worker(tick=_bar.update)
-            # the bar was this cell's output; the results cell renders
-            # the tallies once the counter moves
-            mo.output.clear()
-            mc_tick_set(lambda v: v + 1)
-        else:
-            mo.Thread(target=_worker, daemon=True).start()
+        # the worker's arguments are bound now: a rerun of this cell
+        # deletes its locals, which a thread holding names would miss.
+        # Under Pyodide (the WASM export) a mo.Thread is a coroutine on
+        # the page's event loop, so the async run yields between chunks
+        # and Cancel works there too
+        mo.Thread(target=run_job_async if WASM_MODE else run_job,
+                  args=(_job, int(mc_seed.value), mc_tick_set), daemon=True).start()
+    return (mc_note,)
 
 
 @app.cell(hide_code=True)
 def _(
-    EPR_SAMPLER_LABELS,
     epr_angle_elems,
     epr_button,
     epr_modes,
+    EPR_SAMPLER_LABELS,
     epr_trials,
     epr_view,
+    in_div,
+    mo,
     picked_modes,
     projection,
     sampling_seconds,
-    mo,
     sim_model,
     supports_epr,
 ):
-    def _tight(md):
-        # .tight-paragraphs (css/quantish_app.css): the section's prose
-        # blocks run with less space between paragraphs and lists
-        return mo.Html('<div class="tight-paragraphs">' + md.text + '</div>')
-
+    # .tight-paragraphs (css/quantish_app.css): the section's prose
+    # blocks run with less space between paragraphs and lists (in_div)
     _content = mo.md(
         '_The EPR experiment needs a suitable model like the one for Figure 4.17 (fig4.17) '
         'to be loaded above._'
     ) if not supports_epr(sim_model) else mo.vstack([
-        _tight(mo.md(r"""
+        in_div('tight-paragraphs', mo.md(r"""
     **What the sweep does:** it re-runs the whole circuit **nine times**,
     once per pair $(\theta_1, \theta_2)$ from the sweep angles
     $\{q_a, q_b, q_c\}$ chosen below — "measuring $p_1$ at $\theta_1$
@@ -927,7 +544,7 @@ def _(
     excess clears three times that, *saturated* when it sits within that
     distance of the bound.
     """)),
-        mo.accordion({'The sampling models': _tight(mo.md(r"""
+        mo.accordion({'The sampling models': in_div('tight-paragraphs', mo.md(r"""
     Every model is random in exactly one place: the draw that makes a
     trial. Nothing else is random, and the noise in a sampled grid comes
     only from the finite number of trials.
@@ -972,7 +589,7 @@ def _(
     hidden-variable law** grid and its verdict below show the same
     saturation exactly, without sampling.
     """)),
-                      'How the fig 4.17 circuit works': _tight(mo.md(r"""
+                      'How the fig 4.17 circuit works': in_div('tight-paragraphs', mo.md(r"""
     Condensed from Gary Drescher's explanation of the revised circuit.
 
     **The splitting rule.** A gate measuring at angle $Q$ splits each
@@ -1027,7 +644,7 @@ def _(
     themselves — which this circuit's topology, like sufficiently
     distant real-world measurements, rules out).
     """))}),
-        _tight(mo.md(r"""
+        in_div('tight-paragraphs', mo.md(r"""
     **Choosing the sweep angles.** Only differences matter — the law is
     $\sin^2(\theta_1-\theta_2)$, with period $\pi$ — so the one hard
     constraint is that the three angles be **distinct (mod π)**: equal
@@ -1073,81 +690,37 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(mo, sim_model, sweep_spec):
+def _(declared_sweep, mo, sim_model, sweep_controls):
     # The sweep is defined here, in the UI: which variable, over what
     # range, how many points, what to record, and how to sort — seeded
     # from the loaded model's own sweep section when it has one, so the
     # editor follows a model change. A run button keeps the cost (one
     # engine run per point) explicit, as for the EPR sweep.
-    def _():
-        try:
-            decl = sweep_spec(sim_model) or {}
-        except ValueError:      # a broken declaration: start from the defaults
-            decl = {}
-        variables = list(sim_model.qvars)
-        particles = list(sim_model.particles)
-        gates = list(sim_model.gates)
-        obs, grp = decl.get('observe') or {}, decl.get('group_by') or {}
-        editor = mo.ui.dictionary({
-            'variable': mo.ui.dropdown(options=variables,
-                                       value=decl.get('variable', variables[0] if variables else None),
-                                       label='variable'),
-            'from': mo.ui.text(value=str(decl.get('from', 0)), label='from'),
-            'to': mo.ui.text(value=str(decl.get('to', '2*pi')), label='to'),
-            'points': mo.ui.number(2, 401, value=int(decl.get('points', 41)), label='points'),
-            'particle': mo.ui.dropdown(options=particles,
-                                       value=obs.get('particle', particles[0] if particles else None),
-                                       label='record: particle'),
-            'at': mo.ui.dropdown(options=gates, value=obs.get('at', gates[-1] if gates else None),
-                                 label='arriving at'),
-            'sort': mo.ui.dropdown(options=['(unsorted)', *particles],
-                                   value=grp.get('particle', '(unsorted)'), label='sort by'),
-            'coordinate': mo.ui.dropdown(options=['sign', 'position', 'both'],
-                                         value=grp.get('coordinate', 'sign'), label='coordinate'),
-        })
-        return editor, mo.ui.run_button(label='Run sweep')
-
-    sweep_editor, sweep_button = _()
+    sweep_editor = sweep_controls(sim_model.qvars, sim_model.particles,
+                                  sim_model.gates, declared_sweep(sim_model))
+    sweep_button = mo.ui.run_button(label='Run sweep')
     return sweep_button, sweep_editor
 
 
 @app.cell(hide_code=True)
-def _(check_sweep, sim_model, sweep_editor):
+def _(checked_spec, sim_model, sweep_editor):
     # the editor's sweep, validated against the loaded model
-    def _():
-        v = sweep_editor.value
-        if not v.get('variable'):
-            return None, 'the model has no variables to sweep'
-        raw = {'variable': v['variable'], 'from': v['from'], 'to': v['to'],
-               'points': int(v['points']),
-               'observe': {'particle': v['particle'], 'at': v['at']}}
-        if v['sort'] != '(unsorted)':
-            raw['group_by'] = {'particle': v['sort'], 'coordinate': v['coordinate']}
-        try:
-            return check_sweep(sim_model, raw), None
-        except ValueError as exc:
-            return None, str(exc)
-
-    sweep_decl, sweep_problem = _()
+    sweep_decl, sweep_problem = checked_spec(sim_model, sweep_editor.value)
     sweep_points = sweep_editor.elements['points']
     return sweep_decl, sweep_points, sweep_problem
 
 
 @app.cell(hide_code=True)
 def _(
-    LinePlotWidget,
-    math,
-    md_table,
     mo,
-    qn,
-    run_sweep,
     sim_model,
     sweep_button,
+    sweep_chart,
     sweep_decl,
     sweep_points,
     sweep_problem,
-    sweep_values,
-    sym_or_float,
+    sweep_run,
+    sweep_table,
     units_pick,
 ):
     def _():
@@ -1159,62 +732,22 @@ def _(
         if not sweep_button.value:
             return mo.md('_press **Run sweep** to run the model across '
                          'the range_')
-        spec = sweep_decl
         with mo.status.spinner(title='running the sweep…'):
-            res = run_sweep(sim_model, spec,
-                            values=sweep_values(spec, int(sweep_points.value)))
+            res = sweep_run(sim_model, sweep_decl, int(sweep_points.value))
         degrees = units_pick.value == 'degrees'
-        xs = [math.degrees(qn.to_float(x)) if degrees else qn.to_float(x)
-              for x in res['x']]
-        var, obs, grp = spec['variable'], spec['observe'], spec.get('group_by')
-        # series names carry the grouping particle ('p2 +', 'p2 −')
-        # series names carry the grouping particle, sign first ('+p2')
-        names = {lab: f"{lab}{grp['particle']}" if grp else lab
-                 for lab in res['series']}
-        palette = ['#4c78a8', '#f58518', '#54a24b', '#e45756', '#72b7b2',
-                   '#b279a2', '#ff9da6', '#9d755d']
-        series = [{'name': names[lab], 'x': xs,
-                   'y': [qn.to_float(v) for v in ys],
-                   'color': palette[i % len(palette)]}
-                  for i, (lab, ys) in enumerate(res['series'].items())]
-        if grp:
-            series.append({'name': 'total', 'x': xs,
-                           'y': [qn.to_float(v) for v in res['total']],
-                           'color': '#333', 'dash': '6 4'})
-        chart = mo.ui.anywidget(LinePlotWidget(data={
-            'series': series, 'xdomain': [min(xs), max(xs)],
-            'xlabel': f'{var} ({"degrees" if degrees else "radians"})',
-            'ylabel': f"P({obs['particle']} at {obs['at']})",
-            'width': 900, 'height': 220}))
-        # the values, exact in Symbolic mode where short
-        headers = [var] + [names[lab] for lab in res['series']] \
-            + (['total'] if grp else [])
-        rows = []
-        for i, x in enumerate(xs):
-            cells = [f'{x:.2f}'] + [
-                sym_or_float(res['series'][lab][i],
-                             f"{qn.to_float(res['series'][lab][i]):.4f}")
-                for lab in res['series']]
-            if grp:
-                cells.append(sym_or_float(res['total'][i],
-                                          f"{qn.to_float(res['total'][i]):.4f}"))
-            rows.append(cells)
-        table = mo.accordion({'values': mo.md(md_table(headers, rows))},
+        # the chart, and the values — exact in Symbolic mode where short
+        table = mo.accordion({'values': mo.md(sweep_table(res, sweep_decl, degrees))},
                              lazy=True)
-        return mo.vstack([chart, table])
+        return mo.vstack([sweep_chart(res, sweep_decl, degrees), table])
 
     sweep_view = _()
     return (sweep_view,)
 
 
 @app.cell(hide_code=True)
-def _(mo, sweep_button, sweep_decl, sweep_editor, sweep_problem, sweep_view):
+def _(editor_rows, mo, sweep_button, sweep_decl, sweep_editor, sweep_problem, sweep_view):
     def _():
-        e = sweep_editor.elements
-        rows = [mo.hstack([e['variable'], e['from'], e['to'], e['points']],
-                          justify='start', wrap=True, gap=1.5, align='end'),
-                mo.hstack([e['particle'], e['at'], e['sort'], e['coordinate']],
-                          justify='start', wrap=True, gap=1.5, align='end')]
+        rows = editor_rows(sweep_editor)
         if sweep_decl is None:
             return mo.vstack([*rows, sweep_view or mo.md('')])
         spec = sweep_decl
@@ -1308,7 +841,6 @@ def _(EDITOR_UI, mo):
 @app.cell(hide_code=True)
 async def initialization():
     import cmath
-    import logging
     import math
     import sys
     from pathlib import Path
@@ -1348,9 +880,6 @@ async def initialization():
         _page = await (await pyfetch(f'{_base}/index.html')).string()
         _wasm_editor = '"mode": "edit"' in _page
 
-    import yaml
-    from addict import Dict as Addict
-
     # make the repo importable no matter where marimo was launched from
     def _():
         repo = Path(__file__).resolve().parents[1]
@@ -1360,84 +889,124 @@ async def initialization():
     _()
 
     import quantish.qnumber as qn
-    from quantish.qnumber import CalcMode
-
-    CalcMode.default('Float')
-    logging.basicConfig(level=logging.WARNING)
-    logging.getLogger('quantish').setLevel(logging.WARNING)
-
+    from quantish.apps.common import (
+        MODELS_TOP,
+        WASM_MODE,
+        build_stamp,
+        editor_ui,
+        in_div,
+        init_engine,
+        load_config,
+        parse_vars,
+        stamp_html,
+        switch_off_boxes,
+        vars_text,
+    )
+    from quantish.apps.epr_ui import epr_angle_entries, epr_report
+    from quantish.apps.results import detailed_results
+    from quantish.apps.run import (
+        angle_entries,
+        angle_sliders,
+        build_sim,
+        model_angles,
+    )
+    from quantish.apps.sampling import (
+        EPR_SAMPLER_LABELS,
+        SAMPLER_LABELS,
+        new_job,
+        picked_modes,
+        progress_view,
+        projection,
+        results_view,
+        run_job,
+        run_job_async,
+        sampling_explanation,
+        sampling_seconds,
+        trial_count,
+    )
+    from quantish.apps.sweep_ui import (
+        checked_spec,
+        declared_sweep,
+        editor_rows,
+        sweep_chart,
+        sweep_controls,
+        sweep_run,
+        sweep_table,
+    )
     from quantish.builder_widget import (
         DiagramWidget,
-        LinePlotWidget,
         NetworkGraphWidget,
         WeightSplitWidget,
     )
-    from quantish.config_space import GatePort
     from quantish.diagram_layout import diagram_geometry
     from quantish.display import (
-        coord_sort_key,
-        cs_point_sort_key,
-        gate_io,
-        html_table,
-        particle_names,
-        particle_tokens,
-        short_label,
-        sym_or_float,
+        inexact_note,
+        latex_weight,
+        phase_deg,
     )
-    from quantish.epr import run_epr_experiment, supports_epr, verdict, verdict_slack
+    from quantish.epr import supports_epr
     from quantish.gate import FredkinGate
     from quantish.network_graph import NetworkGraph
     from quantish.screen import model_label, model_title
-    from quantish.simulation import Simulation
-    from quantish.sweep import check_sweep, run_sweep, sweep_spec, sweep_values
 
-    REPO_DIR = Path(__file__).resolve().parents[1]
-    WASM_MODE = sys.platform == 'emscripten'
+    init_engine()
     # True whenever the surrounding UI is the marimo editor (local
     # `marimo edit` or a WASM edit-mode export): editor-only sections
     # key off this
-    EDITOR_UI = (_wasm_editor if WASM_MODE
-                 else mo.app_meta().mode == 'edit')
-    MODELS_TOP = (Path('/wasm-data/models') if WASM_MODE
-                  else REPO_DIR / 'models')
+    EDITOR_UI = editor_ui(_wasm_editor) if WASM_MODE else editor_ui()
     return (
-        Addict,
-        CalcMode,
         DiagramWidget,
-        LinePlotWidget,
         NetworkGraphWidget,
         EDITOR_UI,
         FredkinGate,
-        GatePort,
         MODELS_TOP,
         NetworkGraph,
-        Simulation,
         model_label,
         model_title,
         WASM_MODE,
         WeightSplitWidget,
+        build_stamp,
         cmath,
-        coord_sort_key,
-        cs_point_sort_key,
         diagram_geometry,
-        gate_io,
-        html_table,
+        in_div,
+        inexact_note,
+        latex_weight,
+        load_config,
         math,
         mo,
-        particle_names,
-        particle_tokens,
+        parse_vars,
+        phase_deg,
         qn,
-        run_epr_experiment,
-        run_sweep,
-        short_label,
+        stamp_html,
         supports_epr,
-        check_sweep,
-        sweep_spec,
-        sweep_values,
-        sym_or_float,
-        verdict,
-        verdict_slack,
-        yaml,
+        switch_off_boxes,
+        checked_spec,
+        declared_sweep,
+        editor_rows,
+        sweep_chart,
+        sweep_controls,
+        sweep_run,
+        sweep_table,
+        EPR_SAMPLER_LABELS,
+        SAMPLER_LABELS,
+        angle_entries,
+        angle_sliders,
+        build_sim,
+        detailed_results,
+        epr_angle_entries,
+        epr_report,
+        model_angles,
+        new_job,
+        picked_modes,
+        progress_view,
+        projection,
+        results_view,
+        run_job,
+        run_job_async,
+        sampling_explanation,
+        sampling_seconds,
+        trial_count,
+        vars_text,
     )
 
 
@@ -1514,61 +1083,21 @@ def _(MODELS_TOP, last_collection_get, last_collection_set, mo, model_rescan):
 
 
 @app.cell(hide_code=True)
-def _(
-    CalcMode,
-    Simulation,
-    angles_get,
-    base_env,
-    gate_names,
-    load_config,
-    math,
-    mo,
-    mode_pick,
-    model_pick,
-    model_vars,
-    particle_names_model,
-    plate_names_model,
-    qn,
-    switch_off,
-):
+def _(angles_get, base_env, build_sim, mo, mode_pick, model_pick, model_vars, switch_off):
     # Model construction is cheap and needs no ▶ Run: cells that only need
     # the loaded model (the EPR sweep) depend on sim_model; cells that show
     # run results depend on sim (gated on the button, next cell).
-    def build_sim():
-        def angle_for(g):
-            cur = angles_get()[g]
-            if cur['expr']:
-                # keep the expression a STRING: the Simulation loader
-                # qifies it against the model's variables, so names like
-                # theta1 stay live and the EPR sweep's variable rebinding
-                # (run_pair) still has something to rebind. Qifying here
-                # would freeze the current value into the gate.
-                qn.qify(cur['expr'], base_env)  # validate early, clear error
-                return cur['expr']
-            if mode_pick.value == 'Symbolic':
-                # a degree-marked spec stays exact (30.0° → pi/6); a
-                # float in radians would turn every result into a
-                # sympy Float and the displays into 15-digit decimals
-                return f"{cur['deg']}°"
-            return math.radians(cur['deg'])
-
-        CalcMode.default(mode_pick.value)
-        config = load_config(model_pick.value)[0]
-        config.variables.update(model_vars)
-        for g in gate_names:
-            config.gates[g].angle = angle_for(g)
-        off = {k for k, v in switch_off.value.items() if not v}
-        return Simulation(config,
-                          inert=[g for g in gate_names + plate_names_model if f'g:{g}' in off],
-                          absent=[p for p in particle_names_model if f'p:{p}' in off])
+    def new_sim():
+        return build_sim(model_pick.value, model_vars, mode_pick.value,
+                         angles_get(), switch_off.value, base_env)
 
     try:
-        sim_model = build_sim()
+        sim_model = new_sim()
     except Exception as exc:  # noqa: BLE001 — old-format models raise all sorts
         mo.stop(True, mo.md(
             f"**{model_pick.value.stem} failed to load** — probably "
             f"an old-format model.\n\n```\n{exc}\n```"))
-    return build_sim, sim_model
+    return new_sim, sim_model
 
 
 @app.cell(hide_code=True)
@@ -1583,22 +1112,9 @@ def _(mo, sim):
 
 
 @app.cell(hide_code=True)
-def _(Addict, MODELS_TOP, Simulation, mo, model_pick, yaml):
-    def load_config(path):
-        with open(MODELS_TOP / 'defaults.yaml') as f:
-            cfg = yaml.safe_load(f)
-        with open(path) as f:
-            model = yaml.safe_load(f)
-        # variables merge deeply: the defaults' standard names (zero,
-        # one, eye) stay available underneath the model's own
-        default_vars = dict(cfg.get('variables') or {})
-        cfg.update(model)
-        if default_vars:
-            cfg['variables'] = {**default_vars,
-                                **(model.get('variables') or {})}
-        cfg['loglevel'] = 'warning'
-        return Addict(cfg), model
-
+def _(load_config, mo, model_pick, vars_text):
+    # the model over the defaults (the standard variables underneath
+    # its own); the raw model for what the file itself says
     base_config, _model_raw = load_config(model_pick.value)
 
     # the radio follows a mode the model file itself sets (a
@@ -1615,356 +1131,64 @@ def _(Addict, MODELS_TOP, Simulation, mo, model_pick, yaml):
 
     # the model's own variables, editable as `name: expression` lines
     # (the builder's format); reseeded when the model changes
-    def _vars_text(vs):
-        return '\n'.join(
-            f"{k}: '{v}'" if isinstance(v, str) else f'{k}: {v}'
-            for k, v in (vs or {}).items())
-
     variables_editor = mo.ui.text_area(
-        value=_vars_text(_model_raw.get('variables')),
+        value=vars_text(_model_raw.get('variables')),
         rows=max(2, min(8, len(_model_raw.get('variables') or {}) + 1)),
         full_width=True,
         placeholder='name: expression   (e.g. theta_split: pi/4)')
-    return (
-        base_config,
-        load_config,
-        mode_pick,
-        units_pick,
-        variables_editor,
-    )
+    return base_config, mode_pick, units_pick, variables_editor
 
 
 @app.cell(hide_code=True)
-def _(mo, variables_editor, yaml):
+def _(parse_vars, variables_editor):
     # the edited variables as a mapping; a parse problem shows under the
     # editor and the model's own definitions stand meanwhile
-    def _():
-        text = variables_editor.value.strip()
-        if not text:
-            return {}, None
-        try:
-            v = yaml.safe_load(text)
-            if v is None:
-                return {}, None
-            if not isinstance(v, dict):
-                raise TypeError('expected name: expression lines')
-            return {str(k): val for k, val in v.items()}, None
-        except Exception as exc:  # noqa: BLE001 — show, don't crash
-            return {}, f'variables not parseable — {exc}'
-
-    model_vars, vars_error = _()
+    model_vars, vars_error = parse_vars(variables_editor.value)
     return model_vars, vars_error
 
 
 @app.cell(hide_code=True)
-def _(Simulation, base_config, load_config, mo, model_pick, model_vars):
+def _(mo, model_angles, model_pick, model_vars):
     # ONE state for all gate angles: {gate: {'deg': float, 'expr': str|None}}.
     # marimo's state reactivity keys on the getter being referenced as a
     # global variable — a dict of per-gate states breaks the subscription
     # (the earlier bug), so everything lives under a single getter/setter.
-    # 'expr' preserves the symbolic form (model YAML or typed) alongside
-    # its numeric degree equivalent. Reseeded when the model or its
-    # variables change, since the variables define the angles.
-    def _():
-        def centered(deg):
-            d = deg % 360.0
-            return d - 360.0 if d > 180.0 else d
-
-        def spec_expr(g):
-            # Only a genuinely symbolic string spec is worth carrying
-            # verbatim; numeric and degree-marked specs are represented
-            # by 'deg' (whose value came through the Simulation, so
-            # angle_unit and degree marks are already applied).
-            spec = base_config.gates[g].angle
-            if not isinstance(spec, str):
-                return None
-            s = spec.strip()
-            if s and s[-1] in '°º˚':
-                return None
-            try:
-                float(s)
-                return None
-            except ValueError:
-                return s
-
-        config = load_config(model_pick.value)[0]
-        config.variables.update(model_vars)
-        problem = None
-        try:
-            base_sim = Simulation(config)
-        except Exception as exc:  # noqa: BLE001 — bad variable definitions
-            problem = f'variables rejected — {exc}'
-            base_sim = Simulation(load_config(model_pick.value)[0])
-        # the gates in run order
-        names = [g for g in base_sim.run_order if g in base_sim.fredkin_gates]
-        angles = mo.state({
-            g: {'deg': round(centered(float(gate.theta.degrees)) * 2) / 2,
-                'expr': spec_expr(g)}
-            for g, gate in base_sim.fredkin_gates.items()})
-        # the model's variables, so typed expressions can use them by name;
-        # the phase plates, in run order, for the switch-off row
-        plates = [g for g in base_sim.run_order if g in base_sim.phase_plates]
-        return names, angles, dict(base_sim.qvars), problem, list(base_sim.particles), plates
-
-    (gate_names, (angles_get, angles_set), base_env, vars_problem,
-     particle_names_model, plate_names_model) = _()
+    # Reseeded when the model or its variables change, since the
+    # variables define the angles (quantish.apps.run.model_angles).
+    _seed = model_angles(model_pick.value, model_vars)
+    gate_names, base_env, vars_problem = _seed['gates'], _seed['env'], _seed['problem']
+    particle_names_model, plate_names_model = _seed['particles'], _seed['plates']
+    angles_get, angles_set = mo.state(_seed['angles'])
     return (angles_get, angles_set, base_env, gate_names, particle_names_model,
             plate_names_model, vars_problem)
 
 
 @app.cell(hide_code=True)
-def _(angles_get, angles_set, gate_names, mo):
+def _(angle_sliders, angles_get, angles_set, gate_names, switch_off):
     # Sliders live in their OWN cell (and the text entries in theirs):
     # marimo never re-runs the cell that invoked a state setter, so tied
     # elements must be defined in separate cells — a text edit re-runs
     # this cell (rebuilding the sliders), a slider move re-runs the text
     # cell. Registration through mo.ui.dictionary globals keeps on_change
-    # events flowing.
-    def _():
-        def slider_cb(g):
-            def cb(v):
-                angles_set({**angles_get(), g: {'deg': float(v), 'expr': None}})
-            return cb
-
-        return mo.ui.dictionary({
-            g: mo.ui.slider(
-                -180, 180, step=0.5,
-                value=max(0.0, min(180.0, round(angles_get()[g]['deg'] * 2) / 2)),
-                label=f'**{g}**', show_value=True, full_width=True,
-                on_change=slider_cb(g))
-            for g in gate_names})
-
-    angle_slider_elems = _()
+    # events flowing. A switched-off gate's controls are disabled.
+    angle_slider_elems = angle_sliders(angles_get, angles_set, gate_names, switch_off.value)
     return (angle_slider_elems,)
 
 
 @app.cell(hide_code=True)
 def _(
+    angle_entries,
     angles_get,
     angles_set,
     base_env,
     gate_names,
-    math,
-    mo,
     mode_pick,
-    qn,
+    switch_off,
     units_pick,
 ):
-    def _():
-        def text_cb(g):
-            def cb(raw):
-                txt = (raw or '').strip()
-                # an explicit degree mark IS the unit, whatever the
-                # units radio says
-                marked = txt.endswith(('°', 'º', '˚'))
-                txt = txt.rstrip('º°˚').strip()
-                if not txt:
-                    return
-                try:
-                    num = float(txt)
-                    deg = (num if marked or units_pick.value == 'degrees'
-                           else math.degrees(num))
-                    angles_set({**angles_get(), g: {'deg': deg, 'expr': None}})
-                    return
-                except ValueError:
-                    pass
-                try:
-                    rad = float(qn.qify(txt, base_env))  # symbolic expression (may use model variables), radians
-                    angles_set({**angles_get(),
-                                g: {'deg': math.degrees(rad), 'expr': txt}})
-                except Exception:  # noqa: BLE001, S110 — unparseable: keep previous value
-                    pass
-            return cb
-
-        def shown(cur):
-            # Displayed angle values follow the math mode: Symbolic
-            # shows the model's own symbolic spec while it is untouched
-            # (a slider or typed number clears it), and the simplest
-            # exact form of the set angle otherwise; Float shows a
-            # number in the selected units.
-            if mode_pick.value == 'Symbolic':
-                if cur['expr']:
-                    return cur['expr']
-                return qn.angle_expr(cur['deg'])
-            if units_pick.value == 'degrees':
-                return f"{cur['deg']:.1f}º"
-            return f"{math.radians(cur['deg']):.4f}"
-
-        return mo.ui.dictionary({
-            g: mo.ui.text(value=shown(angles_get()[g]), on_change=text_cb(g))
-            for g in gate_names})
-
-    angle_text_elems = _()
+    angle_text_elems = angle_entries(angles_get, angles_set, gate_names, switch_off.value,
+                                     mode_pick.value, units_pick.value, base_env)
     return (angle_text_elems,)
-
-
-@app.cell(hide_code=True)
-def _(cmath, mo, qn):
-    def latex_weight(w, prec=3, max_len=40) -> str:
-        # In Symbolic mode, render the exact sympy expression as LaTeX —
-        # unless its plain-text form is longer than max_len characters
-        # (the display.sym_or_float policy): complex models and awkward
-        # inputs can produce unreadably long expressions, and those fall
-        # back to the numeric form below.
-        if qn.CalcMode.default() == 'Symbolic' and qn.isq(w):
-            # sympy's simplify can choke on an odd but valid expression:
-            # the unsimplified form is still exact and still symbolic
-            try:
-                expr = qn.simplify(w)
-            except Exception:  # noqa: BLE001 — keep the exact form
-                expr = w
-            if len(qn.sym_text(expr)) <= max_len and not qn.inexact(expr):
-                return qn.latex(expr)
-        wc = complex(w)
-        # always the full pair re±im·i at exactly prec decimals (0 is
-        # 0.0000+0.0000i): every weight in a column has the same shape,
-        # so right-aligned cells line their decimal points up. No forced
-        # leading '+' on the real part — that would read as a particle
-        # sign; the sign between the parts is the imaginary part's
-        real = 0.0 if abs(wc.real) < 1e-12 else wc.real     # no '-0.0000'
-        imag = 0.0 if abs(wc.imag) < 1e-12 else wc.imag
-        return f'{real:.{prec}f}{imag:+.{prec}f}i'
-
-    def math_weight(w, prec=3) -> str:
-        # latex_weight wrapped as inline math. Whitespace is normalized
-        # because markdown doesn't recognize '$ x$' (leading space) as
-        # math — symbolic LaTeX often leads with '- \frac{...}'.
-        return f'${" ".join(latex_weight(w, prec).split())}$'
-
-    def inexact_note(sim) -> str:
-        # Symbolic mode with inputs that cannot be exact: say so, gently
-        bad = sim.inexact_inputs()
-        if not bad:
-            return ''
-        return ('<br><span style="color: #b00020">⚠ Symbolic mode, but '
-                + ', '.join(bad) + (' is' if len(bad) == 1 else ' are')
-                + ' not exact (a floating-point or long decimal '
-                'value), so these results carry floating point.</span>')
-
-    def phase_deg(w) -> float:
-        return cmath.phase(complex(w)) * 180.0 / cmath.pi
-
-    def math_prob(pr, prec=4) -> str:
-        # a probability as inline math: the exact form in Symbolic mode
-        # when it is short (9/16), the fixed-precision float otherwise
-        if qn.CalcMode.default() == 'Symbolic' and qn.isq(pr):
-            try:
-                expr = qn.simplify(pr)
-            except Exception:  # noqa: BLE001 — keep the exact form
-                expr = pr
-            if len(qn.sym_text(expr)) <= 40 and not qn.inexact(expr):
-                return f'${qn.latex(expr)}$'
-        return f'${float(pr):.{prec}f}$'
-
-    def md_cell(text: str) -> str:
-        # html_table's cell renderer: markdown/math cells go through the
-        # markdown renderer (its arithmatex spans are typeset in the
-        # browser); plain cells are passed straight through
-        if any(ch in text for ch in '$`*_<'):
-            return mo.md(text).text
-        return text
-
-    def md_table(headers, rows) -> str:
-        # NB: markdown needs a blank line before a table, and literal '|'
-        # inside cells (configuration-space point keys use it as a separator) must be escaped
-        # or they read as column breaks.
-        def cell(c):
-            return str(c).replace('|', r'\|')
-        lines = ['',
-                 '| ' + ' | '.join(headers) + ' |',
-                 '|' + '|'.join(['---'] * len(headers)) + '|']
-        lines += ['| ' + ' | '.join(cell(c) for c in row) + ' |' for row in rows]
-        return '\n'.join(lines)
-
-    _ = mo.md('')  # helpers only
-    return (inexact_note, latex_weight, math_prob, math_weight, md_cell,
-            md_table, phase_deg)
-
-
-@app.cell(hide_code=True)
-def _(Simulation, mo):
-    # The three sampling interpretations, labeled by what each assumes
-    # (see the Monte Carlo section's explanation); the value is the
-    # engine's mode name
-    SAMPLER_LABELS = {'terminal (Everett)': 'terminal',
-                      'pilot wave (Bohm, nonlocal)': 'pilot'}
-    # the EPR sweep also offers Bell's local hidden-variable example,
-    # which samples no wave: a shared hidden angle and two independent
-    # detector readings (epr.sample_hidden_variable)
-    EPR_SAMPLER_LABELS = {**SAMPLER_LABELS,
-                          "local hidden variable (Bell's example)": 'hidden'}
-    SAMPLER_NAMES = {v: k for k, v in EPR_SAMPLER_LABELS.items()}
-
-    def picked_modes(boxes, labels):
-        """The mode names whose checkboxes are ticked, in the labels'
-        order — the order the results are shown in."""
-        return [labels[k] for k, v in boxes.value.items() if v]
-
-    _calibration = {}
-
-    def sampling_seconds(model_sim, modes, n_trials, cells=1):
-        """A projection of how long a sampling job will take, from a
-        calibration on this circuit: a few hundred trials of each
-        interpretation are timed once per loaded model (and one run of
-        the circuit, for a sweep's per-cell rebuild), then scaled to
-        n_trials × cells. Measured where it will run, so the browser
-        build's slower Python is accounted for."""
-        import random
-        import time
-        from copy import deepcopy
-
-        from quantish.epr import sample_hidden_variable
-        from quantish.montecarlo import pilot_transitions, sample_pilot, sample_terminal
-        key = id(model_sim)
-        if key not in _calibration:
-            t0 = time.perf_counter()
-            cfg = deepcopy(model_sim.config)
-            cfg['loglevel'] = 'warning'
-            probe = Simulation(cfg)
-            probe.run()
-            run_cost = time.perf_counter() - t0
-            rng, k, per_trial = random.Random(0), 300, {}
-            t0 = time.perf_counter()
-            sample_terminal(probe.result_space, k, rng)
-            per_trial['terminal'] = (time.perf_counter() - t0) / k
-            t0 = time.perf_counter()
-            guidance = pilot_transitions(probe.initial_points)
-            fit_cost = time.perf_counter() - t0
-            t0 = time.perf_counter()
-            sample_pilot(probe.initial_points, k, rng, transitions=guidance)
-            per_trial['pilot'] = (time.perf_counter() - t0) / k
-            t0 = time.perf_counter()
-            sample_hidden_variable(0.0, 1.0, k, rng)
-            per_trial['hidden'] = (time.perf_counter() - t0) / k
-            _calibration[key] = (run_cost, fit_cost, per_trial)
-        run_cost, fit_cost, per_trial = _calibration[key]
-        secs = (run_cost if cells > 1 else 0.0) * cells
-        for m in modes:
-            secs += cells * (n_trials * per_trial[m]
-                             + (fit_cost if m == 'pilot' else 0.0))
-        return secs
-
-    LONG_RUN_SECONDS = 30
-
-    def projection(secs):
-        """The predicted-runtime line: italic, and red bold past
-        LONG_RUN_SECONDS so a long wait is announced before the Run
-        button is pressed. (Html rather than markdown: marimo's markdown
-        strips inline styles.)"""
-        if secs < 1:
-            text = 'under a second'
-        elif secs < 90:
-            text = f'about {secs:.0f} s'
-        else:
-            text = f'about {secs / 60:.1f} min'
-        # explicit colors: bare Html output would inherit marimo's muted
-        # gray, and a prose wrapper overrides the red
-        style = ('color: #ff1f1f; font-weight: 700' if secs > LONG_RUN_SECONDS
-                 else 'color: #000')
-        return mo.Html(f'<em style="{style}">Predicted runtime: {text}</em>')
-
-    return (EPR_SAMPLER_LABELS, SAMPLER_LABELS, SAMPLER_NAMES, picked_modes,
-            projection, sampling_seconds)
 
 
 @app.cell(hide_code=True)
@@ -1972,7 +1196,7 @@ def _(SAMPLER_LABELS, mo):
     mc_trials = mo.ui.slider(
         steps=[100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000,
                100000, 200000, 500000, 1000000],
-        value=20000, label='trials', show_value=True)
+        value=20000, label='trials', show_value=False)
     mc_trials_text = mo.ui.text(value='', placeholder='custom trial count')
     # two interpretations sampling the same wave, labeled by what each
     # assumes; terminal (the faithful simulation of a real experiment)
@@ -2011,20 +1235,10 @@ def _(mc_cancel, mc_job_slot):
 
 
 @app.cell(hide_code=True)
-def _(base_config, mo, model_vars):
-    # Sweep-angle entries, reseeded from the model's qa/qb/qc variables
-    # (or the default 0, pi/8, pi/4) when the model or its variables
-    # change. Same input forms as the gate-angle entries: a bare number
-    # in the selected units, anything else a symbolic radian expression.
-    def _():
-        from quantish.epr import DEFAULT_VALUES
-        _vars = {str(k).lower(): str(v)
-                 for k, v in {**base_config.variables, **model_vars}.items()}
-        return mo.ui.dictionary({
-            k: mo.ui.text(value=_vars.get(k, v), label=f'**{k}** =')
-            for k, v in DEFAULT_VALUES.items()})
-
-    epr_angle_elems = _()
+def _(base_config, epr_angle_entries, model_vars):
+    # the sweep-angle entries, reseeded from the model's qa/qb/qc
+    # variables when the model or its variables change
+    epr_angle_elems = epr_angle_entries({**base_config.variables, **model_vars})
     return (epr_angle_elems,)
 
 
@@ -2050,118 +1264,24 @@ def _(
     EPR_SAMPLER_LABELS,
     base_env,
     epr_angle_elems,
-    SAMPLER_NAMES,
     epr_button,
     epr_modes,
-    picked_modes,
+    epr_report,
     epr_trials,
-    math,
-    md_table,
     mo,
-    qn,
-    run_epr_experiment,
+    picked_modes,
     sim_model,
     supports_epr,
-    sym_or_float,
     units_pick,
-    verdict,
-    verdict_slack,
 ):
     def _():
         if not supports_epr(sim_model):
             return None
         if not epr_button.value:
             return mo.md('_press **Run EPR experiment** to sweep_')
-
-        def parse_angle(raw):
-            # same convention as the gate-angle entries: a bare number is in
-            # the selected units, anything else a symbolic radian expression
-            txt = (raw or '').strip().rstrip('º°').strip()
-            try:
-                float(txt)   # a bare number, in the selected units
-                # as a spec string, so Symbolic mode keeps it exact
-                # (22.5 → pi/8), never a float in radians
-                return qn.qify(txt if units_pick.value == 'radians'
-                               else f'{txt}°')
-            except ValueError:
-                # symbolic radian expression; may use model variables
-                return qn.qify(txt, base_env)
-
-        try:
-            values = {k: parse_angle(v)
-                      for k, v in epr_angle_elems.value.items()}
-        except Exception as exc:  # noqa: BLE001 — show, don't crash the app
-            return mo.md(f'**unparseable sweep angle** — {exc}')
-        if len({round(float(v) % math.pi, 9) for v in values.values()}) < 3:
-            return mo.md('**sweep angles must be distinct (mod π)** — equal '
-                         'angles make cells compare an angle with itself and '
-                         'the inequalities degenerate')
-        n = int(epr_trials.value)
-        # one sweep per chosen interpretation (the exact, analytical and
-        # classical grids are the same in each; the observed grid and
-        # its verdict differ — that comparison is the demonstration)
-        modes = picked_modes(epr_modes, EPR_SAMPLER_LABELS) if n else []
-        runs = {m: run_epr_experiment(sim_model, n_trials=n, seed=1,
-                                      values=values, mode=m)
-                for m in modes}
-        # the exact grids come with any run; with no model ticked (or
-        # no trials) one exact run supplies them
-        res = (runs[modes[0]] if modes
-               else run_epr_experiment(sim_model, n_trials=0, values=values))
-        labels = list(res['values'].keys())
-
-        def grid_table(getter, grid, fmt='{:.4f}'):
-            # exact rates show as such in Symbolic mode when short
-            # (sin²(π/8) = 1/2 - √2/4); floats otherwise
-            def cell(v):
-                return sym_or_float(v, fmt.format(qn.to_float(v)))
-            rows = [[f'**{l1}**'] + [cell(getter(grid[(l1, l2)]))
-                                     for l2 in labels]
-                    for l1 in labels]
-            return md_table([r'$\theta_1 \backslash \theta_2$'] + labels, rows)
-
-        def verdicts(tag, r, bell_key, chsh_key, bell_slack, chsh_slack):
-            # a sampled excess needs to clear sampling noise to count;
-            # the words are epr.verdict's (VIOLATED / saturated / satisfied)
-            def word(excess, slack):
-                v = verdict(excess, slack)
-                return f'**{v}**' if v == 'VIOLATED' else v
-            bell, bell_at = r[bell_key]
-            chsh, chsh_at = r[chsh_key]
-            return (f'Bell excess ({tag}): **{bell:+.4f}** at {bell_at} — '
-                    f'{word(bell, bell_slack)}  \n'
-                    f'CHSH $|S|$ ({tag}): **{chsh:.4f}** at {chsh_at} — '
-                    f'{word(chsh - 2, chsh_slack)}')
-
-        # the exact laws first — quantish, analytical (one verdict:
-        # they agree), classical — then one sampled block per model in
-        # the interpretations' fixed order, each a grid and its verdicts
-        parts = ['sweep angles: ' + ', '.join(
-            f'{k} = {math.degrees(float(v)):.1f}º' for k, v in values.items()),
-                 '**Exact quantish simulation** results',
-                 grid_table(lambda c: c['exact'], res['grid']),
-                 r'**Analytical law** $\sin^2(\theta_1-\theta_2)$',
-                 grid_table(lambda c: c['analytical'], res['grid']),
-                 verdicts('exact', res, 'bell_exact', 'chsh_exact', 1e-9, 1e-9),
-                 ('**Classical hidden-variable law** — the best a local '
-                  'model can do: it sits exactly on the bound'),
-                 grid_table(lambda c: c['classical'], res['grid']),
-                 verdicts('classical law', res, 'bell_classical',
-                          'chsh_classical', 1e-9, 1e-9)]
-        if modes:
-            # a sampled excess must clear sampling noise (3σ) to count
-            bell_slack, chsh_slack = verdict_slack(n)
-            for m in [m for m in SAMPLER_NAMES if m in runs]:
-                name = SAMPLER_NAMES[m]
-                parts += [(f'**{name[0].upper()}{name[1:]}** sampled results: '
-                           f'{n:,} trials per cell'),
-                          grid_table(lambda c: c['sampled'], runs[m]['grid']),
-                          verdicts('sampled', runs[m],
-                                   'bell', 'chsh', bell_slack, chsh_slack)]
-        # .tight-paragraphs (css/quantish_app.css): headings, grids and
-        # verdicts run as close as the section's prose
-        return mo.Html('<div class="tight-paragraphs">'
-                       + mo.md('\n\n'.join(parts)).text + '</div>')
+        return epr_report(sim_model, epr_angle_elems.value, int(epr_trials.value),
+                          picked_modes(epr_modes, EPR_SAMPLER_LABELS),
+                          units_pick.value, base_env)
 
     epr_view = _()
     return (epr_view,)

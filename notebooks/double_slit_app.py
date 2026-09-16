@@ -72,48 +72,61 @@ async def initialization():
     if str(_repo) not in sys.path:
         sys.path.insert(0, str(_repo))
 
-    import logging
-
-    from quantish.qnumber import CalcMode
-
-    CalcMode.default('Float')
-    logging.basicConfig(level=logging.WARNING)
-    logging.getLogger('quantish').setLevel(logging.WARNING)
-
+    from quantish.apps.common import (
+        WASM_MODE,
+        build_stamp,
+        editor_ui,
+        init_engine,
+        stamp_html,
+    )
+    from quantish.apps.curves import (
+        double_slit_curves,
+        eraser_curves,
+        main_curves,
+        push_curves,
+        tunable_curve,
+    )
+    from quantish.apps.double_slit_ui import (
+        MAIN_MODES,
+        MODES,
+        PANEL_TITLES,
+        diagram_geom,
+    )
     from quantish.builder_widget import (
         DiagramWidget,
         LinePlotWidget,
         ScreenPanelWidget,
     )
-    from quantish.diagram_layout import diagram_geometry
     from quantish.double_slit import (
         DEFAULT_THETA_S,
         sample_hits,
-        screen_curve,
-        screen_curves_by_sign,
         screen_positions,
-        slit_sim,
     )
 
-    WASM_MODE = sys.platform == 'emscripten'
-    EDITOR_UI = (_wasm_editor if WASM_MODE
-                 else mo.app_meta().mode == 'edit')
+    init_engine()
+    EDITOR_UI = editor_ui(_wasm_editor) if WASM_MODE else editor_ui()
     return (
         DEFAULT_THETA_S,
         DiagramWidget,
+        MAIN_MODES,
+        MODES,
+        PANEL_TITLES,
+        build_stamp,
+        diagram_geom,
+        eraser_curves,
+        main_curves,
+        tunable_curve,
         EDITOR_UI,
         LinePlotWidget,
         ScreenPanelWidget,
-        diagram_geometry,
+        double_slit_curves,
         math,
+        push_curves,
         mo,
         random,
         sample_hits,
-        screen_curve,
-        screen_curves_by_sign,
         screen_positions,
-        slit_sim,
-        sys,
+        stamp_html,
     )
 
 
@@ -153,23 +166,10 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-async def build_stamp(mo, sys):
-    # Which build is this? The site build (tools/build_wasm_app.sh)
-    # writes public/version.json beside the page; a development copy
-    # says so instead.
-    _stamp = 'development copy'
-    if sys.platform == 'emscripten':
-        try:
-            import json as _json
-
-            from pyodide.http import pyfetch as _pyfetch
-            _v = _json.loads(await (await _pyfetch(
-                f'{mo.notebook_location()}/public/version.json')).string())
-            _stamp = f"build {_v['build']} · {_v['built_at']}"
-        except Exception:  # noqa: BLE001 — an unstamped site shows nothing
-            _stamp = ''
-    mo.md(f'<span style="font-size: 0.8em; color: #444">{_stamp}</span>') \
-        if _stamp else None
+async def _(build_stamp, stamp_html):
+    # which build is this? (the site build writes public/version.json
+    # beside the page; a development copy says so instead)
+    stamp_html(await build_stamp())
 
 
 @app.cell
@@ -710,21 +710,11 @@ def _(EDITOR_UI, mo):
 
 
 @app.cell(hide_code=True)
-def _(ScreenPanelWidget, mo):
+def _(MODES, PANEL_TITLES, ScreenPanelWidget, mo, push_curves):
     # Persistent screen panels: created once and updated in place.
     # Each volley streams only its NEW hits to the client, which adds
     # them into its raster; hit_store keeps the accumulated history as
     # the rebuild baseline (remounts, curve changes).
-    # the four conditions of the main grid, plus the tunable recorder
-    # in its own section; the panel machinery covers all five
-    MAIN_MODES = ('both', 'slit2', 'slit1', 'observed')   # the grid
-    MODES = MAIN_MODES + ('tunable', 'eraser')
-    PANEL_TITLES = {'both': 'both slits open',
-                    'slit2': 'left slit blocked',
-                    'slit1': 'right slit blocked',
-                    'observed': 'recorder on right slit (both open)',
-                    'tunable': 'recorder with tunable decoherence',
-                    'eraser': 'recorder with quantum eraser'}
     panel_widgets = {_m: ScreenPanelWidget() for _m in MODES}
     panels = {_m: mo.ui.anywidget(_w)
               for _m, _w in panel_widgets.items()}
@@ -738,32 +728,14 @@ def _(ScreenPanelWidget, mo):
     current = {}
 
     def set_panel_curves(mode, xs, curve, parts=None):
-        # New curves for a panel. Same grain: only the line area under
-        # the screen redraws (the `curves` trait). A new grain: the
-        # panel rebuilds from its baseline — title, curves, and every
-        # hit so far — since the raster's pixel count follows len(xs).
-        curves = {'x': list(xs), 'y': list(curve)}
-        if parts:
-            # a grouped condition: the film colors hits by group and
-            # draws one curve per group under the total
-            curves['parts'] = [{'name': name, 'y': list(ys)}
-                               for name, ys in parts]
-        if panel_grain.get(mode) == len(xs):
-            panel_widgets[mode].curves = curves
-            return
-        panel_grain[mode] = len(xs)
-        panel_widgets[mode].curves = curves
-        panel_widgets[mode].data = {
-            'title': PANEL_TITLES[mode],
-            'curve': curves,
-            'width': 380,
-            'hits': [list(p) for p in hit_store['hits'][mode]],
-        }
+        # New curves for a panel: the line area under the screen redraws
+        # in place at the same grain; at a new grain the panel rebuilds
+        # from its baseline — title, curves, and every hit so far
+        panel_grain[mode] = push_curves(
+            panel_widgets[mode], xs, curve, parts, grain=panel_grain.get(mode),
+            title=PANEL_TITLES[mode], width=380, hits=hit_store['hits'][mode])
 
     return (
-        MAIN_MODES,
-        MODES,
-        PANEL_TITLES,
         hit_store,
         panel_widgets,
         current,
@@ -795,8 +767,8 @@ def _(
     current,
     fringes,
     main_angles,
+    main_curves,
     n_points,
-    screen_curve,
     screen_positions,
     via,
 ):
@@ -809,9 +781,7 @@ def _(
     reset always redraw per pixel."""
     # no spinner here: a transient output in this cell shifts the page,
     # and the live path is three engine runs per condition
-    curves_main = {mode: screen_curve(n_points.value, fringes.value,
-                                      mode, via=via, **main_angles)[1]
-                   for mode in MAIN_MODES}
+    curves_main = main_curves(n_points.value, fringes.value, main_angles, via, MAIN_MODES)
     xs = screen_positions(n_points.value)
     current.update(n=n_points.value, fringes=fringes.value,
                    main_angles=dict(main_angles))
@@ -825,14 +795,13 @@ def _(
     main_angles,
     math,
     n_points,
-    screen_curve,
     theta_pre_sl,
+    tunable_curve,
     via,
 ):
     current['theta_pre'] = math.radians(theta_pre_sl.value)
-    curve_tunable = screen_curve(
-        n_points.value, fringes.value, 'tunable', via=via,
-        theta_pre=current['theta_pre'], **main_angles)[1]
+    curve_tunable = tunable_curve(n_points.value, fringes.value, main_angles,
+                                  current['theta_pre'], via)
     return (curve_tunable,)
 
 
@@ -842,48 +811,31 @@ def _(
     fringes,
     main_angles,
     math,
+    eraser_curves,
     n_points,
-    screen_curves_by_sign,
     theta_erase_sl,
     via,
 ):
     # the eraser's curve comes split by p2's sign (parts), its total
     # in curve_eraser
     current['theta_erase'] = math.radians(theta_erase_sl.value)
-    _plus, _minus = screen_curves_by_sign(
-        n_points.value, fringes.value, 'eraser', via=via,
-        theta_erase=current['theta_erase'], **main_angles)[1]
-    curve_eraser = [a + b for a, b in zip(_plus, _minus)]
-    parts_eraser = [('+p₂', _plus), ('−p₂', _minus)]
+    _, curve_eraser, parts_eraser = eraser_curves(
+        n_points.value, fringes.value, main_angles, current['theta_erase'], via)
     return curve_eraser, parts_eraser
 
 
 @app.cell(hide_code=True)
-def _(DiagramWidget, MODES, diagram_geometry, mo, slit_sim):
+def _(DiagramWidget, MODES, diagram_geom, mo):
     """One circuit diagram per condition, rendered from the Simulation
     objects that yield the curves (Sn = slit n, Bn = a block in its
     place). The widgets are created once, here, at the models' own
     angles; the per-group cells below push new geometry into them when
     their sliders move (the widget redraws in place, keeping its view),
     so nothing else on the page re-renders."""
-    DIAGRAM_WIDTH = {mode: 900 if mode in ('slit1', 'both', 'slit2')
-                     else 1050 for mode in MODES}
-
-    def diagram_geom(mode, angles, labels):
-        # the grid rows size their own frames, and open with the
-        # whole circuit in view (fit) rather than at natural scale
-        _g = diagram_geometry(
-            slit_sim(mode, **angles), has_run=False,
-            angle_overrides={'g_obs': '0°', 'φ': 'φ(x)', **labels})
-        _g['frame_w'] = DIAGRAM_WIDTH[mode]
-        _g['frame_h'] = 330
-        _g['fit'] = True
-        return _g
-
     diagram_widgets = {mode: DiagramWidget(geometry=diagram_geom(mode, {}, {}))
                        for mode in MODES}
     diagrams = {mode: mo.ui.anywidget(w) for mode, w in diagram_widgets.items()}
-    return diagram_geom, diagram_widgets, diagrams
+    return diagram_widgets, diagrams
 
 
 @app.cell(hide_code=True)
@@ -930,32 +882,13 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(
-    MAIN_MODES,
-    current,
-    screen_curve,
-    screen_curves_by_sign,
-    set_panel_curves,
-):
+def _(MAIN_MODES, current, double_slit_curves, set_panel_curves):
     def engine_curves():
         """Every condition's curve from one engine run per pixel at the
         current settings — what fire particles and reset screens draw,
         and sample from — pushed into the panels: (curves by mode,
         parts by mode)."""
-        n, fringes, main_angles = (current['n'], current['fringes'],
-                                   current['main_angles'])
-        theta_pre, theta_erase = current['theta_pre'], current['theta_erase']
-        curves = {mode: screen_curve(n, fringes, mode, via='pixels',
-                                     **main_angles)[1]
-                  for mode in MAIN_MODES}
-        curves['tunable'] = screen_curve(n, fringes, 'tunable', via='pixels',
-                                         theta_pre=theta_pre,
-                                         **main_angles)[1]
-        xs, (plus, minus) = screen_curves_by_sign(
-            n, fringes, 'eraser', via='pixels', theta_erase=theta_erase,
-            **main_angles)
-        curves['eraser'] = [a + b for a, b in zip(plus, minus)]
-        parts = {'eraser': [('+p₂', plus), ('−p₂', minus)]}
+        xs, curves, parts = double_slit_curves(current, MAIN_MODES)
         for mode, curve in curves.items():
             set_panel_curves(mode, xs, curve, parts.get(mode))
         return curves, parts

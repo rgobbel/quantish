@@ -516,6 +516,8 @@ class Route:
     # which end the label hugs ('src' or 'dst'); renderers that need
     # clearance from the neighboring boxes push away from that end
     label_side: str | None = None
+    # the link's source (a particle, or 'gate.port'); None for a stub
+    src: str | None = None
 
 
 # Routing trace: set to a list to have alloc_channel append one
@@ -1034,7 +1036,7 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
                 and horizontal_blocked(sy, sx, dx) is None
                 and not reserve_blocked(sy, sx, dx)):
             routes.append(Route([(sx, sy), (dx, dy)], label=w_label,
-                                label_at=w_at, label_side=w_side))
+                                label_at=w_at, label_side=w_side, src=src))
             add_horizontal(sy, sx, dx, owner=src)
             continue
 
@@ -1111,7 +1113,7 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
 
         if two_step is not None:
             routes.append(Route(two_step, label=w_label,
-                                label_at=w_at, label_side=w_side))
+                                label_at=w_at, label_side=w_side, src=src))
             # Record both stubs as occupied horizontals.
             add_horizontal(sy, sx, two_step[1][0], owner=src)
             add_horizontal(dy, two_step[2][0], dx, owner=src)
@@ -1302,7 +1304,7 @@ def route_wires(circuit: Circuit, L: Layout) -> list[Route]:
             (d_cx, lane_y),
             (d_cx, dy),
             (dx, dy),
-        ], label=w_label, label_at=w_at, label_side=w_side))
+        ], label=w_label, label_at=w_at, label_side=w_side, src=src))
         # Record all three horizontal segments of the route.
         add_horizontal(sy, sx, cx, owner=src)
         add_horizontal(lane_y, cx, d_cx, owner=src)

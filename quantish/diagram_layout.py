@@ -28,6 +28,7 @@ from quantish.tikz_diagram import (
     spec_from_simulation,
 )
 from quantish.util import (
+    BRANCH_MARK,
     SEP,
     angle_label,
     base_name,
@@ -57,6 +58,39 @@ CHAR_W = 0.115          # approx character width at the value font size
 
 def _sub(s) -> str:
     return fmt_label(s)
+
+
+def dead_sources(links: dict, absent) -> set:
+    """The sources no weight leaves when the `absent` particles are out
+    of the run: the particles themselves and, downstream, every output
+    a dead input feeds — a control input to the control output, a
+    switch input to both switch outputs (unless a live source feeds
+    the other switch port, which then carries weight to both), on
+    through every gate reached. `links` is the canonical source ->
+    'gate.port' map; the keys returned are in the same form."""
+    dead = set(absent)
+
+    def is_dead(src):
+        return src.removesuffix(BRANCH_MARK) in dead
+
+    fed: dict[str, dict[str, str]] = {}
+    for src, dst in links.items():
+        gate, port = dst.split(SEP, 1)
+        fed.setdefault(gate, {})[port] = src
+    changed = True
+    while changed:
+        changed = False
+        for gate, ports in fed.items():
+            outs = set()
+            if 'control' in ports and is_dead(ports['control']):
+                outs.add(f'{gate}{SEP}control')
+            switch = [s for w, s in ports.items() if w in ('upper', 'lower')]
+            if switch and all(is_dead(s) for s in switch):
+                outs.update(f'{gate}{SEP}{w}' for w in ('upper', 'lower'))
+            if outs - dead:
+                dead |= outs
+                changed = True
+    return dead
 
 
 def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
@@ -162,6 +196,17 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
     boxes, texts, wires, arrows, dots, stadiums = [], [], [], [], [], []
     particle_marks = []   # (x, y, x2, y2) of each absent particle's blob
     frames = {}   # drawn gate/delay frame extents, for the stage boxes
+    # each gate's wired-through rows (a wire fed at the input AND linked
+    # onward at the output), for a switched-off gate's pass-through lines
+    thru_ys = {}
+
+    fed = set(parsed.links.values())   # every port a link ends at
+    # every source no weight leaves, the absent particles' wires
+    # followed downstream: drawn dotted
+    dead = dead_sources(parsed.links, absent)
+
+    def wired_through(pos):
+        return pos in fed and pos in parsed.links
     # scaled wire-endpoint -> x of the DRAWN box edge there, so wires and
     # arrowheads stop at the boundary even when a box grew for its text
     edge_clip = {}
@@ -332,6 +377,9 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
         # dotted X between the switch port columns, box edge to box edge
         uy = top + PORT_DY['upper'] * KY
         ly = top + PORT_DY['lower'] * KY
+        thru_ys[gname] = tuple(
+            y for wname, y in (('control', ccy_port), ('upper', uy), ('lower', ly))
+            if wired_through(f'{gname}{SEP}{wname}'))
         xin = in_right + 0.06
         xout = out_left - 0.06
         if xout > xin + 0.2:
@@ -427,6 +475,7 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
                 (_cy, dy_ * KY, _safe_l, _safe_r)
         frames[dname] = (fx(dx_) - w / 2, _cy - h / 2,
                          fx(dx_) + w / 2, _cy + h / 2)
+        thru_ys[dname] = (_cy,) if wired_through(pos) else ()
 
     # particles: stadium blobs sized to their names (a fixed circle
     # clips longer names like AIM_Figure12's control1/control2)
@@ -630,7 +679,13 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
                 rounded.append((p2x, p2y))
             rounded.append(pts[-1])
             pts = rounded
-        wires.append([{'route': f'w{i}', 'order': j, 'x': x, 'y': y}
+        # no weight travels it (from a switched-off particle, or
+        # downstream of one): dotted. A branching particle's arms
+        # carry the mark
+        _dotted = (r.src is not None
+                   and r.src.removesuffix(BRANCH_MARK) in dead)
+        wires.append([{'route': f'w{i}', 'order': j, 'x': x, 'y': y,
+                       **({'dotted': True} if _dotted else {})}
                       for j, (x, y) in enumerate(pts)])
         # arrowhead: tip meets the boundary, so back its center off a bit
         (x1, y1), (x2, y2) = pts[-2], pts[-1]
@@ -701,8 +756,11 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
         x0, x1 = min(x0, p['x']), max(x1, p['x'])
         y0, y1 = min(y0, p['y']), max(y1, p['y'])
     pad = 0.4
-    # switched-off gates: gray every box inside the frame, and cross
-    # the frame with a bold X (marks: lines the presenters draw on top)
+    # switched-off gates: gray every box inside the frame, run each
+    # wire straight through it (the gate is a plain wire for the run:
+    # the weight just goes through), drop the dotted switch X, and
+    # cross the frame with a bold X (marks: lines the presenters draw
+    # on top, in this order, so the X is over the wires)
     marks = []
     for gname in disabled:
         if gname not in frames:
@@ -712,6 +770,10 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
             if b['x'] >= left - 1e-9 and b['x2'] <= right + 1e-9 \
                     and b['y'] >= bottom - 1e-9 and b['y2'] <= top + 1e-9:
                 b['fill'], b['stroke'] = DISABLED_FILL, DISABLED_STROKE
+        for y in thru_ys.get(gname, ()):
+            marks.append({'x': left, 'y': y, 'x2': right, 'y2': y,
+                          'stroke': WIRE_COLOR, 'width': 2.2})
+        dots = [d for d in dots if not d[0]['route'].startswith(f'{gname}~x')]
         marks.append({'x': left, 'y': bottom, 'x2': right, 'y2': top,
                       'stroke': DISABLED_X, 'width': 4})
         marks.append({'x': left, 'y': top, 'x2': right, 'y2': bottom,

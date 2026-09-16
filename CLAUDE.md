@@ -220,6 +220,26 @@ Configuration options (usually in defaults.yaml):
   - `qnumber.py`, `angle.py`: Unified number system
   - `config_space.py`: configuration-space points and the stage engine
   - `display.py`: presentation helpers over a finished Simulation
+  - `apps/`: the marimo apps' library side — what the notebooks call
+    instead of holding themselves (`common.py`: the model library, a
+    model over the defaults, the variables editor's text, picker and
+    switch-off memories, the build stamp; `sweep_ui.py`: the sweep
+    editor the quantish app and the builder share — controls, the
+    declaration, the run, chart and table; `curves.py`: screen curves
+    pushed into a panel at the right grain, the demo's per-condition
+    curves; `lab.py`: the decoherence lab's slots — a model in a slot,
+    its sliders, on/off boxes, screen, diagram, stage views, and
+    readout, built once and updated in place; `double_slit_ui.py`: the
+    demo's conditions, panel titles, and diagram geometry; the
+    quantish app's `run.py` (the angle state seeded from a model, the
+    slider and entry widgets on it, the Simulation as the app has it
+    set), `results.py` (the Detailed Results tables), `sampling.py`
+    (interpretations, runtime projection, the Monte Carlo job and its
+    views), `epr_ui.py` (the EPR angle entries and report); the
+    builder's UI is next). `import marimo` is allowed here and
+    nowhere else in the package; the notebooks keep only widget
+    bindings, `mo.state`, and layout (marimo tracks a widget only as a
+    cell global, so builders here return elements for the cell to bind)
   - `epr.py`: EPR experiment sweeps and statistics
   - `montecarlo.py`: Monte Carlo sampling mode
   - `mermaid_diagram.py`, `network_graph.py`, `tikz_diagram.py`: Diagrams
@@ -237,6 +257,9 @@ Configuration options (usually in defaults.yaml):
 - `tests/`: Unit tests (golden states, wiring validation, EPR, Monte
   Carlo, variables, double slit)
 - `notebooks/`: the marimo apps (`quantish_app.py`, `double_slit_app.py`, `decoherence_app.py`, `network_builder_app.py`)
+  Each starts with the same WASM install cell (the only code that
+  cannot move into the package: the wheel is not importable until
+  micropip has installed it), then imports from `quantish.apps`
 - `HIDEME/`: Historical/experimental code and archived dead code (ignore)
 
 ## Notes for Development

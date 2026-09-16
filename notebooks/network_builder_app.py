@@ -43,21 +43,34 @@ async def initialization():
             _p.parent.mkdir(parents=True, exist_ok=True)
             _p.write_text(_text)
 
-    WASM_MODE = sys.platform == 'emscripten'
-
     from addict import Dict as Addict
 
     _repo = Path(__file__).resolve().parents[1]
     if str(_repo) not in sys.path:
         sys.path.insert(0, str(_repo))
 
-    from quantish.qnumber import CalcMode
-
-    CalcMode.default('Float')
-
-
     import yaml
 
+    from quantish.apps.common import (
+        MODELS_TOP,
+        WASM_MODE,
+        build_stamp,
+        in_div,
+        init_engine,
+        model_files,
+        remember_in,
+        stamp_html,
+        switch_off_boxes,
+        switched_off,
+        vars_text,
+    )
+    from quantish.apps.sweep_ui import (
+        editor_rows,
+        editor_spec,
+        sweep_chart,
+        sweep_controls,
+        sweep_run,
+    )
     from quantish.builder import (
         angle_degrees,
         coherence_warnings,
@@ -74,7 +87,6 @@ async def initialization():
     from quantish.builder_widget import (
         BuilderWidget,
         DiagramWidget,
-        LinePlotWidget,
         NetworkGraphWidget,
     )
     from quantish.diagram_layout import diagram_geometry
@@ -87,40 +99,35 @@ async def initialization():
         sym_or_float,
     )
     from quantish.network_graph import NetworkGraph
+    from quantish.qnumber import CalcMode
     from quantish.screen import model_label
     from quantish.screen import model_title as yaml_title
     from quantish.simulation import Simulation
-    from quantish.sweep import check_sweep, run_sweep, sweep_values
+    from quantish.sweep import check_sweep
     from quantish.util import angle_label
 
+    init_engine()
     # the model library, for loading an existing model into the
-    # builder: the repo's models/ directory, or the frozen copy
-    # fetched above under WASM
-    _models_top = (Path('/wasm-data/models') if WASM_MODE
-                   else _repo / 'models')
-    models_top = _models_top if _models_top.is_dir() else None
-    model_paths = {str(p.relative_to(_models_top)): p
-                   for p in sorted(_models_top.rglob('*.yaml'))
-                   if p.name not in ('defaults.yaml', 'schema.yaml')
-                   and not p.name.startswith('.')} \
-        if models_top else {}
+    # builder (and saving one beside them): the repo's models/
+    # directory, or the frozen copy fetched above under WASM; None
+    # when there is none
+    models_top = MODELS_TOP if MODELS_TOP.is_dir() else None
+    model_paths = model_files(MODELS_TOP)
     return (
         Addict,
         BuilderWidget,
         CalcMode,
         DiagramWidget,
-        LinePlotWidget,
         NetworkGraph,
         NetworkGraphWidget,
         Simulation,
         check_sweep,
         model_label,
-        run_sweep,
-        sweep_values,
         yaml_title,
         WASM_MODE,
         angle_degrees,
         angle_label,
+        build_stamp,
         coherence_warnings,
         config_extras,
         config_to_graph,
@@ -133,40 +140,45 @@ async def initialization():
         diagram_geometry,
         graph_to_config,
         html_table,
+        in_div,
         mo,
         particle_names,
         particle_tokens,
+        remember_in,
+        stamp_html,
+        switch_off_boxes,
+        switched_off,
+        editor_rows,
+        editor_spec,
+        sweep_chart,
+        sweep_controls,
+        sweep_run,
         sym_or_float,
         model_paths,
         models_top,
         validate_graph,
         variables_env,
+        vars_text,
         yaml,
     )
 
 
 @app.cell(hide_code=True)
-def _(mo):
+def _(in_div, mo):
     _intro = mo.md(r"""
     # Quantish Network Builder
 
     With this tool you can build a complete quantish model, either from scratch or by modifying an existing model.
     """)
-    def _sub(md):
-        # a sub-section's body sits one list level under its '- '
-        # heading (.qb-doc-body in css/quantish_app.css); the class
-        # rides inside the content, which is what marimo's accordion
-        # actually renders
-        return mo.Html('<div class="qb-doc-body">' + mo.md(md).text
-                       + '</div>')
-
+    # a sub-section's body sits one list level under its '- ' heading
+    # (.qb-doc-body in css/quantish_app.css, via in_div)
     _doc = mo.vstack([mo.md(r"""
     Use the icon palette beside the canvas to add components to a network. Hovering over each icon will reveal a descriptive tooltip.
     Components can be added to a network by dragging from a palette icon, or clicking on
     one of them. Basic circuit elements are above the divider, grouping elements are below.
     In most contexts, text can use [Markdown](https://docs.marimo.io/api/markdown/) formatting, including interpolated
     [LaTeX](https://www.latex-project.org/).
-    """), mo.accordion({'- Types of components': _sub(r"""
+    """), mo.accordion({'- Types of components': in_div('qb-doc-body', r"""
     - **gates** are quantish Fredkin gates, as described in *Good and Real*.
     - **particles** are the entities that travel through a quantish network.
       Each starts with a sign (+ or −) and a complex-valued weight, and enters the network through one gate input.
@@ -174,18 +186,18 @@ def _(mo):
       affecting amplitude, simulating an alteration to [optical path length](https://en.wikipedia.org/wiki/Optical_path_length). One example of a real-world phase plate device is an
       [electro-optic modulator](https://en.wikipedia.org/wiki/Electro-optic_modulator). 
     - **delay gates** are simple passthroughs, useful for manipulating diagram layout, but having no effect on execution.
-    """), '- Grouping': _sub(r"""
+    """), '- Grouping': in_div('qb-doc-body', r"""
     - A **run stage** is a set of gates that fire together, one step
       of a run. By default execution proceeds serially in an order determined by network topology. Run stages can be
       used for cases in which the automatically-determined order is ambiguous.
     - A **diagram group** is purely visual, a labeled bracket in the
       network diagram. Diagram groups don't affect how a circuit runs.
-    """), '- Actions': _sub(r"""
+    """), '- Actions': in_div('qb-doc-body', r"""
     - To modify an existing model, pick one from the list of predefined models or upload a model's YAML declaration and press
       **⬆ load into builder**. The selected model replaces the contents of canvas
     - **✕ clear** starts over with an empty canvas, with confirmation. **Note**: _Undo_ will restore the superseded canvas.
 
-    """), '- Creating and editing a network': _sub(r"""
+    """), '- Creating and editing a network': in_div('qb-doc-body', r"""
     - Drag from an **output port** on the right side of any gate or particle to a free
       **input port** on the left side of another element to wire them together.
     - Double-click in the middle of a Fredkin gate to set its measurement angle, or for a phase
@@ -229,7 +241,7 @@ def _(mo):
       icon shows their run stage name (drawn as a teal box) and the
       group icon their diagram group name (a dashed box; an empty name
       clears either)
-    """), '- Optional fields': _sub(r"""
+    """), '- Optional fields': in_div('qb-doc-body', r"""
     - The model's **title**, **calculation mode**, and **angle unit**
       are editable above the canvas. 
     - The model's **caption**, **variables**, and free-text **notes** can be edited
@@ -242,23 +254,10 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-async def build_stamp(mo, sys):
-    # Which build is this? The site build (tools/build_wasm_app.sh)
-    # writes public/version.json beside the page; a development copy
-    # says so instead.
-    _stamp = 'development copy'
-    if sys.platform == 'emscripten':
-        try:
-            import json as _json
-
-            from pyodide.http import pyfetch as _pyfetch
-            _v = _json.loads(await (await _pyfetch(
-                f'{mo.notebook_location()}/public/version.json')).string())
-            _stamp = f"build {_v['build']} · {_v['built_at']}"
-        except Exception:  # noqa: BLE001 — an unstamped site shows nothing
-            _stamp = ''
-    mo.md(f'<span style="font-size: 0.8em; color: #444">{_stamp}</span>') \
-        if _stamp else None
+async def _(build_stamp, stamp_html):
+    # which build is this? (the site build writes public/version.json
+    # beside the page; a development copy says so instead)
+    stamp_html(await build_stamp())
 
 
 @app.cell(hide_code=True)
@@ -523,7 +522,7 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(get_loaded, mo):
+def _(get_loaded, mo, vars_text):
     # the model's whole header is editable: title (into the YAML) and
     # file name (of the saved file) are separate; caption, variables,
     # and the calculation mode ride into the YAML too
@@ -553,14 +552,9 @@ def _(get_loaded, mo):
         value=_loaded.get('model_notes') or '', rows=3, full_width=True,
         placeholder='free-form text', label='**notes**')
 
-    def _vars_text(vs):
-        return '\n'.join(
-            f"{k}: '{v}'" if isinstance(v, str) else f'{k}: {v}'
-            for k, v in (vs or {}).items())
-
     variables_editor = mo.ui.text_area(
         value=(_loaded.get('variables_text')
-               or _vars_text(_loaded.get('variables'))), rows=6,
+               or vars_text(_loaded.get('variables'))), rows=6,
         full_width=True,
         placeholder='variable definitions in YAML format')
     # the loaded model's unhandled sections, kept for the save — their
@@ -746,67 +740,25 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(builder, loaded_extras, mo, model_vars, sweep_memory):
+def _(builder, loaded_extras, model_vars, sweep_controls, sweep_memory):
     # the model's sweep, entered here: the variable to sweep (one of
     # the editor's), its range and point count, the particle and gate
     # whose arrival is recorded, and an optional sort. Seeded from a
     # loaded model's sweep section, remembered across rebuilds (the
     # elements are remade whenever the variables or the canvas change)
     _graph = builder.value.get('graph') or {}
-    _particles = list(_graph.get('particles') or {})
-    _gates = list(_graph.get('gates') or {})
-    _vars = list(model_vars or {})
-    _decl = dict(loaded_extras.get('sweep') or {}) if isinstance(loaded_extras.get('sweep'), dict) else {}
-    _obs, _grp = dict(_decl.get('observe') or {}), dict(_decl.get('group_by') or {})
-
-    def _seed(key, default):
-        return sweep_memory.get(key, default)
-
-    def _remember(key):
-        def cb(v):
-            sweep_memory[key] = v
-        return cb
-
-    def _pick(key, options, default, label):
-        value = _seed(key, default)
-        return mo.ui.dropdown(options=options, value=value if value in options else (options[0] if options else None),
-                              label=label, on_change=_remember(key))
-
-    sweep_ui = mo.ui.dictionary({
-        'on': mo.ui.checkbox(value=_seed('on', bool(_decl)), label='declare a sweep',
-                             on_change=_remember('on')),
-        'variable': _pick('variable', _vars, _decl.get('variable'), 'variable'),
-        'from': mo.ui.text(value=str(_seed('from', _decl.get('from', 0))), label='from',
-                           on_change=_remember('from')),
-        'to': mo.ui.text(value=str(_seed('to', _decl.get('to', '2*pi'))), label='to',
-                         on_change=_remember('to')),
-        'points': mo.ui.number(2, 401, value=int(_seed('points', _decl.get('points', 41))),
-                               label='points', on_change=_remember('points')),
-        'particle': _pick('particle', _particles, _obs.get('particle'), 'record: particle'),
-        'at': _pick('at', _gates, _obs.get('at'), 'arriving at'),
-        'sort': _pick('sort', ['(unsorted)', *_particles], _grp.get('particle', '(unsorted)'),
-                      'sort by'),
-        'coordinate': _pick('coordinate', ['sign', 'position', 'both'],
-                            _grp.get('coordinate', 'sign'), 'coordinate'),
-    })
+    _decl = loaded_extras.get('sweep')
+    sweep_ui = sweep_controls(model_vars or {}, _graph.get('particles') or {},
+                              _graph.get('gates') or {},
+                              _decl if isinstance(_decl, dict) else None,
+                              memory=sweep_memory, declare_box=True)
     return (sweep_ui,)
 
 
 @app.cell(hide_code=True)
-def _(sweep_ui):
+def _(editor_spec, sweep_ui):
     # the sweep as the model declares it (None when not declared)
-    def _():
-        v = sweep_ui.value
-        if not v.get('on') or not v.get('variable'):
-            return None
-        spec = {'variable': v['variable'], 'from': v['from'], 'to': v['to'],
-                'points': int(v['points']),
-                'observe': {'particle': v['particle'], 'at': v['at']}}
-        if v['sort'] and v['sort'] != '(unsorted)':
-            spec['group_by'] = {'particle': v['sort'], 'coordinate': v['coordinate']}
-        return spec
-
-    sweep_cfg = _()
+    sweep_cfg = editor_spec(sweep_ui.value)
     return (sweep_cfg,)
 
 
@@ -823,15 +775,15 @@ def _(builder_config, mo, sweep_cfg):
 def _(
     Addict,
     CalcMode,
-    LinePlotWidget,
     Simulation,
     builder_config,
     mo,
-    run_sweep,
     sweep_button,
     sweep_cfg,
-    sweep_values,
+    sweep_chart,
+    sweep_run,
     switch_off,
+    switched_off,
     unit_pick,
 ):
     # the declared sweep, run and plotted: the switched-off gates and
@@ -845,44 +797,25 @@ def _(
                               or '').lower() == 'symbolic' else 'Float')
         config = Addict({'string_precision': 2, 'max_symbolic_len': 40,
                          'loglevel': 'warning', **builder_config})
-        inert = [k[2:] for k, v in switch_off.value.items() if k.startswith('g:') and not v]
-        absent = [k[2:] for k, v in switch_off.value.items() if k.startswith('p:') and not v]
+        inert, absent = switched_off(switch_off.value)
         try:
             with mo.status.spinner(title='running the sweep…'):
-                res = run_sweep(Simulation(config), sweep_cfg,
-                                values=sweep_values(sweep_cfg), inert=inert, absent=absent)
+                res = sweep_run(Simulation(config), sweep_cfg, inert=inert, absent=absent)
         except Exception as exc:  # noqa: BLE001 — show, don't crash the app
             return mo.md(f'**sweep failed** — `{exc}`')
-        import math as _m
-        degrees = unit_pick.value == 'degrees'
-        xs = [_m.degrees(float(x)) if degrees else float(x) for x in res['x']]
-        grp, obs = sweep_cfg.get('group_by'), sweep_cfg['observe']
-        names = {lab: f"{lab}{grp['particle']}" if grp else lab for lab in res['series']}
-        palette = ['#4c78a8', '#f58518', '#54a24b', '#e45756', '#72b7b2',
-                   '#b279a2', '#ff9da6', '#9d755d']
-        series = [{'name': names[lab], 'x': xs, 'y': [float(v) for v in ys],
-                   'color': palette[i % len(palette)]}
-                  for i, (lab, ys) in enumerate(res['series'].items())]
-        if grp:
-            series.append({'name': 'total', 'x': xs, 'y': [float(v) for v in res['total']],
-                           'color': '#333', 'dash': '6 4'})
-        chart = mo.ui.anywidget(LinePlotWidget(data={
-            'series': series, 'xdomain': [min(xs), max(xs)],
-            'xlabel': f"{sweep_cfg['variable']} ({'degrees' if degrees else 'radians'})",
-            'ylabel': f"P({obs['particle']} at {obs['at']})",
-            'width': 900, 'height': 220}))
         off = ''.join(f' — {what} off: {", ".join(ns)}'
                       for what, ns in (('gates', inert), ('particles', absent)) if ns)
-        return mo.vstack([mo.md(f'{len(xs)} points{off}'), chart], gap=0.3)
+        return mo.vstack([mo.md(f"{len(res['x'])} points{off}"),
+                          sweep_chart(res, sweep_cfg, unit_pick.value == 'degrees')],
+                         gap=0.3)
 
     sweep_view = _()
     return (sweep_view,)
 
 
 @app.cell(hide_code=True)
-def _(caption_input, mo, notes_input, sweep_button, sweep_ui, sweep_view, variables_editor):
+def _(caption_input, editor_rows, mo, notes_input, sweep_button, sweep_ui, sweep_view, variables_editor):
     # all entirely optional, so they live below the canvas
-    _e = sweep_ui.elements
     mo.accordion({'#### Caption, notes, variables, and sweep':
                   mo.vstack([
         caption_input,
@@ -892,18 +825,15 @@ def _(caption_input, mo, notes_input, sweep_button, sweep_ui, sweep_view, variab
         mo.md('<span style="font-size: 0.9em">**sweep** — rerun the model across a '
               'range of one variable, recording a particle\'s arrival at a gate; a '
               'sweep on a phase plate\'s variable is a screen in the decoherence lab</span>'),
-        _e['on'],
-        mo.hstack([_e['variable'], _e['from'], _e['to'], _e['points']],
-                  justify='start', wrap=True, gap=1.5, align='end'),
-        mo.hstack([_e['particle'], _e['at'], _e['sort'], _e['coordinate']],
-                  justify='start', wrap=True, gap=1.5, align='end'),
+        sweep_ui.elements['on'],
+        *editor_rows(sweep_ui),
         sweep_button,
         sweep_view,
     ], align='stretch')})
 
 
 @app.cell(hide_code=True)
-def _(builder, graph_to_config, mo, off_memory):
+def _(builder, graph_to_config, mo, off_memory, switch_off_boxes):
     # switch off for the run: a checkbox per gate (a plain wire when
     # off) and per particle (a null input when off) — the quick way to
     # try a configuration without rewiring; the canvas crosses out
@@ -920,15 +850,7 @@ def _(builder, graph_to_config, mo, off_memory):
     _gates = sorted(_gates, key=lambda n: (_staged.index(n) if n in _staged else len(_staged), n))
     _particles = list(_graph.get('particles') or {})
 
-    def _remember(key):
-        def cb(v):
-            off_memory[key] = bool(v)
-        return cb
-    switch_off = mo.ui.dictionary({
-        key: mo.ui.checkbox(value=off_memory.get(key, True), label=name,
-                            on_change=_remember(key))
-        for key, name in ([(f'g:{n}', n) for n in _gates]
-                          + [(f'p:{n}', n) for n in _particles])})
+    switch_off = switch_off_boxes(off_memory, _gates, _particles)
     _rows = []
     if _gates:
         _rows.append(mo.hstack([mo.md('<span style="color: #000">gates on:</span>')]

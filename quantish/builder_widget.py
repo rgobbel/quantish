@@ -257,7 +257,10 @@ _CSS = """
                      white-space: nowrap; }
 .qb-toolbar button:hover { border-color: #5c64d1; background: #f6f7ff; }
 .qb-hint { font-size: 12px; color: #000; margin-left: auto; }
-.qb-body { display: flex; gap: 8px; align-items: flex-start; }
+/* the palette keeps its own height; the canvas stretches to the row,
+   so its default height is even with the palette */
+.qb-body { display: flex; gap: 8px; align-items: stretch; }
+.qb-palette { align-self: flex-start; }
 .qb-palette { display: flex; flex-direction: column; width: 84px;
               border: 1px solid #bbb; border-radius: 8px;
               background: #fff; overflow: hidden; }
@@ -273,8 +276,12 @@ _CSS = """
 .qb-palette .qb-pal-label { font-size: 12.5px; color: #000;
                             line-height: 1.1; }
 .qb-pal-sep { border-top: 3px double #8b93a0; margin: 0; }
-.qb-svg { border: 1px solid #ddd; border-radius: 8px; background: #fff;
-          display: block; flex: 1; min-width: 0;
+/* the canvas frame: stretch it by its bottom-right corner (CSS
+   resize); the svg fills it */
+.qb-canvas { border: 1px solid #ddd; border-radius: 8px; background: #fff;
+             flex: 1; min-width: 0; min-height: 240px; box-sizing: border-box;
+             resize: vertical; overflow: hidden; }
+.qb-svg { display: block; width: 100%; height: 100%;
           user-select: none; -webkit-user-select: none;
           touch-action: none; }
 .qb-palette button { touch-action: none; }
@@ -287,8 +294,7 @@ _CSS = """
                        border-right: 1px solid #e2e2e8; }
   .qb-palette button:last-child { border-right: none; }
   .qb-pal-sep { border-top: none; border-left: 3px double #8b93a0; }
-  .qb-svg { flex: none; width: 100%; height: 60vh;
-            box-sizing: border-box; }
+  .qb-canvas { flex: none; width: 100%; height: 60vh; }
 }
 .qb-dialog { position: absolute; top: 60px; left: 50%;
              transform: translateX(-50%); z-index: 10;
@@ -519,7 +525,30 @@ function render({ model, el }) {
     'shift-drag to select · scroll or pinch zooms, drag on empty ' +
     'space pans';
   bar.append(delBtn, clearBtn, undoBtn, redoBtn, hint);
-  const svg = h('svg', { class: 'qb-svg', height: 560 });
+  const svg = h('svg', { class: 'qb-svg' });
+  // The canvas frame: by default even with the palette beside it (the
+  // stylesheet stretches it to the row), and resizable by its
+  // bottom-right corner; a height the user stretched to survives
+  // widget rebuilds (a model load) in a window-level stash. Narrow
+  // screens leave the sizing to the stylesheet.
+  const canvas = document.createElement('div');
+  canvas.className = 'qb-canvas';
+  const qb = window.__qbState = window.__qbState || {};
+  const wide = () => window.innerWidth > 640;
+  if (qb.canvasH && wide()) canvas.style.height = `${qb.canvasH}px`;
+  canvas.appendChild(svg);
+  // the user's height is one a pointer drag changed (the corner grip):
+  // measured on pointer down and up, so a rebuild's own layout never
+  // passes for a stretch
+  const frameH = () => Math.round(canvas.getBoundingClientRect().height);
+  let downH = 0;
+  const _grabH = () => { downH = frameH(); };
+  const _dropH = () => {
+    const hgt = frameH();
+    if (hgt && downH && hgt !== downH && wide()) qb.canvasH = hgt;
+  };
+  window.addEventListener('pointerdown', _grabH);
+  window.addEventListener('pointerup', _dropH);
   const body = document.createElement('div');
   body.className = 'qb-body';
   const palette = document.createElement('div');
@@ -528,7 +557,7 @@ function render({ model, el }) {
   sep.className = 'qb-pal-sep';
   palette.append(addGateBtn, addPartBtn, addPlateBtn, addDelayBtn,
                  sep, stageBtn, dgroupBtn);
-  body.append(palette, svg);
+  body.append(palette, canvas);
   root.append(bar, body);
   el.appendChild(root);
 
@@ -847,7 +876,34 @@ function render({ model, el }) {
     outline('stage', stageBoxes, 8, 20, { stroke: C.gateStroke });
 
     // wires next, under the nodes — routed orthogonally with rounded
-    // corners, like the results diagram
+    // corners, like the results diagram. The sources no weight leaves
+    // — switched-off particles and, downstream, every output a dead
+    // input feeds (control in to control out, a switch input to both
+    // switch outputs unless a live source feeds the other switch
+    // port), through every gate reached — draw dotted
+    const dead = new Set(Object.keys(g.particles).filter((p) => offSet.has(p)));
+    {
+      const fed = {};
+      for (const [src, dst] of g.links) {
+        const [node, port] = dst.includes('.') ? dst.split('.') : [dst, 'control'];
+        (fed[node] ??= {})[port] = src;
+      }
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const [node, ports] of Object.entries(fed)) {
+          const gd = g.gates[node];
+          const oneWire = !gd || isDelay(gd) || isPlate(gd);   // bare-name output
+          const outs = [];
+          if (ports.control && dead.has(ports.control))
+            outs.push(oneWire ? node : `${node}.control`);
+          const sw = ['upper', 'lower'].filter((w) => ports[w]);
+          if (sw.length && sw.every((w) => dead.has(ports[w])))
+            outs.push(`${node}.upper`, `${node}.lower`);
+          for (const o of outs) if (!dead.has(o)) { dead.add(o); changed = true; }
+        }
+      }
+    }
     const routed = routeWires(g);
     g.links.forEach((l, i) => {
       const pts = routed[i];
@@ -858,6 +914,9 @@ function render({ model, el }) {
       layer.appendChild(h('path', {
         d, fill: 'none',
         stroke: sel ? C.select : C.wire, 'stroke-width': sel ? 3 : 2,
+        // no weight travels it: dotted
+        ...(dead.has(l[0]) ? { 'stroke-dasharray': '2 4',
+                               'stroke-linecap': 'round' } : {}),
         'data-link': i, style: 'cursor: pointer',
       }));
       // a fatter invisible hit area so wires are clickable
@@ -1051,7 +1110,23 @@ function render({ model, el }) {
           'data-outport': name, style: 'cursor: crosshair',
         }));
       }
-      if (off) crossOut(grp, gd.x, gd.y, w0, h0, 4);
+      if (off) {
+        // a switched-off gate is a plain wire for the run: each wire
+        // that is fed at its input and linked onward at its output
+        // runs straight through it, under the X (a delay or plate's
+        // one wire is addressed by the bare name)
+        const wired = (k) => dstTaken.has(k) && g.links.some((l) => l[0] === k);
+        const ys = (delay || plate)
+          ? (wired(name) ? [gd.y + h0 / 2] : [])
+          : WIRES.filter((wn) => wired(`${name}.${wn}`))
+                 .map((wn) => gd.y + PORT_Y[wn]);
+        for (const y of ys)
+          grp.appendChild(h('line', {
+            x1: gd.x, y1: y, x2: gd.x + w0, y2: y, stroke: C.wire,
+            'stroke-width': 2, 'pointer-events': 'none',
+          }));
+        crossOut(grp, gd.x, gd.y, w0, h0, 4);
+      }
       layer.appendChild(grp);
     }
 
@@ -1836,6 +1911,10 @@ function render({ model, el }) {
   }
 
   const onDown = (ev) => {
+    // the frame's resize grip (its bottom-right corner) belongs to
+    // the browser: no pan, wire, or marquee starts there
+    const cr = canvas.getBoundingClientRect();
+    if (ev.clientX > cr.right - 20 && ev.clientY > cr.bottom - 20) return;
     const t = ev.target;
     const [x, y] = svgPoint(ev);
     if (t.dataset.outport) {
@@ -2110,6 +2189,8 @@ function render({ model, el }) {
   model.on('change:off', redraw);
   redraw();
   return () => {
+    window.removeEventListener('pointerdown', _grabH);
+    window.removeEventListener('pointerup', _dropH);
     document.removeEventListener('pointerup', _palUp);
     document.removeEventListener('pointercancel', _palCancel);
   };
@@ -2207,6 +2288,9 @@ function render({ model, el }) {
       svg.appendChild(h('path', {
         d: rounded(seg.map((p) => [p.x, fy(p.y)])),
         fill: 'none', stroke: g.wire_color, 'stroke-width': 1.3 / S,
+        // a switched-off particle's wire: dotted, no weight travels it
+        ...(seg[0].dotted ? { 'stroke-dasharray': `${1.5 / S} ${3.5 / S}`,
+                              'stroke-linecap': 'round' } : {}),
       }));
     // marks: bold lines drawn over everything — the X across a
     // switched-off gate
