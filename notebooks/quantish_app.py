@@ -74,31 +74,31 @@ def _(WASM_MODE, mo):
 def _(
     MODELS_TOP,
     WASM_MODE,
-    collection_pick,
-    last_models_get,
-    last_models_set,
+    qa_collection_pick,
+    qa_last_models_get,
+    qa_last_models_set,
     mo,
     model_label,
-    model_rescan,
+    qa_model_rescan,
     model_title,
-    model_upload,
+    qa_model_upload,
 ):
-    model_rescan  # noqa: B018 — dependency: pressing the button re-globs the directory
+    qa_model_rescan  # noqa: B018 — dependency: pressing the button re-globs the directory
 
     def _():
-        collection = collection_pick.value
+        collection = qa_collection_pick.value
         cdir = MODELS_TOP / collection
         # file name first, then the model's title — the same label as
         # in every other app's picker (screen.model_label)
         options = {model_label(p.stem, model_title(p)): p
                    for p in sorted(cdir.glob('*.yaml')) if p.stem != 'defaults'}
         _by_stem = {p.stem: lab for lab, p in options.items()}
-        remembered = _by_stem.get(last_models_get().get(collection))
+        remembered = _by_stem.get(qa_last_models_get().get(collection))
         default = remembered if remembered in options else next(iter(options))
 
         def remember(p):
             if p is not None:
-                last_models_set({**last_models_get(), collection: p.stem})
+                qa_last_models_set({**qa_last_models_get(), collection: p.stem})
 
         return mo.ui.dropdown(
             options=options,
@@ -107,12 +107,12 @@ def _(
             on_change=remember,
         )
 
-    model_pick = _()
-    mo.hstack([collection_pick, model_pick]
-              + ([] if WASM_MODE else [model_rescan])
-              + [model_upload],
+    qa_model_pick = _()
+    mo.hstack([qa_collection_pick, qa_model_pick]
+              + ([] if WASM_MODE else [qa_model_rescan])
+              + [qa_model_upload],
               justify='start', gap=1, wrap=True)
-    return (model_pick,)
+    return (qa_model_pick,)
 
 
 @app.cell(hide_code=True)
@@ -121,9 +121,9 @@ def _(
     build_sim,
     diagram_geometry,
     mo,
-    show_values,
-    sim,
-    sim_model,
+    qa_show_values,
+    qa_sim,
+    qa_sim_model,
 ):
     # The circuit diagram, always current for the model loaded above.
     # Before a run it shows wiring only, but laid out (via the shadow
@@ -145,7 +145,7 @@ def _(
             # the results view will be, so pressing ▶ Run — or
             # toggling show values — only fills in or clears the value
             # text, moving nothing.
-            _s = sim
+            _s = qa_sim
             if _s is None:
                 try:
                     _s = build_sim()
@@ -153,20 +153,20 @@ def _(
                 except Exception:  # noqa: BLE001 — fall back to plain wiring
                     _s = None
             if _s is not None:
-                _show = sim is not None and show_values.value
+                _show = qa_sim is not None and qa_show_values.value
                 return mo.ui.anywidget(DiagramWidget(
                     geometry=diagram_geometry(_s, has_run=True,
                                               show_values=_show,
                                               disabled=tuple(_s.inert),
                                               absent=tuple(_s.absent))))
             return mo.ui.anywidget(DiagramWidget(
-                geometry=diagram_geometry(sim_model, has_run=False,
-                                          disabled=tuple(sim_model.inert),
-                                          absent=tuple(sim_model.absent))))
+                geometry=diagram_geometry(qa_sim_model, has_run=False,
+                                          disabled=tuple(qa_sim_model.inert),
+                                          absent=tuple(qa_sim_model.absent))))
         except Exception as exc:  # noqa: BLE001 — show, don't crash the app
             return mo.md(f'_circuit diagram failed: {exc}_')
 
-    _s0 = sim if sim is not None else sim_model
+    _s0 = qa_sim if qa_sim is not None else qa_sim_model
     _cap = getattr(_s0, 'caption', '') or ''
     mo.vstack(
         [
@@ -177,117 +177,117 @@ def _(
                   'corner to make room; after a run, hover over or tap '
                   'a port for its values._'),
         ] +
-        ([mo.hstack([show_values], justify='start')]
-         if sim is not None else []), align='stretch')
+        ([mo.hstack([qa_show_values], justify='start')]
+         if qa_sim is not None else []), align='stretch')
 
 
 @app.cell(hide_code=True)
-def _(inexact_note, mo, mode_pick, model_pick, new_sim, run_btn, run_problem, sim_model):
+def _(inexact_note, mo, qa_mode_pick, qa_model_pick, qa_new_sim, qa_run_btn, qa_run_problem, qa_sim_model):
     # Gated on the button. Rather than mo.stop (whose descendants all
     # display "this cell wasn't run because an ancestor was stopped"),
     # sim is None until the button is pressed, and each results cell
     # silently renders nothing while it is.
     def _():
         try:
-            run = new_sim()
+            run = qa_new_sim()
             run.run()
             return run
         except Exception as exc:  # noqa: BLE001 — old-format models raise all sorts
             mo.stop(True, mo.md(
-                f"**{model_pick.value.stem} failed to run**\n\n```\n{exc}\n```"))
+                f"**{qa_model_pick.value.stem} failed to run**\n\n```\n{exc}\n```"))
 
-    sim = _() if run_btn.value else None
+    qa_sim = _() if qa_run_btn.value else None
 
     # Exactly one status text shows here — the run summary once the
     # model has run, the how-to before that — with the Run button
     # alongside either way, so a run swaps the words without moving
     # anything else.
     def _():
-        if sim is not None:
+        if qa_sim is not None:
             angles = ', '.join(f'{g}={float(gate.theta.degrees):.1f}º'
-                               for g, gate in sim.fredkin_gates.items())
+                               for g, gate in qa_sim.fredkin_gates.items())
             msg = mo.md(
-                f"Ran **{sim.title}** ({mode_pick.value} mode) — {angles}; "
-                f"{len(sim.run_stages)} steps, "
-                f"{len(sim.result_space.index)} final configuration-space point(s), "
+                f"Ran **{qa_sim.title}** ({qa_mode_pick.value} mode) — {angles}; "
+                f"{len(qa_sim.run_stages)} steps, "
+                f"{len(qa_sim.result_space.index)} final configuration-space point(s), "
                 f"total probability "
-                f"{sum(float(p.probability) for p in sim.result_space.index.values()):.6f}"
-                + inexact_note(sim))
+                f"{sum(float(p.probability) for p in qa_sim.result_space.index.values()):.6f}"
+                + inexact_note(qa_sim))
         else:
             msg = mo.md(
                 'Once a model has been loaded and its parameters set, '
                 'the `▶ Run simulation` button will execute the loaded '
                 'model, with the currently-set parameters. Results '
                 'displays will appear after execution is complete.')
-        button = (mo.hstack([run_btn, mo.md(f'<span style="color: #b00020">{run_problem}</span>')],
+        button = (mo.hstack([qa_run_btn, mo.md(f'<span style="color: #b00020">{qa_run_problem}</span>')],
                             justify='start', align='center', gap=1)
-                  if run_problem else run_btn)
+                  if qa_run_problem else qa_run_btn)
         derived = ([mo.md('<span style="color: #b00020">⚠ this model declares no '
                           '`run_stages`: the gates run in wiring order, one stage per '
                           'layer — ' + ' | '.join(f"{n}: {', '.join(gs)}" for n, gs
-                                                  in sim_model.declared_run_stages.items())
+                                                  in qa_sim_model.declared_run_stages.items())
                           + '</span>')]
-                   if sim_model.run_stages_derived else [])
+                   if qa_sim_model.run_stages_derived else [])
         return mo.vstack([*derived, msg, button], align='start')
 
     _()
-    return (sim,)
+    return (qa_sim,)
 
 
 @app.cell(hide_code=True)
-def _(mo, run_problem):
+def _(mo, qa_run_problem):
     # displayed in the run-status cell above, next to whichever status
     # text applies; disabled, with the reason beside it, whenever the
     # model cannot run
-    run_btn = mo.ui.run_button(label='▶ Run simulation', disabled=run_problem is not None)
-    return (run_btn,)
+    qa_run_btn = mo.ui.run_button(label='▶ Run simulation', disabled=qa_run_problem is not None)
+    return (qa_run_btn,)
 
 
 @app.cell(hide_code=True)
 def _():
     # the switch-off choices ('g:name' / 'p:name' -> False when off),
     # remembered across model reloads, which rebuild the checkboxes
-    off_memory = {}
-    return (off_memory,)
+    qa_off_memory = {}
+    return (qa_off_memory,)
 
 
 @app.cell(hide_code=True)
-def _(particle_names_model, switch_off):
+def _(qa_particle_names_model, qa_switch_off):
     # why the model cannot run, or None: every particle switched off
     # means nothing enters (a model that fails to load stops the app
     # with its own message, above)
-    run_problem = ('every particle is switched off — nothing would enter'
-                   if particle_names_model and all(
-                       not switch_off.value.get(f'p:{p}', True) for p in particle_names_model)
+    qa_run_problem = ('every particle is switched off — nothing would enter'
+                   if qa_particle_names_model and all(
+                       not qa_switch_off.value.get(f'p:{p}', True) for p in qa_particle_names_model)
                    else None)
-    return (run_problem,)
+    return (qa_run_problem,)
 
 
 @app.cell(hide_code=True)
-def _(gate_names, off_memory, particle_names_model, plate_names_model, switch_off_boxes):
+def _(qa_gate_names, qa_off_memory, qa_particle_names_model, qa_plate_names_model, switch_off_boxes):
     # switch off for the run: a gate or phase plate goes inert (a plain
     # wire), a particle absent (a null input) — the quick way to try a
     # configuration without editing the model
     # a gate's box sits after its name in its slider row, so it is bare;
     # the phase plates' and particles' boxes carry their names
-    switch_off = switch_off_boxes(off_memory, gate_names + plate_names_model,
-                                  particle_names_model,
-                                  gate_label=lambda n: '' if n in gate_names else n)
-    return (switch_off,)
+    qa_switch_off = switch_off_boxes(qa_off_memory, qa_gate_names + qa_plate_names_model,
+                                  qa_particle_names_model,
+                                  gate_label=lambda n: '' if n in qa_gate_names else n)
+    return (qa_switch_off,)
 
 
 @app.cell(hide_code=True)
-def _(NetworkGraph, NetworkGraphWidget, mo, sim):
+def _(NetworkGraph, NetworkGraphWidget, mo, qa_sim):
     # The weight-evolution graph, after the Run button and behind an
     # accordion so a run doesn't reshuffle the layout above it. Drawn
     # natively from NetworkGraph.build_model(), with the lineage
     # interaction: click a configuration-space point to highlight
     # every arrow on its ancestry and descendancy.
-    mo.stop(sim is None)
+    mo.stop(qa_sim is None)
 
     def _():
         try:
-            _model = NetworkGraph(sim.all_points, sim).build_model()
+            _model = NetworkGraph(qa_sim.all_points, qa_sim).build_model()
             return mo.vstack([
                 mo.ui.anywidget(NetworkGraphWidget(model=_model)),
                 mo.md('_Scroll or pinch to zoom, drag to pan, '
@@ -307,19 +307,19 @@ def _(NetworkGraph, NetworkGraphWidget, mo, sim):
 
 @app.cell(hide_code=True)
 def _(
-    angle_slider_elems,
-    angle_text_elems,
-    base_config,
-    gate_names,
+    qa_angle_slider_elems,
+    qa_angle_text_elems,
+    qa_base_config,
+    qa_gate_names,
     mo,
-    mode_pick,
-    particle_names_model,
-    plate_names_model,
-    switch_off,
-    units_pick,
-    variables_editor,
-    vars_error,
-    vars_problem,
+    qa_mode_pick,
+    qa_particle_names_model,
+    qa_plate_names_model,
+    qa_switch_off,
+    qa_units_pick,
+    qa_variables_editor,
+    qa_vars_error,
+    qa_vars_problem,
 ):
     # The whole Model Parameters section lives in one accordion so it is
     # collapsed by default in BOTH edit and app mode (accordions are the
@@ -340,41 +340,41 @@ def _(
         # a label column (name and box, right-aligned, so the box sits
         # against the slider and the column's slack is before the
         # name), the slider, and the entry
-        rows = [mo.hstack([mo.hstack([mo.md(f'**{g}**'), switch_off.elements[f'g:{g}']],
+        rows = [mo.hstack([mo.hstack([mo.md(f'**{g}**'), qa_switch_off.elements[f'g:{g}']],
                                      justify='end', align='center', gap=0.5),
-                           angle_slider_elems[g], angle_text_elems[g]],
+                           qa_angle_slider_elems[g], qa_angle_text_elems[g]],
                           widths=[1, 6, 1], align='center', gap=0.75)
-                for g in gate_names]
+                for g in qa_gate_names]
         # the model's caption (typically the book figure's) is Markdown
         # and passes through verbatim — no added styling
-        _caption = ' '.join(str(base_config.get('caption', '')).split())
-        _title = (f"**{base_config.title}**: {_caption}" if _caption
-                  else f"**{base_config.title}**")
+        _caption = ' '.join(str(qa_base_config.get('caption', '')).split())
+        _title = (f"**{qa_base_config.title}**: {_caption}" if _caption
+                  else f"**{qa_base_config.title}**")
         return mo.vstack([
             mo.md(_title),
             mo.md("Gate angles: Slider and entry track "
                   "each other; sliders are degrees (0-centered). Typed numbers "
                   "use the units selector; anything else is a symbolic radian "
                   "expression (`pi/8`, `rad(30)`, `acos(4/5)`)."),
-            mo.hstack([mode_pick, units_pick], wrap=True, justify='start', gap=2),
+            mo.hstack([qa_mode_pick, qa_units_pick], wrap=True, justify='start', gap=2),
             mo.vstack(rows),
             mo.md("**Switch off**: uncheck a gate (the box after its name) "
                   "to make it a plain wire that every particle passes straight "
                   "through, a particle to leave it out of the run (a null "
                   "input); the diagram grays and crosses out whatever is off."),
             *([mo.hstack([mo.md('phase plates:')]
-                         + [switch_off.elements[f'g:{g}'] for g in plate_names_model],
+                         + [qa_switch_off.elements[f'g:{g}'] for g in qa_plate_names_model],
                          justify='start', align='center', wrap=True, gap=1.5)]
-              if plate_names_model else []),
+              if qa_plate_names_model else []),
             mo.hstack([mo.md('particles:')]
-                      + [switch_off.elements[f'p:{p}'] for p in particle_names_model],
+                      + [qa_switch_off.elements[f'p:{p}'] for p in qa_particle_names_model],
                       justify='start', align='center', wrap=True, gap=1.5),
             mo.md("**Variables**: the model's named constants, one "
                   "`name: expression` per line (`theta_split: pi/4`); "
                   "gate angles and weights that refer to them follow."),
-            variables_editor,
-            mo.md(f'<span style="color: #b00020">⚠ {vars_error or vars_problem}'
-                  '</span>') if (vars_error or vars_problem) else mo.md(''),
+            qa_variables_editor,
+            mo.md(f'<span style="color: #b00020">⚠ {qa_vars_error or qa_vars_problem}'
+                  '</span>') if (qa_vars_error or qa_vars_problem) else mo.md(''),
         ])
 
     # the accordion label is markdown: the heading plus a short
@@ -389,25 +389,25 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(detailed_results, mo, sim):
-    mo.stop(sim is None)  # nothing to show until ▶ Run
+def _(detailed_results, mo, qa_sim):
+    mo.stop(qa_sim is None)  # nothing to show until ▶ Run
     # the detailed-results subsections (quantish.apps.results), each
     # in its own accordion under one outer one
-    detailed_results(sim)
+    detailed_results(qa_sim)
 
 
 @app.cell(hide_code=True)
 def _(
     SAMPLER_LABELS,
-    mc_button,
-    mc_cancel,
-    mc_job_slot,
-    mc_modes,
-    mc_note,
-    mc_seed,
-    mc_tick_get,
-    mc_trials,
-    mc_trials_text,
+    qa_mc_button,
+    qa_mc_cancel,
+    qa_mc_job_slot,
+    qa_mc_modes,
+    qa_mc_note,
+    qa_mc_seed,
+    qa_mc_tick_get,
+    qa_mc_trials,
+    qa_mc_trials_text,
     mo,
     picked_modes,
     progress_view,
@@ -415,41 +415,41 @@ def _(
     results_view,
     sampling_explanation,
     sampling_seconds,
-    sim,
+    qa_sim,
     trial_count,
 ):
-    mc_button      # noqa: B018 — re-render when a job starts
-    mc_tick_get()  # ...and on every worker chunk and at completion
+    qa_mc_button      # noqa: B018 — re-render when a job starts
+    qa_mc_tick_get()  # ...and on every worker chunk and at completion
 
     def _projection():
-        chosen = picked_modes(mc_modes, SAMPLER_LABELS)
-        if sim is None or not chosen:
+        chosen = picked_modes(qa_mc_modes, SAMPLER_LABELS)
+        if qa_sim is None or not chosen:
             return mo.md('')
-        n = trial_count(mc_trials_text.value, mc_trials.value)
-        return projection(sampling_seconds(sim, chosen, n), n)
+        n = trial_count(qa_mc_trials_text.value, qa_mc_trials.value)
+        return projection(sampling_seconds(qa_sim, chosen, n), n)
 
     def _results_area():
-        if sim is None:
+        if qa_sim is None:
             return mo.md('_run the model first (**▶ Run simulation** '
                          'above) to have something to sample_')
-        _job = mc_job_slot.get('job')
-        if mc_note is not None:
-            return mc_note
+        _job = qa_mc_job_slot.get('job')
+        if qa_mc_note is not None:
+            return qa_mc_note
         if _job is None:
             return mo.md('_press **Run Monte Carlo** to sample_')
-        return progress_view(_job, mc_cancel) if not _job['done'] else results_view(_job)
+        return progress_view(_job, qa_mc_cancel) if not _job['done'] else results_view(_job)
 
     mo.accordion({'## Monte Carlo Sampling\n\n<span style="font-size:0.85em">Optional sampled trials on top of the exact run above</span>':
         mo.vstack([
             sampling_explanation(),
             # the slider's count formatted here (1,000,000), not by the
             # slider's own show_value, which shows 1e6 at the top step
-            mo.hstack([mc_trials, mo.md(f'{int(mc_trials.value):,}'), mc_trials_text,
+            mo.hstack([qa_mc_trials, mo.md(f'{int(qa_mc_trials.value):,}'), qa_mc_trials_text,
                        mo.Html('<div class="mode-boxes">' + mo.hstack(
                            [mo.md('interpretations:'),
-                            *mc_modes.elements.values()],
+                            *qa_mc_modes.elements.values()],
                            gap=0.75, align='center').text + '</div>'),
-                       mc_seed, mc_button, _projection()],
+                       qa_mc_seed, qa_mc_button, _projection()],
                       justify='start', gap=1, wrap=True, align='center'),
             _results_area(),
         ])})
@@ -459,19 +459,19 @@ def _(
 def _(
     SAMPLER_LABELS,
     WASM_MODE,
-    mc_button,
-    mc_job_slot,
-    mc_modes,
-    mc_seed,
-    mc_tick_set,
-    mc_trials,
-    mc_trials_text,
+    qa_mc_button,
+    qa_mc_job_slot,
+    qa_mc_modes,
+    qa_mc_seed,
+    qa_mc_tick_set,
+    qa_mc_trials,
+    qa_mc_trials_text,
     mo,
     new_job,
     picked_modes,
     run_job,
     run_job_async,
-    sim,
+    qa_sim,
     trial_count,
 ):
     # Pressing Run starts the sampling in a background thread, chunk by
@@ -480,40 +480,40 @@ def _(
     # The display cell depends on mc_note, so it always renders after
     # this cell: the progress row appears the moment Run is pressed,
     # not at the worker's first tick.
-    mc_note = None
-    _modes = picked_modes(mc_modes, SAMPLER_LABELS) if sim is not None and mc_button.value else None
+    qa_mc_note = None
+    _modes = picked_modes(qa_mc_modes, SAMPLER_LABELS) if qa_sim is not None and qa_mc_button.value else None
     if _modes == []:
-        mc_note = mo.md('_tick at least one interpretation to sample_')
+        qa_mc_note = mo.md('_tick at least one interpretation to sample_')
     elif _modes:
-        _prev = mc_job_slot.get('job')
+        _prev = qa_mc_job_slot.get('job')
         if _prev is not None and not _prev['done']:
             _prev['cancel'].set()
-        _job = new_job(sim, trial_count(mc_trials_text.value, mc_trials.value), _modes)
-        mc_job_slot['job'] = _job
+        _job = new_job(qa_sim, trial_count(qa_mc_trials_text.value, qa_mc_trials.value), _modes)
+        qa_mc_job_slot['job'] = _job
         # the worker's arguments are bound now: a rerun of this cell
         # deletes its locals, which a thread holding names would miss.
         # Under Pyodide (the WASM export) a mo.Thread is a coroutine on
         # the page's event loop, so the async run yields between chunks
         # and Cancel works there too
         mo.Thread(target=run_job_async if WASM_MODE else run_job,
-                  args=(_job, int(mc_seed.value), mc_tick_set), daemon=True).start()
-    return (mc_note,)
+                  args=(_job, int(qa_mc_seed.value), qa_mc_tick_set), daemon=True).start()
+    return (qa_mc_note,)
 
 
 @app.cell(hide_code=True)
 def _(
-    epr_angle_elems,
-    epr_button,
-    epr_modes,
+    qa_epr_angle_elems,
+    qa_epr_button,
+    qa_epr_modes,
     EPR_SAMPLER_LABELS,
-    epr_trials,
-    epr_view,
+    qa_epr_trials,
+    qa_epr_view,
     in_div,
     mo,
     picked_modes,
     projection,
     sampling_seconds,
-    sim_model,
+    qa_sim_model,
     supports_epr,
 ):
     # .tight-paragraphs (css/quantish_app.css): the section's prose
@@ -521,7 +521,7 @@ def _(
     _content = mo.md(
         '_The EPR experiment needs a suitable model like the one for Figure 4.17 (fig4.17) '
         'to be loaded above._'
-    ) if not supports_epr(sim_model) else mo.vstack([
+    ) if not supports_epr(qa_sim_model) else mo.vstack([
         in_div('tight-paragraphs', mo.md(r"""
     **What the sweep does:** it re-runs the whole circuit **nine times**,
     once per pair $(\theta_1, \theta_2)$ from the sweep angles
@@ -663,24 +663,24 @@ def _(
     Computation will use the selected mode in either case.
 
     """)),
-        mo.hstack([epr_angle_elems['qa'], epr_angle_elems['qb'],
-                   epr_angle_elems['qc']],
+        mo.hstack([qa_epr_angle_elems['qa'], qa_epr_angle_elems['qb'],
+                   qa_epr_angle_elems['qc']],
                   justify='start', gap=2, wrap=True),
-        mo.hstack([epr_trials,
+        mo.hstack([qa_epr_trials,
                    # the slider's own readout turns to 1.0e6 at a million
-                   mo.md(f'{int(epr_trials.value):,}'),
+                   mo.md(f'{int(qa_epr_trials.value):,}'),
                    mo.Html('<div class="mode-boxes">' + mo.hstack(
                        [mo.md('sampling (when trials > 0):'),
-                        *epr_modes.elements.values()],
+                        *qa_epr_modes.elements.values()],
                        gap=0.75, align='center').text + '</div>'),
-                   epr_button,
+                   qa_epr_button,
                    (projection(sampling_seconds(
-                       sim_model, picked_modes(epr_modes, EPR_SAMPLER_LABELS),
-                       int(epr_trials.value), cells=9))
-                    if epr_trials.value and picked_modes(epr_modes, EPR_SAMPLER_LABELS)
+                       qa_sim_model, picked_modes(qa_epr_modes, EPR_SAMPLER_LABELS),
+                       int(qa_epr_trials.value), cells=9))
+                    if qa_epr_trials.value and picked_modes(qa_epr_modes, EPR_SAMPLER_LABELS)
                     else mo.md(''))],
                   justify='start', wrap=True, align='center'),
-        epr_view,
+        qa_epr_view,
     ])
 
     mo.accordion({'## The Einstein-Podolsky-Rosen / Bell Experiment\n\n'
@@ -690,67 +690,67 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(declared_sweep, mo, sim_model, sweep_controls):
+def _(declared_sweep, mo, qa_sim_model, sweep_controls):
     # The sweep is defined here, in the UI: which variable, over what
     # range, how many points, what to record, and how to sort — seeded
     # from the loaded model's own sweep section when it has one, so the
     # editor follows a model change. A run button keeps the cost (one
     # engine run per point) explicit, as for the EPR sweep.
-    sweep_editor = sweep_controls(sim_model.qvars, sim_model.particles,
-                                  sim_model.gates, declared_sweep(sim_model))
-    sweep_button = mo.ui.run_button(label='Run sweep')
-    return sweep_button, sweep_editor
+    qa_sweep_editor = sweep_controls(qa_sim_model.qvars, qa_sim_model.particles,
+                                  qa_sim_model.gates, declared_sweep(qa_sim_model))
+    qa_sweep_button = mo.ui.run_button(label='Run sweep')
+    return qa_sweep_button, qa_sweep_editor
 
 
 @app.cell(hide_code=True)
-def _(checked_spec, sim_model, sweep_editor):
+def _(checked_spec, qa_sim_model, qa_sweep_editor):
     # the editor's sweep, validated against the loaded model
-    sweep_decl, sweep_problem = checked_spec(sim_model, sweep_editor.value)
-    sweep_points = sweep_editor.elements['points']
-    return sweep_decl, sweep_points, sweep_problem
+    qa_sweep_decl, qa_sweep_problem = checked_spec(qa_sim_model, qa_sweep_editor.value)
+    qa_sweep_points = qa_sweep_editor.elements['points']
+    return qa_sweep_decl, qa_sweep_points, qa_sweep_problem
 
 
 @app.cell(hide_code=True)
 def _(
     mo,
-    sim_model,
-    sweep_button,
+    qa_sim_model,
+    qa_sweep_button,
     sweep_chart,
-    sweep_decl,
-    sweep_points,
-    sweep_problem,
+    qa_sweep_decl,
+    qa_sweep_points,
+    qa_sweep_problem,
     sweep_run,
     sweep_table,
-    units_pick,
+    qa_units_pick,
 ):
     def _():
-        if sweep_problem:
+        if qa_sweep_problem:
             return mo.md('<span style="color:#b00">**sweep declaration '
-                         f'problem** — {sweep_problem}</span>')
-        if sweep_decl is None:
+                         f'problem** — {qa_sweep_problem}</span>')
+        if qa_sweep_decl is None:
             return None
-        if not sweep_button.value:
+        if not qa_sweep_button.value:
             return mo.md('_press **Run sweep** to run the model across '
                          'the range_')
         with mo.status.spinner(title='running the sweep…'):
-            res = sweep_run(sim_model, sweep_decl, int(sweep_points.value))
-        degrees = units_pick.value == 'degrees'
+            res = sweep_run(qa_sim_model, qa_sweep_decl, int(qa_sweep_points.value))
+        degrees = qa_units_pick.value == 'degrees'
         # the chart, and the values — exact in Symbolic mode where short
-        table = mo.accordion({'values': mo.md(sweep_table(res, sweep_decl, degrees))},
+        table = mo.accordion({'values': mo.md(sweep_table(res, qa_sweep_decl, degrees))},
                              lazy=True)
-        return mo.vstack([sweep_chart(res, sweep_decl, degrees), table])
+        return mo.vstack([sweep_chart(res, qa_sweep_decl, degrees), table])
 
-    sweep_view = _()
-    return (sweep_view,)
+    qa_sweep_view = _()
+    return (qa_sweep_view,)
 
 
 @app.cell(hide_code=True)
-def _(editor_rows, mo, sweep_button, sweep_decl, sweep_editor, sweep_problem, sweep_view):
+def _(editor_rows, mo, qa_sweep_button, qa_sweep_decl, qa_sweep_editor, qa_sweep_problem, qa_sweep_view):
     def _():
-        rows = editor_rows(sweep_editor)
-        if sweep_decl is None:
-            return mo.vstack([*rows, sweep_view or mo.md('')])
-        spec = sweep_decl
+        rows = editor_rows(qa_sweep_editor)
+        if qa_sweep_decl is None:
+            return mo.vstack([*rows, qa_sweep_view or mo.md('')])
+        spec = qa_sweep_decl
         obs, grp = spec['observe'], spec.get('group_by')
         what = (f"the probability that **{obs['particle']}** ends at "
                 f"**{obs['at']}**")
@@ -772,8 +772,8 @@ def _(editor_rows, mo, sweep_button, sweep_decl, sweep_editor, sweep_problem, sw
     """),
             mo.md(f"`{spec['variable']}` from `{spec['from']}` to "
                   f"`{spec['to']}` in {spec['points']} points, recording {what}."),
-            mo.hstack([sweep_button], justify='start', wrap=True),
-            sweep_view,
+            mo.hstack([qa_sweep_button], justify='start', wrap=True),
+            qa_sweep_view,
         ])
 
     mo.accordion({'## Sweep\n\n<span style="font-size:0.85em">Run the '
@@ -804,38 +804,38 @@ def _(mo, ws_components, ws_sign, ws_theta, ws_view, ws_wmag, ws_wphase):
 
 
 @app.cell(hide_code=True)
-def _(EDITOR_UI, mo):
+def _(QA_EDITOR_UI, mo):
     # the end-of-page mark (Ann's request): a small flourish so readers
     # know nothing further is loading. The editor genuinely has more
     # below (support code), so it appears in the app views only.
     mo.Html('<div style="text-align: center; color: #000; '
             'font-size: 1.6em; padding: 1.5em 0 1em;">&#8258;</div>'
-            ) if not EDITOR_UI else None
+            ) if not QA_EDITOR_UI else None
 
 
 @app.cell(hide_code=True)
-def _(EDITOR_UI, mo):
+def _(QA_EDITOR_UI, mo):
     # shown in the editor only: in `marimo run` the code cells below are
     # hidden, so the heading would sit over nothing
     mo.md(r"""
     ## Loaded Configuration Details
-    """) if EDITOR_UI else None
+    """) if QA_EDITOR_UI else None
 
 
 @app.cell(hide_code=True)
-def _(EDITOR_UI, mo, model_pick, sim):
+def _(QA_EDITOR_UI, mo, qa_model_pick, qa_sim):
     # editor-only section: hidden with its heading in `marimo run`
-    mo.stop(sim is None or not EDITOR_UI)
-    mo.accordion({str(model_pick.value.stem): mo.accordion(sim.__dict__, multiple=True, lazy=True)})
+    mo.stop(qa_sim is None or not QA_EDITOR_UI)
+    mo.accordion({str(qa_model_pick.value.stem): mo.accordion(qa_sim.__dict__, multiple=True, lazy=True)})
 
 
 @app.cell(hide_code=True)
-def _(EDITOR_UI, mo):
+def _(QA_EDITOR_UI, mo):
     # shown in the editor only: in `marimo run` the code cells below are
     # hidden, so the heading would sit over nothing
     mo.md(r"""
     ## Support Code
-    """) if EDITOR_UI else None
+    """) if QA_EDITOR_UI else None
 
 
 @app.cell(hide_code=True)
@@ -953,11 +953,11 @@ async def initialization():
     # True whenever the surrounding UI is the marimo editor (local
     # `marimo edit` or a WASM edit-mode export): editor-only sections
     # key off this
-    EDITOR_UI = editor_ui(_wasm_editor) if WASM_MODE else editor_ui()
+    QA_EDITOR_UI = editor_ui(_wasm_editor) if WASM_MODE else editor_ui()
     return (
         DiagramWidget,
         NetworkGraphWidget,
-        EDITOR_UI,
+        QA_EDITOR_UI,
         FredkinGate,
         MODELS_TOP,
         NetworkGraph,
@@ -1012,31 +1012,31 @@ async def initialization():
 
 @app.cell(hide_code=True)
 def _(mo):
-    model_rescan = mo.ui.run_button(label='↻ rescan models')
-    model_upload = mo.ui.file(filetypes=['.yaml'], kind='button',
+    qa_model_rescan = mo.ui.run_button(label='↻ rescan models')
+    qa_model_upload = mo.ui.file(filetypes=['.yaml'], kind='button',
                               label='⬆ upload model')
     # per-collection selection memory, seeded with each collection's
     # designated default; a new collection falls back to first-by-name
-    last_collection_get, last_collection_set = mo.state('gr2026')
-    last_models_get, last_models_set = mo.state(
+    qa_last_collection_get, qa_last_collection_set = mo.state('gr2026')
+    qa_last_models_get, qa_last_models_set = mo.state(
         {'extras': 'AIM_Figure12', 'gr2006': 'fig4.04', 'gr2026': 'fig4.04'})
     return (
-        last_collection_get,
-        last_collection_set,
-        last_models_get,
-        last_models_set,
-        model_rescan,
-        model_upload,
+        qa_last_collection_get,
+        qa_last_collection_set,
+        qa_last_models_get,
+        qa_last_models_set,
+        qa_model_rescan,
+        qa_model_upload,
     )
 
 
 @app.cell(hide_code=True)
 def _(
     MODELS_TOP,
-    last_collection_set,
-    last_models_get,
-    last_models_set,
-    model_upload,
+    qa_last_collection_set,
+    qa_last_models_get,
+    qa_last_models_set,
+    qa_model_upload,
 ):
     # An uploaded YAML lands in the 'uploads' collection (under WASM
     # that is the page's virtual filesystem; from the repo it is the
@@ -1044,171 +1044,171 @@ def _(
     # the collection and model dropdowns follow via their memory
     # state.
     def _():
-        if not model_upload.contents():
+        if not qa_model_upload.contents():
             return
         from pathlib import PurePath
-        _name = PurePath(model_upload.name()).name
+        _name = PurePath(qa_model_upload.name()).name
         if not _name.endswith('.yaml'):
             _name += '.yaml'
         _updir = MODELS_TOP / 'uploads'
         _updir.mkdir(parents=True, exist_ok=True)
-        (_updir / _name).write_bytes(model_upload.contents())
-        last_models_set({**last_models_get(),
+        (_updir / _name).write_bytes(qa_model_upload.contents())
+        qa_last_models_set({**qa_last_models_get(),
                          'uploads': _name.removesuffix('.yaml')})
-        last_collection_set('uploads')
+        qa_last_collection_set('uploads')
 
     _()
 
 
 @app.cell(hide_code=True)
-def _(MODELS_TOP, last_collection_get, last_collection_set, mo, model_rescan):
-    model_rescan  # noqa: B018 — dependency: pressing the button re-scans the directory
+def _(MODELS_TOP, qa_last_collection_get, qa_last_collection_set, mo, qa_model_rescan):
+    qa_model_rescan  # noqa: B018 — dependency: pressing the button re-scans the directory
 
     def _():
         options = sorted(d.name for d in MODELS_TOP.iterdir()
                          if d.is_dir() and d.name != 'HIDEME'
                          and not d.name.startswith('.'))
-        default = last_collection_get() if last_collection_get() in options \
+        default = qa_last_collection_get() if qa_last_collection_get() in options \
             else options[0]
         return mo.ui.dropdown(
             options=options,
             value=default,
             label='collection',
-            on_change=lambda name: last_collection_set(name)
+            on_change=lambda name: qa_last_collection_set(name)
             if name is not None else None,
         )
 
-    collection_pick = _()
-    return (collection_pick,)
+    qa_collection_pick = _()
+    return (qa_collection_pick,)
 
 
 @app.cell(hide_code=True)
-def _(angles_get, base_env, build_sim, mo, mode_pick, model_pick, model_vars, switch_off):
+def _(qa_angles_get, qa_base_env, build_sim, mo, qa_mode_pick, qa_model_pick, qa_model_vars, qa_switch_off):
     # Model construction is cheap and needs no ▶ Run: cells that only need
     # the loaded model (the EPR sweep) depend on sim_model; cells that show
     # run results depend on sim (gated on the button, next cell).
-    def new_sim():
-        return build_sim(model_pick.value, model_vars, mode_pick.value,
-                         angles_get(), switch_off.value, base_env)
+    def qa_new_sim():
+        return build_sim(qa_model_pick.value, qa_model_vars, qa_mode_pick.value,
+                         qa_angles_get(), qa_switch_off.value, qa_base_env)
 
     try:
-        sim_model = new_sim()
+        qa_sim_model = qa_new_sim()
     except Exception as exc:  # noqa: BLE001 — old-format models raise all sorts
         mo.stop(True, mo.md(
-            f"**{model_pick.value.stem} failed to load** — probably "
+            f"**{qa_model_pick.value.stem} failed to load** — probably "
             f"an old-format model.\n\n```\n{exc}\n```"))
-    return new_sim, sim_model
+    return qa_new_sim, qa_sim_model
 
 
 @app.cell(hide_code=True)
-def _(mo, sim):
+def _(mo, qa_sim):
     # Only shown once the model has been run (the plain wiring view is
     # all there is before that). Depending on sim recreates the switch
     # at every run, so a run always opens in the values view no matter
     # where the switch was left.
-    sim  # noqa: B018 — dependency: a run rebuilds the switch
-    show_values = mo.ui.switch(value=True, label='show values')
-    return (show_values,)
+    qa_sim  # noqa: B018 — dependency: a run rebuilds the switch
+    qa_show_values = mo.ui.switch(value=True, label='show values')
+    return (qa_show_values,)
 
 
 @app.cell(hide_code=True)
-def _(load_config, mo, model_pick, vars_text):
+def _(load_config, mo, qa_model_pick, vars_text):
     # the model over the defaults (the standard variables underneath
     # its own); the raw model for what the file itself says
-    base_config, _model_raw = load_config(model_pick.value)
+    qa_base_config, _model_raw = load_config(qa_model_pick.value)
 
     # the radio follows a mode the model file itself sets (a
     # case-independent string); otherwise it opens on Float
-    mode_pick = mo.ui.radio(
+    qa_mode_pick = mo.ui.radio(
         ['Float', 'Symbolic'],
         value={'symbolic': 'Symbolic', 'float': 'Float'}.get(
             str(_model_raw.get('calculation_mode') or '').lower(),
             'Float'),
         label='math mode', inline=True)
-    units_pick = mo.ui.radio(['degrees', 'radians'], value='degrees',
+    qa_units_pick = mo.ui.radio(['degrees', 'radians'], value='degrees',
                              label='displayed angle values are',
                              inline=True)
 
     # the model's own variables, editable as `name: expression` lines
     # (the builder's format); reseeded when the model changes
-    variables_editor = mo.ui.text_area(
+    qa_variables_editor = mo.ui.text_area(
         value=vars_text(_model_raw.get('variables')),
         rows=max(2, min(8, len(_model_raw.get('variables') or {}) + 1)),
         full_width=True,
         placeholder='name: expression   (e.g. theta_split: pi/4)')
-    return base_config, mode_pick, units_pick, variables_editor
+    return qa_base_config, qa_mode_pick, qa_units_pick, qa_variables_editor
 
 
 @app.cell(hide_code=True)
-def _(parse_vars, variables_editor):
+def _(parse_vars, qa_variables_editor):
     # the edited variables as a mapping; a parse problem shows under the
     # editor and the model's own definitions stand meanwhile
-    model_vars, vars_error = parse_vars(variables_editor.value)
-    return model_vars, vars_error
+    qa_model_vars, qa_vars_error = parse_vars(qa_variables_editor.value)
+    return qa_model_vars, qa_vars_error
 
 
 @app.cell(hide_code=True)
-def _(mo, model_angles, model_pick, model_vars):
+def _(mo, model_angles, qa_model_pick, qa_model_vars):
     # ONE state for all gate angles: {gate: {'deg': float, 'expr': str|None}}.
     # marimo's state reactivity keys on the getter being referenced as a
     # global variable — a dict of per-gate states breaks the subscription
     # (the earlier bug), so everything lives under a single getter/setter.
     # Reseeded when the model or its variables change, since the
     # variables define the angles (quantish.apps.run.model_angles).
-    _seed = model_angles(model_pick.value, model_vars)
-    gate_names, base_env, vars_problem = _seed['gates'], _seed['env'], _seed['problem']
-    particle_names_model, plate_names_model = _seed['particles'], _seed['plates']
-    angles_get, angles_set = mo.state(_seed['angles'])
-    return (angles_get, angles_set, base_env, gate_names, particle_names_model,
-            plate_names_model, vars_problem)
+    _seed = model_angles(qa_model_pick.value, qa_model_vars)
+    qa_gate_names, qa_base_env, qa_vars_problem = _seed['gates'], _seed['env'], _seed['problem']
+    qa_particle_names_model, qa_plate_names_model = _seed['particles'], _seed['plates']
+    qa_angles_get, qa_angles_set = mo.state(_seed['angles'])
+    return (qa_angles_get, qa_angles_set, qa_base_env, qa_gate_names, qa_particle_names_model,
+            qa_plate_names_model, qa_vars_problem)
 
 
 @app.cell(hide_code=True)
-def _(angle_sliders, angles_get, angles_set, gate_names, switch_off):
+def _(angle_sliders, qa_angles_get, qa_angles_set, qa_gate_names, qa_switch_off):
     # Sliders live in their OWN cell (and the text entries in theirs):
     # marimo never re-runs the cell that invoked a state setter, so tied
     # elements must be defined in separate cells — a text edit re-runs
     # this cell (rebuilding the sliders), a slider move re-runs the text
     # cell. Registration through mo.ui.dictionary globals keeps on_change
     # events flowing. A switched-off gate's controls are disabled.
-    angle_slider_elems = angle_sliders(angles_get, angles_set, gate_names, switch_off.value)
-    return (angle_slider_elems,)
+    qa_angle_slider_elems = angle_sliders(qa_angles_get, qa_angles_set, qa_gate_names, qa_switch_off.value)
+    return (qa_angle_slider_elems,)
 
 
 @app.cell(hide_code=True)
 def _(
     angle_entries,
-    angles_get,
-    angles_set,
-    base_env,
-    gate_names,
-    mode_pick,
-    switch_off,
-    units_pick,
+    qa_angles_get,
+    qa_angles_set,
+    qa_base_env,
+    qa_gate_names,
+    qa_mode_pick,
+    qa_switch_off,
+    qa_units_pick,
 ):
-    angle_text_elems = angle_entries(angles_get, angles_set, gate_names, switch_off.value,
-                                     mode_pick.value, units_pick.value, base_env)
-    return (angle_text_elems,)
+    qa_angle_text_elems = angle_entries(qa_angles_get, qa_angles_set, qa_gate_names, qa_switch_off.value,
+                                     qa_mode_pick.value, qa_units_pick.value, qa_base_env)
+    return (qa_angle_text_elems,)
 
 
 @app.cell(hide_code=True)
 def _(SAMPLER_LABELS, mo):
-    mc_trials = mo.ui.slider(
+    qa_mc_trials = mo.ui.slider(
         steps=[100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000,
                100000, 200000, 500000, 1000000],
         value=20000, label='trials', show_value=False)
-    mc_trials_text = mo.ui.text(value='', placeholder='custom trial count')
+    qa_mc_trials_text = mo.ui.text(value='', placeholder='custom trial count')
     # two interpretations sampling the same wave, labeled by what each
     # assumes; terminal (the faithful simulation of a real experiment)
     # is the default
     # one checkbox per interpretation, in the results' order, none
     # ticked until the user chooses
-    mc_modes = mo.ui.dictionary({k: mo.ui.checkbox(label=k)
+    qa_mc_modes = mo.ui.dictionary({k: mo.ui.checkbox(label=k)
                                  for k in SAMPLER_LABELS})
-    mc_seed = mo.ui.number(value=42, label='seed')
-    mc_button = mo.ui.run_button(label='Run Monte Carlo')
-    mc_cancel = mo.ui.run_button(label='Cancel')
-    return mc_button, mc_cancel, mc_modes, mc_seed, mc_trials, mc_trials_text
+    qa_mc_seed = mo.ui.number(value=42, label='seed')
+    qa_mc_button = mo.ui.run_button(label='Run Monte Carlo')
+    qa_mc_cancel = mo.ui.run_button(label='Cancel')
+    return qa_mc_button, qa_mc_cancel, qa_mc_modes, qa_mc_seed, qa_mc_trials, qa_mc_trials_text
 
 
 @app.cell(hide_code=True)
@@ -1219,72 +1219,72 @@ def _(mo):
     # on the counter and re-renders as sampling progresses — no
     # polling, and results land even if the section is collapsed
     # while the job runs.
-    mc_job_slot = {}
-    mc_tick_get, mc_tick_set = mo.state(0)
-    return mc_job_slot, mc_tick_get, mc_tick_set
+    qa_mc_job_slot = {}
+    qa_mc_tick_get, qa_mc_tick_set = mo.state(0)
+    return qa_mc_job_slot, qa_mc_tick_get, qa_mc_tick_set
 
 
 @app.cell(hide_code=True)
-def _(mc_cancel, mc_job_slot):
+def _(qa_mc_cancel, qa_mc_job_slot):
     # the Cancel button flags the running job; the worker stops at the
     # next chunk boundary and reports its partial tallies
-    if mc_cancel.value:
-        _job = mc_job_slot.get('job')
+    if qa_mc_cancel.value:
+        _job = qa_mc_job_slot.get('job')
         if _job is not None and not _job['done']:
             _job['cancel'].set()
 
 
 @app.cell(hide_code=True)
-def _(base_config, epr_angle_entries, model_vars):
+def _(qa_base_config, epr_angle_entries, qa_model_vars):
     # the sweep-angle entries, reseeded from the model's qa/qb/qc
     # variables when the model or its variables change
-    epr_angle_elems = epr_angle_entries({**base_config.variables, **model_vars})
-    return (epr_angle_elems,)
+    qa_epr_angle_elems = epr_angle_entries({**qa_base_config.variables, **qa_model_vars})
+    return (qa_epr_angle_elems,)
 
 
 @app.cell(hide_code=True)
 def _(EPR_SAMPLER_LABELS, mo):
     # Defined independently of sim/mode so a math-mode change or a Run can
     # never reset the user's chosen trial count.
-    epr_trials = mo.ui.slider(
+    qa_epr_trials = mo.ui.slider(
         steps=[0, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000,
                500000, 1000000],
         value=0, label='trials per cell (0 = exact only)', show_value=False)
     # the models the sampled cells run under, compared side by side:
     # the wave samplers show the violation, Bell's hidden-variable
     # example sits exactly at the classical bound
-    epr_modes = mo.ui.dictionary({k: mo.ui.checkbox(label=k)
+    qa_epr_modes = mo.ui.dictionary({k: mo.ui.checkbox(label=k)
                                   for k in EPR_SAMPLER_LABELS})
-    epr_button = mo.ui.run_button(label='Run EPR experiment')
-    return epr_button, epr_modes, epr_trials
+    qa_epr_button = mo.ui.run_button(label='Run EPR experiment')
+    return qa_epr_button, qa_epr_modes, qa_epr_trials
 
 
 @app.cell(hide_code=True)
 def _(
     EPR_SAMPLER_LABELS,
-    base_env,
-    epr_angle_elems,
-    epr_button,
-    epr_modes,
+    qa_base_env,
+    qa_epr_angle_elems,
+    qa_epr_button,
+    qa_epr_modes,
     epr_report,
-    epr_trials,
+    qa_epr_trials,
     mo,
     picked_modes,
-    sim_model,
+    qa_sim_model,
     supports_epr,
-    units_pick,
+    qa_units_pick,
 ):
     def _():
-        if not supports_epr(sim_model):
+        if not supports_epr(qa_sim_model):
             return None
-        if not epr_button.value:
+        if not qa_epr_button.value:
             return mo.md('_press **Run EPR experiment** to sweep_')
-        return epr_report(sim_model, epr_angle_elems.value, int(epr_trials.value),
-                          picked_modes(epr_modes, EPR_SAMPLER_LABELS),
-                          units_pick.value, base_env)
+        return epr_report(qa_sim_model, qa_epr_angle_elems.value, int(qa_epr_trials.value),
+                          picked_modes(qa_epr_modes, EPR_SAMPLER_LABELS),
+                          qa_units_pick.value, qa_base_env)
 
-    epr_view = _()
-    return (epr_view,)
+    qa_epr_view = _()
+    return (qa_epr_view,)
 
 
 @app.cell(hide_code=True)
@@ -1319,7 +1319,7 @@ def _(
     FredkinGate,
     WeightSplitWidget,
     cmath,
-    cpair,
+    qa_cpair,
     latex_weight,
     math,
     mo,
@@ -1336,7 +1336,7 @@ def _(
         gate = FredkinGate('ws', qn.qify(math.radians(ws_theta.value)))
         w = ws_wmag.value * cmath.exp(1j * math.radians(ws_wphase.value))
         c2a, c2b, c3a, c3b = (complex(x) for x in
-            cpair(gate, qn.Complex(w), twist=not ws_sign.value))
+            qa_cpair(gate, qn.Complex(w), twist=not ws_sign.value))
         data = {'c2': c2a + c2b, 'c3': c3a + c3b,
                 'c2a': c2a, 'c2b': c2b, 'c3a': c3a, 'c3b': c3b}
         order = ['c2', 'c3', 'c2a', 'c2b', 'c3a', 'c3b']
@@ -1389,7 +1389,7 @@ def _(ws_native, ws_sel_get, ws_sel_set):
 
 @app.cell(hide_code=True)
 def _(FredkinGate, qn):
-    def cpair(g: FredkinGate, w:qn.Complex, twist=False):
+    def qa_cpair(g: FredkinGate, w:qn.Complex, twist=False):
         """
         From AIM-1026a: the four split components of weight w.
         Values are precomputed for speed. twist=True gives the minus-sign
@@ -1407,7 +1407,7 @@ def _(FredkinGate, qn):
             c3b = w * g.mcos_sin_twist
         return c2a, c2b, c3a, c3b
 
-    return (cpair,)
+    return (qa_cpair,)
 
 
 if __name__ == "__main__":

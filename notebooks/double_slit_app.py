@@ -104,7 +104,7 @@ async def initialization():
     )
 
     init_engine()
-    EDITOR_UI = editor_ui(_wasm_editor) if WASM_MODE else editor_ui()
+    DS_EDITOR_UI = editor_ui(_wasm_editor) if WASM_MODE else editor_ui()
     return (
         DEFAULT_THETA_S,
         DiagramWidget,
@@ -116,7 +116,7 @@ async def initialization():
         eraser_curves,
         main_curves,
         tunable_curve,
-        EDITOR_UI,
+        DS_EDITOR_UI,
         LinePlotWidget,
         ScreenPanelWidget,
         double_slit_curves,
@@ -412,33 +412,33 @@ def _(mo):
         return mtext, ftext
 
     _mtext, _ftext = _()
-    fringes = mo.ui.slider(steps=[1, 3, 5, 7, 9], value=3, label='fringes',
+    ds_fringes = mo.ui.slider(steps=[1, 3, 5, 7, 9], value=3, label='fringes',
                            show_value=True)
-    n_points = mo.ui.slider(41, 161, step=20, value=81,
+    ds_n_points = mo.ui.slider(41, 161, step=20, value=81,
                             label='screen resolution', show_value=True)
-    shots = mo.ui.slider(steps=[100, 200, 500, 1000, 2000, 5000, 10000],
+    ds_shots = mo.ui.slider(steps=[100, 200, 500, 1000, 2000, 5000, 10000],
                          value=1000, label='particles per volley',
                          show_value=True)
-    fire_btn = mo.ui.run_button(label='🔫 fire particles')
-    reset_btn = mo.ui.run_button(label='reset screens')
+    ds_fire_btn = mo.ui.run_button(label='🔫 fire particles')
+    ds_reset_btn = mo.ui.run_button(label='reset screens')
     # the tunable recorder's pre-gate angle (its own section below)
-    theta_pre_sl = mo.ui.slider(0, 90, step=5, value=45,
+    ds_theta_pre_sl = mo.ui.slider(0, 90, step=5, value=45,
                                 label='θ pre (°)', show_value=True)
-    theta_erase_sl = mo.ui.slider(0, 90, step=5, value=45,
+    ds_theta_erase_sl = mo.ui.slider(0, 90, step=5, value=45,
                                   label='θ erase (°)', show_value=True)
     # The section accordions show these two sliders through plain
     # containers rather than by name: a cell that references a UI
     # element's variable reruns on every change, and re-rendering an
     # accordion re-mounts its diagram and screen. Only the engine cells
     # reference the sliders themselves.
-    tunable_controls = mo.hstack([theta_pre_sl], justify='start')
-    eraser_controls = mo.hstack([theta_erase_sl], justify='start')
+    ds_tunable_controls = mo.hstack([ds_theta_pre_sl], justify='start')
+    ds_eraser_controls = mo.hstack([ds_theta_erase_sl], justify='start')
     # gate-angle experiments: break the ideal conditions and watch
-    theta_split_sl = mo.ui.slider(0, 90, step=5, value=45,
+    ds_theta_split_sl = mo.ui.slider(0, 90, step=5, value=45,
                                   label='θ split (°)', show_value=True)
-    theta_merge_sl = mo.ui.slider(0, 90, step=5, value=45,
+    ds_theta_merge_sl = mo.ui.slider(0, 90, step=5, value=45,
                                   label='θ merge (°)', show_value=True)
-    theta_sort_sl = mo.ui.slider(0, 90, step=5, value=0,
+    ds_theta_sort_sl = mo.ui.slider(0, 90, step=5, value=0,
                                 label='θ sorter (°)', show_value=True)
     # .gates-note (css/double_slit_app.css) keeps the lead-in line snug
     # against its list
@@ -456,7 +456,7 @@ def _(mo):
     # and reset screens redraw them from one engine run per pixel. The
     # switch makes every redraw per pixel — slower, but the plot is
     # then the engine's per-pixel output at all times.
-    exact_sw = mo.ui.switch(value=False,
+    ds_exact_sw = mo.ui.switch(value=False,
                             label='one engine run per pixel on every change')
     _curves_note = mo.Html('<div class="gates-note">' + mo.md("""
     _Curves:_ _while a slider moves, the curve under each screen is
@@ -468,29 +468,29 @@ def _(mo):
     every change._
     """).text + '</div>')
     mo.vstack([_mtext,
-        mo.hstack([fringes, n_points, shots, fire_btn, reset_btn],
+        mo.hstack([ds_fringes, ds_n_points, ds_shots, ds_fire_btn, ds_reset_btn],
                   wrap=True, justify='start'),
         mo.accordion({'Implementation-level controls': mo.vstack([
-            mo.hstack([theta_split_sl, theta_merge_sl, theta_sort_sl],
+            mo.hstack([ds_theta_split_sl, ds_theta_merge_sl, ds_theta_sort_sl],
                       wrap=True, justify='start'),
             _gates_note,
-            exact_sw,
+            ds_exact_sw,
             _curves_note])}),
         _ftext])
     return (
-        eraser_controls,
-        exact_sw,
-        fire_btn,
-        fringes,
-        n_points,
-        reset_btn,
-        shots,
-        theta_erase_sl,
-        theta_merge_sl,
-        theta_pre_sl,
-        theta_sort_sl,
-        theta_split_sl,
-        tunable_controls,
+        ds_eraser_controls,
+        ds_exact_sw,
+        ds_fire_btn,
+        ds_fringes,
+        ds_n_points,
+        ds_reset_btn,
+        ds_shots,
+        ds_theta_erase_sl,
+        ds_theta_merge_sl,
+        ds_theta_pre_sl,
+        ds_theta_sort_sl,
+        ds_theta_split_sl,
+        ds_tunable_controls,
     )
 
 
@@ -520,33 +520,33 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(MAIN_MODES, curves_main, set_panel_curves, xs):
+def _(MAIN_MODES, ds_curves_main, ds_set_panel_curves, ds_xs):
     # A curve change redraws the affected panels' line areas in place;
     # the screens themselves redisplay only for a new grain (screen
     # resolution), a volley, or a reset. One cell per condition group,
     # so a slider only one group's model has a variable for (θ pre,
     # θ erase) leaves the other panels untouched.
     for _m in MAIN_MODES:
-        set_panel_curves(_m, xs, curves_main[_m])
+        ds_set_panel_curves(_m, ds_xs, ds_curves_main[_m])
 
 
 @app.cell(hide_code=True)
-def _(curve_tunable, set_panel_curves, xs):
-    set_panel_curves('tunable', xs, curve_tunable)
+def _(ds_curve_tunable, ds_set_panel_curves, ds_xs):
+    ds_set_panel_curves('tunable', ds_xs, ds_curve_tunable)
 
 
 @app.cell(hide_code=True)
-def _(curve_eraser, parts_eraser, set_panel_curves, xs):
-    set_panel_curves('eraser', xs, curve_eraser, parts_eraser)
+def _(ds_curve_eraser, ds_parts_eraser, ds_set_panel_curves, ds_xs):
+    ds_set_panel_curves('eraser', ds_xs, ds_curve_eraser, ds_parts_eraser)
 
 
 @app.cell(hide_code=True)
-def _(diagrams, mo, panels):
+def _(ds_diagrams, mo, ds_panels):
     # A 4×2 grid: one condition per row — the circuit on the left, the
     # screen/curve pair to its right. The widgets are created once and
     # updated in place, so this cell never reruns.
     def _row(mode):
-        return mo.hstack([diagrams[mode], panels[mode]],
+        return mo.hstack([ds_diagrams[mode], ds_panels[mode]],
                          align='center', justify='start', gap=1,
                          wrap=True)
 
@@ -555,7 +555,7 @@ def _(diagrams, mo, panels):
 
 
 @app.cell(hide_code=True)
-def _(diagrams, mo, panels, tunable_controls):
+def _(ds_diagrams, mo, ds_panels, ds_tunable_controls):
     # The tunable recorder — an approximate measurement — in its own
     # section: the explanation, its one control, and its row.
     _text = mo.md(r"""
@@ -597,14 +597,14 @@ def _(diagrams, mo, panels, tunable_controls):
                   'an approximate measurement: a recorder that only '
                   'partly records</span>': mo.vstack([
         _text,
-        tunable_controls,
-        mo.hstack([diagrams['tunable'], panels['tunable']],
+        ds_tunable_controls,
+        mo.hstack([ds_diagrams['tunable'], ds_panels['tunable']],
                   align='center', justify='start', gap=1, wrap=True),
     ], gap=1)})
 
 
 @app.cell(hide_code=True)
-def _(diagrams, eraser_controls, mo, panels):
+def _(ds_diagrams, ds_eraser_controls, mo, ds_panels):
     # The quantum eraser in its own section: the explanation, its one
     # control, and its row (hits colored by the eraser's outcome).
     _text = mo.md(r"""
@@ -646,8 +646,8 @@ def _(diagrams, eraser_controls, mo, panels):
                   'fringes return, one sorted subset at a time</span>':
                   mo.vstack([
         _text,
-        eraser_controls,
-        mo.hstack([diagrams['eraser'], panels['eraser']],
+        ds_eraser_controls,
+        mo.hstack([ds_diagrams['eraser'], ds_panels['eraser']],
                   align='center', justify='start', gap=1, wrap=True),
     ], gap=1)})
 
@@ -660,7 +660,7 @@ def _(LinePlotWidget, mo):
     fringes, zero at dark ones. The chart widget is created here, once;
     the cell below feeds it the current curves, so a slider move
     updates the plot in place and this section never re-renders."""
-    additivity_widget = LinePlotWidget(data={})
+    ds_additivity_widget = LinePlotWidget(data={})
     mo.accordion({'#### Note: Interference is not additivity\n\n<span style='
                   '"font-size:0.85em">the classical sum of the single-slit '
                   'curves against what actually happens</span>': mo.vstack([
@@ -669,20 +669,20 @@ def _(LinePlotWidget, mo):
               'worth* to the bright ones. If we couple a which-way recorder '
               'to one slit the actual curve collapses into the classical '
               'sum.'),
-        mo.ui.anywidget(additivity_widget),
+        mo.ui.anywidget(ds_additivity_widget),
     ], gap=1)})
-    return (additivity_widget,)
+    return (ds_additivity_widget,)
 
 
 @app.cell(hide_code=True)
-def _(additivity_widget, curves_main, xs):
-    additivity_widget.data = {
+def _(ds_additivity_widget, ds_curves_main, ds_xs):
+    ds_additivity_widget.data = {
         'series': [
-            {'name': 'both slits (actual)', 'x': list(xs),
-             'y': list(curves_main['both']), 'color': '#4c78a8'},
-            {'name': "slit1 + slit2 (classical sum)", 'x': list(xs),
-             'y': [a + b for a, b in zip(curves_main['slit1'],
-                                         curves_main['slit2'])],
+            {'name': 'both slits (actual)', 'x': list(ds_xs),
+             'y': list(ds_curves_main['both']), 'color': '#4c78a8'},
+            {'name': "slit1 + slit2 (classical sum)", 'x': list(ds_xs),
+             'y': [a + b for a, b in zip(ds_curves_main['slit1'],
+                                         ds_curves_main['slit2'])],
              'color': '#f58518', 'dash': '6 4'},
         ],
         'xdomain': [-1, 1], 'xlabel': 'screen position',
@@ -691,22 +691,22 @@ def _(additivity_widget, curves_main, xs):
 
 
 @app.cell(hide_code=True)
-def _(EDITOR_UI, mo):
+def _(DS_EDITOR_UI, mo):
     # the end-of-page mark (Ann's request): a small flourish so readers
     # know nothing further is loading. The editor genuinely has more
     # below (support code), so it appears in the app views only.
     mo.Html('<div style="text-align: center; color: #000; '
             'font-size: 1.6em; padding: 1.5em 0 1em;">&#8258;</div>'
-            ) if not EDITOR_UI else None
+            ) if not DS_EDITOR_UI else None
 
 
 @app.cell(hide_code=True)
-def _(EDITOR_UI, mo):
+def _(DS_EDITOR_UI, mo):
     # shown in the editor only: in `marimo run` the code cells below
     # are hidden, so the heading would sit over nothing
     mo.md(r"""
     ## Support code
-    """) if EDITOR_UI else None
+    """) if DS_EDITOR_UI else None
 
 
 @app.cell(hide_code=True)
@@ -715,62 +715,62 @@ def _(MODES, PANEL_TITLES, ScreenPanelWidget, mo, push_curves):
     # Each volley streams only its NEW hits to the client, which adds
     # them into its raster; hit_store keeps the accumulated history as
     # the rebuild baseline (remounts, curve changes).
-    panel_widgets = {_m: ScreenPanelWidget() for _m in MODES}
-    panels = {_m: mo.ui.anywidget(_w)
-              for _m, _w in panel_widgets.items()}
-    hit_store = {'seq': 0, 'hits': {_m: [] for _m in MODES}}
+    ds_panel_widgets = {_m: ScreenPanelWidget() for _m in MODES}
+    ds_panels = {_m: mo.ui.anywidget(_w)
+              for _m, _w in ds_panel_widgets.items()}
+    ds_hit_store = {'seq': 0, 'hits': {_m: [] for _m in MODES}}
 
     panel_grain = {}   # mode -> the len(xs) its raster was built for
     # The settings the live curves were last computed for, as a plain
     # dict: the fire and reset cells read them from here instead of
     # from the sliders, so a slider move does not run those cells at
     # all (a cell that references a slider reruns on every change).
-    current = {}
+    ds_current = {}
 
-    def set_panel_curves(mode, xs, curve, parts=None):
+    def ds_set_panel_curves(mode, ds_xs, curve, parts=None):
         # New curves for a panel: the line area under the screen redraws
         # in place at the same grain; at a new grain the panel rebuilds
         # from its baseline — title, curves, and every hit so far
         panel_grain[mode] = push_curves(
-            panel_widgets[mode], xs, curve, parts, grain=panel_grain.get(mode),
-            title=PANEL_TITLES[mode], width=380, hits=hit_store['hits'][mode])
+            ds_panel_widgets[mode], ds_xs, curve, parts, grain=panel_grain.get(mode),
+            title=PANEL_TITLES[mode], width=380, hits=ds_hit_store['hits'][mode])
 
     return (
-        hit_store,
-        panel_widgets,
-        current,
-        panels,
-        set_panel_curves,
+        ds_hit_store,
+        ds_panel_widgets,
+        ds_current,
+        ds_panels,
+        ds_set_panel_curves,
     )
 
 
 @app.cell(hide_code=True)
-def _(math, theta_merge_sl, theta_sort_sl, theta_split_sl):
+def _(math, ds_theta_merge_sl, ds_theta_sort_sl, ds_theta_split_sl):
     # the gate angles every condition shares, from the sliders
-    main_angles = {'theta_s': math.radians(theta_split_sl.value),
-                   'theta_merge': math.radians(theta_merge_sl.value),
-                   'theta_sort': math.radians(theta_sort_sl.value)}
-    return (main_angles,)
+    ds_main_angles = {'theta_s': math.radians(ds_theta_split_sl.value),
+                   'theta_merge': math.radians(ds_theta_merge_sl.value),
+                   'theta_sort': math.radians(ds_theta_sort_sl.value)}
+    return (ds_main_angles,)
 
 
 @app.cell(hide_code=True)
-def _(exact_sw):
+def _(ds_exact_sw):
     # how the live curves are computed: the three-run reconstruction
     # (instant, exact) unless the switch asks for a run per pixel
-    via = 'pixels' if exact_sw.value else 'fit'
-    return (via,)
+    ds_via = 'pixels' if ds_exact_sw.value else 'fit'
+    return (ds_via,)
 
 
 @app.cell(hide_code=True)
 def _(
     MAIN_MODES,
-    current,
-    fringes,
-    main_angles,
+    ds_current,
+    ds_fringes,
+    ds_main_angles,
     main_curves,
-    n_points,
+    ds_n_points,
     screen_positions,
-    via,
+    ds_via,
 ):
     """The live screen curves: the pixel's path difference is the phase
     plate's phase and the gate angles come from the sliders. One cell
@@ -781,47 +781,47 @@ def _(
     reset always redraw per pixel."""
     # no spinner here: a transient output in this cell shifts the page,
     # and the live path is three engine runs per condition
-    curves_main = main_curves(n_points.value, fringes.value, main_angles, via, MAIN_MODES)
-    xs = screen_positions(n_points.value)
-    current.update(n=n_points.value, fringes=fringes.value,
-                   main_angles=dict(main_angles))
-    return curves_main, xs
+    ds_curves_main = main_curves(ds_n_points.value, ds_fringes.value, ds_main_angles, ds_via, MAIN_MODES)
+    ds_xs = screen_positions(ds_n_points.value)
+    ds_current.update(n=ds_n_points.value, fringes=ds_fringes.value,
+                   main_angles=dict(ds_main_angles))
+    return ds_curves_main, ds_xs
 
 
 @app.cell(hide_code=True)
 def _(
-    current,
-    fringes,
-    main_angles,
+    ds_current,
+    ds_fringes,
+    ds_main_angles,
     math,
-    n_points,
-    theta_pre_sl,
+    ds_n_points,
+    ds_theta_pre_sl,
     tunable_curve,
-    via,
+    ds_via,
 ):
-    current['theta_pre'] = math.radians(theta_pre_sl.value)
-    curve_tunable = tunable_curve(n_points.value, fringes.value, main_angles,
-                                  current['theta_pre'], via)
-    return (curve_tunable,)
+    ds_current['theta_pre'] = math.radians(ds_theta_pre_sl.value)
+    ds_curve_tunable = tunable_curve(ds_n_points.value, ds_fringes.value, ds_main_angles,
+                                  ds_current['theta_pre'], ds_via)
+    return (ds_curve_tunable,)
 
 
 @app.cell(hide_code=True)
 def _(
-    current,
-    fringes,
-    main_angles,
+    ds_current,
+    ds_fringes,
+    ds_main_angles,
     math,
     eraser_curves,
-    n_points,
-    theta_erase_sl,
-    via,
+    ds_n_points,
+    ds_theta_erase_sl,
+    ds_via,
 ):
     # the eraser's curve comes split by p2's sign (parts), its total
     # in curve_eraser
-    current['theta_erase'] = math.radians(theta_erase_sl.value)
-    _, curve_eraser, parts_eraser = eraser_curves(
-        n_points.value, fringes.value, main_angles, current['theta_erase'], via)
-    return curve_eraser, parts_eraser
+    ds_current['theta_erase'] = math.radians(ds_theta_erase_sl.value)
+    _, ds_curve_eraser, ds_parts_eraser = eraser_curves(
+        ds_n_points.value, ds_fringes.value, ds_main_angles, ds_current['theta_erase'], ds_via)
+    return ds_curve_eraser, ds_parts_eraser
 
 
 @app.cell(hide_code=True)
@@ -832,110 +832,110 @@ def _(DiagramWidget, MODES, diagram_geom, mo):
     angles; the per-group cells below push new geometry into them when
     their sliders move (the widget redraws in place, keeping its view),
     so nothing else on the page re-renders."""
-    diagram_widgets = {mode: DiagramWidget(geometry=diagram_geom(mode, {}, {}))
+    ds_diagram_widgets = {mode: DiagramWidget(geometry=diagram_geom(mode, {}, {}))
                        for mode in MODES}
-    diagrams = {mode: mo.ui.anywidget(w) for mode, w in diagram_widgets.items()}
-    return diagram_widgets, diagrams
+    ds_diagrams = {mode: mo.ui.anywidget(w) for mode, w in ds_diagram_widgets.items()}
+    return ds_diagram_widgets, ds_diagrams
 
 
 @app.cell(hide_code=True)
 def _(
     MAIN_MODES,
     diagram_geom,
-    diagram_widgets,
-    main_angles,
-    theta_merge_sl,
-    theta_sort_sl,
-    theta_split_sl,
+    ds_diagram_widgets,
+    ds_main_angles,
+    ds_theta_merge_sl,
+    ds_theta_sort_sl,
+    ds_theta_split_sl,
 ):
     # the shared gate angles: every diagram shows them
-    main_labels = {'g_split': f'{theta_split_sl.value:.0f}°',
-                   'g_merge': f'{theta_merge_sl.value:.0f}°',
-                   'g_sort': f'{theta_sort_sl.value:.0f}°'}
+    ds_main_labels = {'g_split': f'{ds_theta_split_sl.value:.0f}°',
+                   'g_merge': f'{ds_theta_merge_sl.value:.0f}°',
+                   'g_sort': f'{ds_theta_sort_sl.value:.0f}°'}
     for _m in MAIN_MODES:
-        diagram_widgets[_m].geometry = diagram_geom(_m, main_angles,
-                                                   main_labels)
-    return (main_labels,)
+        ds_diagram_widgets[_m].geometry = diagram_geom(_m, ds_main_angles,
+                                                   ds_main_labels)
+    return (ds_main_labels,)
 
 
 @app.cell(hide_code=True)
-def _(diagram_geom, diagram_widgets, main_angles, main_labels, math, theta_pre_sl):
-    diagram_widgets['tunable'].geometry = diagram_geom(
+def _(diagram_geom, ds_diagram_widgets, ds_main_angles, ds_main_labels, math, ds_theta_pre_sl):
+    ds_diagram_widgets['tunable'].geometry = diagram_geom(
         'tunable',
-        {**main_angles, 'theta_pre': math.radians(theta_pre_sl.value)},
-        {**main_labels, 'g_pre': f'{theta_pre_sl.value:.0f}°'})
+        {**ds_main_angles, 'theta_pre': math.radians(ds_theta_pre_sl.value)},
+        {**ds_main_labels, 'g_pre': f'{ds_theta_pre_sl.value:.0f}°'})
 
 
 @app.cell(hide_code=True)
 def _(
     diagram_geom,
-    diagram_widgets,
-    main_angles,
-    main_labels,
+    ds_diagram_widgets,
+    ds_main_angles,
+    ds_main_labels,
     math,
-    theta_erase_sl,
+    ds_theta_erase_sl,
 ):
-    diagram_widgets['eraser'].geometry = diagram_geom(
+    ds_diagram_widgets['eraser'].geometry = diagram_geom(
         'eraser',
-        {**main_angles, 'theta_erase': math.radians(theta_erase_sl.value)},
-        {**main_labels, 'g_erase': f'{theta_erase_sl.value:.0f}°'})
+        {**ds_main_angles, 'theta_erase': math.radians(ds_theta_erase_sl.value)},
+        {**ds_main_labels, 'g_erase': f'{ds_theta_erase_sl.value:.0f}°'})
 
 
 @app.cell(hide_code=True)
-def _(MAIN_MODES, current, double_slit_curves, set_panel_curves):
-    def engine_curves():
+def _(MAIN_MODES, ds_current, double_slit_curves, ds_set_panel_curves):
+    def ds_engine_curves():
         """Every condition's curve from one engine run per pixel at the
         current settings — what fire particles and reset screens draw,
         and sample from — pushed into the panels: (curves by mode,
         parts by mode)."""
-        xs, curves, parts = double_slit_curves(current, MAIN_MODES)
+        ds_xs, curves, parts = double_slit_curves(ds_current, MAIN_MODES)
         for mode, curve in curves.items():
-            set_panel_curves(mode, xs, curve, parts.get(mode))
+            ds_set_panel_curves(mode, ds_xs, curve, parts.get(mode))
         return curves, parts
 
-    return (engine_curves,)
+    return (ds_engine_curves,)
 
 
 @app.cell(hide_code=True)
 def _(
     MODES,
-    engine_curves,
-    fire_btn,
-    hit_store,
+    ds_engine_curves,
+    ds_fire_btn,
+    ds_hit_store,
     mo,
-    panel_widgets,
+    ds_panel_widgets,
     random,
     sample_hits,
-    shots,
-    xs,
+    ds_shots,
+    ds_xs,
 ):
-    mo.stop(not fire_btn.value)
+    mo.stop(not ds_fire_btn.value)
     # the engine's per-pixel curves, drawn and fired at
     with mo.status.spinner(title='running the exact simulations…'):
-        _curves, _parts = engine_curves()
+        _curves, _parts = ds_engine_curves()
     _rng = random.Random()
-    hit_store['seq'] += 1
+    ds_hit_store['seq'] += 1
     for _m in MODES:
-        _new = sample_hits(xs, _curves[_m], shots.value, _rng,
+        _new = sample_hits(ds_xs, _curves[_m], ds_shots.value, _rng,
                            parts=(tuple(_ys for _, _ys in _parts[_m])
                                   if _m in _parts else None))
-        hit_store['hits'][_m].extend(_new)
-        panel_widgets[_m].hits_chunk = {
-            'seq': hit_store['seq'],
+        ds_hit_store['hits'][_m].extend(_new)
+        ds_panel_widgets[_m].hits_chunk = {
+            'seq': ds_hit_store['seq'],
             'pts': [list(_p) for _p in _new],
-            'total': len(hit_store['hits'][_m])}
+            'total': len(ds_hit_store['hits'][_m])}
 
 
 @app.cell(hide_code=True)
-def _(MODES, engine_curves, hit_store, mo, panel_widgets, reset_btn):
-    mo.stop(not reset_btn.value)
+def _(MODES, ds_engine_curves, ds_hit_store, mo, ds_panel_widgets, ds_reset_btn):
+    mo.stop(not ds_reset_btn.value)
     # a reset also redraws the curves from one engine run per pixel
     with mo.status.spinner(title='running the exact simulations…'):
-        engine_curves()
-    hit_store['seq'] += 1
+        ds_engine_curves()
+    ds_hit_store['seq'] += 1
     for _m in MODES:
-        hit_store['hits'][_m] = []
-        panel_widgets[_m].hits_chunk = {'seq': hit_store['seq'],
+        ds_hit_store['hits'][_m] = []
+        ds_panel_widgets[_m].hits_chunk = {'seq': ds_hit_store['seq'],
                                         'reset': True}
 
 

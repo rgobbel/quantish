@@ -236,10 +236,17 @@ Configuration options (usually in defaults.yaml):
     set), `results.py` (the Detailed Results tables), `sampling.py`
     (interpretations, runtime projection, the Monte Carlo job and its
     views), `epr_ui.py` (the EPR angle entries and report); the
-    builder's UI is next). `import marimo` is allowed here and
-    nowhere else in the package; the notebooks keep only widget
-    bindings, `mo.state`, and layout (marimo tracks a widget only as a
-    cell global, so builders here return elements for the cell to bind)
+    builder's `builder_ui.py` (a loaded model as a dict, the canvas's
+    translation into a runnable config, its status line and angle
+    labels, the run, the sweep run, the final-points table)). `import
+    marimo` is allowed here and nowhere else in the package; the
+    notebooks keep only widget bindings, `mo.state`, and layout
+    (marimo tracks a widget only as a cell global, so builders here
+    return elements for the cell to bind). Each notebook's own cell
+    globals carry its prefix — `qa_` quantish app, `ds_` double slit,
+    `nb_` builder, `dl_` decoherence lab — so the notebooks can later
+    share one kernel without name collisions (the `ws_` explorer cells
+    in the quantish app are leaving for their own app)
   - `epr.py`: EPR experiment sweeps and statistics
   - `montecarlo.py`: Monte Carlo sampling mode
   - `mermaid_diagram.py`, `network_graph.py`, `tikz_diagram.py`: Diagrams

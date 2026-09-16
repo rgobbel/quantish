@@ -43,14 +43,26 @@ async def initialization():
             _p.parent.mkdir(parents=True, exist_ok=True)
             _p.write_text(_text)
 
-    from addict import Dict as Addict
-
     _repo = Path(__file__).resolve().parents[1]
     if str(_repo) not in sys.path:
         sys.path.insert(0, str(_repo))
 
-    import yaml
-
+    from quantish.apps.builder_ui import (
+        MODE_LABELS,
+        angle_labels,
+        canvas_counts,
+        derive_config,
+        final_points_html,
+        loaded_model,
+        loaded_report,
+        model_options,
+        new_model,
+        raw_sections,
+        run_network,
+        run_order,
+        run_sweep,
+        status_view,
+    )
     from quantish.apps.common import (
         MODELS_TOP,
         WASM_MODE,
@@ -58,108 +70,64 @@ async def initialization():
         in_div,
         init_engine,
         model_files,
+        parse_vars,
         remember_in,
         stamp_html,
         switch_off_boxes,
-        switched_off,
         vars_text,
     )
-    from quantish.apps.sweep_ui import (
-        editor_rows,
-        editor_spec,
-        sweep_chart,
-        sweep_controls,
-        sweep_run,
-    )
-    from quantish.builder import (
-        angle_degrees,
-        coherence_warnings,
-        config_extras,
-        config_to_graph,
-        config_to_yaml,
-        extract_sections,
-        graph_to_config,
-        section_body,
-        validate_graph,
-        variables_block,
-        variables_env,
-    )
+    from quantish.apps.sweep_ui import editor_rows, editor_spec, sweep_controls
+    from quantish.builder import config_to_yaml
     from quantish.builder_widget import (
         BuilderWidget,
         DiagramWidget,
         NetworkGraphWidget,
     )
     from quantish.diagram_layout import diagram_geometry
-    from quantish.display import (
-        coord_sort_key,
-        cs_point_sort_key,
-        html_table,
-        particle_names,
-        particle_tokens,
-        sym_or_float,
-    )
     from quantish.network_graph import NetworkGraph
-    from quantish.qnumber import CalcMode
-    from quantish.screen import model_label
-    from quantish.screen import model_title as yaml_title
-    from quantish.simulation import Simulation
-    from quantish.sweep import check_sweep
-    from quantish.util import angle_label
 
     init_engine()
     # the model library, for loading an existing model into the
     # builder (and saving one beside them): the repo's models/
     # directory, or the frozen copy fetched above under WASM; None
     # when there is none
-    models_top = MODELS_TOP if MODELS_TOP.is_dir() else None
-    model_paths = model_files(MODELS_TOP)
+    nb_models_top = MODELS_TOP if MODELS_TOP.is_dir() else None
+    nb_model_paths = model_files(MODELS_TOP)
     return (
-        Addict,
         BuilderWidget,
-        CalcMode,
         DiagramWidget,
+        MODE_LABELS,
         NetworkGraph,
         NetworkGraphWidget,
-        Simulation,
-        check_sweep,
-        model_label,
-        yaml_title,
         WASM_MODE,
-        angle_degrees,
-        angle_label,
+        angle_labels,
         build_stamp,
-        coherence_warnings,
-        config_extras,
-        config_to_graph,
+        canvas_counts,
         config_to_yaml,
-        extract_sections,
-        section_body,
-        variables_block,
-        coord_sort_key,
-        cs_point_sort_key,
+        derive_config,
         diagram_geometry,
-        graph_to_config,
-        html_table,
-        in_div,
-        mo,
-        particle_names,
-        particle_tokens,
-        remember_in,
-        stamp_html,
-        switch_off_boxes,
-        switched_off,
         editor_rows,
         editor_spec,
-        sweep_chart,
+        final_points_html,
+        in_div,
+        loaded_model,
+        loaded_report,
+        mo,
+        model_options,
+        nb_model_paths,
+        nb_models_top,
+        new_model,
+        parse_vars,
+        raw_sections,
+        remember_in,
+        run_network,
+        run_order,
+        run_sweep,
+        stamp_html,
+        status_view,
         sweep_controls,
-        sweep_run,
-        sym_or_float,
-        model_paths,
-        models_top,
-        validate_graph,
-        variables_env,
+        switch_off_boxes,
         vars_text,
-        yaml,
     )
 
 
@@ -263,256 +231,207 @@ async def _(build_stamp, stamp_html):
 @app.cell(hide_code=True)
 def _(mo):
     # the last model loaded into the builder: {'graph', 'title', 'notes'}
-    get_loaded, set_loaded = mo.state(None)
+    nb_get_loaded, nb_set_loaded = mo.state(None)
     # a parsed load waiting for the really-replace-the-canvas step
-    get_pending, set_pending = mo.state(None)
+    nb_get_pending, nb_set_pending = mo.state(None)
     # which File action's controls are unfolded: 'open' | 'upload' | None
-    get_file_mode, set_file_mode = mo.state(None)
+    nb_get_file_mode, nb_set_file_mode = mo.state(None)
     return (
-        get_file_mode,
-        get_loaded,
-        get_pending,
-        set_file_mode,
-        set_loaded,
-        set_pending,
+        nb_get_file_mode,
+        nb_get_loaded,
+        nb_get_pending,
+        nb_set_file_mode,
+        nb_set_loaded,
+        nb_set_pending,
     )
 
 
 @app.cell(hide_code=True)
-def _(mo, model_paths):
+def _(mo, nb_model_paths):
     # static pieces of the File controls: the collection picker (the
     # model picker itself is rebuilt per collection below) and the
     # upload control
-    collections = sorted({k.split('/')[0] for k in model_paths})
-    collection_pick = mo.ui.dropdown(
+    collections = sorted({k.split('/')[0] for k in nb_model_paths})
+    nb_collection_pick = mo.ui.dropdown(
         options=collections,
         value='gr2026' if 'gr2026' in collections
         else (collections[0] if collections else None),
         label='collection')
-    model_upload = mo.ui.file(filetypes=['.yaml', '.yml'],
+    nb_model_upload = mo.ui.file(filetypes=['.yaml', '.yml'],
                               label='choose a file…')
-    return collection_pick, model_upload
+    return nb_collection_pick, nb_model_upload
 
 
 @app.cell(hide_code=True)
 def _(
     WASM_MODE,
-    builder_config,
+    nb_builder_config,
     config_to_yaml,
-    file_name,
+    nb_file_name,
     mo,
-    model_paths,
-    raw_sections,
+    nb_model_paths,
+    nb_sections,
 ):
     # the File row, in the spirit of a Mac File menu: New, Open a
     # predefined model, Upload one, Save into the local models
     # directory (running from the repo only — in the browser the
     # filesystem dies with the tab, so Download is the way out),
     # Download through the browser
-    new_btn = mo.ui.run_button(label='✚ new')
-    open_btn = mo.ui.run_button(label='📂 open…')
-    upload_btn = mo.ui.run_button(label='⬆ upload…')
-    save_btn = mo.ui.run_button(label='💾 save',
-                                disabled=(builder_config is None
-                                          or not model_paths))
+    nb_new_btn = mo.ui.run_button(label='✚ new')
+    nb_open_btn = mo.ui.run_button(label='📂 open…')
+    nb_upload_btn = mo.ui.run_button(label='⬆ upload…')
+    nb_save_btn = mo.ui.run_button(label='💾 save',
+                                disabled=(nb_builder_config is None
+                                          or not nb_model_paths))
     _download = (
-        mo.download(data=config_to_yaml(builder_config,
-                                        raw_sections=raw_sections).encode(),
-                    filename=f'{file_name.value}.yaml',
+        mo.download(data=config_to_yaml(nb_builder_config,
+                                        raw_sections=nb_sections).encode(),
+                    filename=f'{nb_file_name.value}.yaml',
                     label='download')
-        if builder_config is not None
+        if nb_builder_config is not None
         else mo.ui.run_button(label='⬇ download', disabled=True))
-    mo.hstack([mo.md('**File:**'), new_btn, open_btn, upload_btn]
-              + ([] if WASM_MODE else [save_btn])
+    mo.hstack([mo.md('**File:**'), nb_new_btn, nb_open_btn, nb_upload_btn]
+              + ([] if WASM_MODE else [nb_save_btn])
               + [_download], justify='start', gap=0.75, wrap=True)
-    return new_btn, open_btn, save_btn, upload_btn
+    return nb_new_btn, nb_open_btn, nb_save_btn, nb_upload_btn
 
 
 @app.cell(hide_code=True)
-def _(get_file_mode, open_btn, set_file_mode, upload_btn):
+def _(nb_get_file_mode, nb_open_btn, nb_set_file_mode, nb_upload_btn):
     # open…/upload… unfold their controls; pressing again folds them
     def _():
-        if open_btn.value:
-            set_file_mode(None if get_file_mode() == 'open' else 'open')
-        elif upload_btn.value:
-            set_file_mode(None if get_file_mode() == 'upload'
+        if nb_open_btn.value:
+            nb_set_file_mode(None if nb_get_file_mode() == 'open' else 'open')
+        elif nb_upload_btn.value:
+            nb_set_file_mode(None if nb_get_file_mode() == 'upload'
                           else 'upload')
 
     _()
 
 
 @app.cell(hide_code=True)
-def _(collection_pick, get_file_mode, mo, model_label, model_paths, model_upload, yaml_title):
+def _(nb_collection_pick, nb_get_file_mode, mo, model_options, nb_model_paths, nb_model_upload):
     # the unfolded controls for the chosen File action
-    _collection = collection_pick.value
-    model_pick = mo.ui.dropdown(
-        options={model_label(k.split('/', 1)[1].removesuffix('.yaml'),
-                             yaml_title(model_paths[k])): k
-                 for k in sorted(model_paths)
-                 if k.split('/')[0] == _collection},
-        label='model')
-    open_go_btn = mo.ui.run_button(label='open')
-    upload_go_btn = mo.ui.run_button(label='open file')
-    _mode = get_file_mode()
+    nb_model_pick = mo.ui.dropdown(
+        options=model_options(nb_model_paths, nb_collection_pick.value), label='model')
+    nb_open_go_btn = mo.ui.run_button(label='open')
+    nb_upload_go_btn = mo.ui.run_button(label='open file')
+    _mode = nb_get_file_mode()
     _row = None
     if _mode == 'open':
-        _row = mo.hstack([collection_pick, model_pick, open_go_btn],
+        _row = mo.hstack([nb_collection_pick, nb_model_pick, nb_open_go_btn],
                          justify='start', gap=0.75, wrap=True)
     elif _mode == 'upload':
-        _row = mo.hstack([model_upload, upload_go_btn],
+        _row = mo.hstack([nb_model_upload, nb_upload_go_btn],
                          justify='start', gap=0.75, wrap=True)
     _row  # noqa: B018 — the cell's output
-    return model_pick, open_go_btn, upload_go_btn
+    return nb_model_pick, nb_open_go_btn, nb_upload_go_btn
 
 
 @app.cell(hide_code=True)
 def _(
-    config_extras,
-    config_to_graph,
-    extract_sections,
+    loaded_model,
     mo,
-    model_paths,
-    model_pick,
-    model_upload,
-    new_btn,
-    open_go_btn,
-    section_body,
-    set_file_mode,
-    set_pending,
-    upload_go_btn,
-    yaml,
+    nb_model_paths,
+    nb_model_pick,
+    nb_model_upload,
+    nb_new_btn,
+    new_model,
+    nb_open_go_btn,
+    nb_set_file_mode,
+    nb_set_pending,
+    nb_upload_go_btn,
 ):
     # every File action lands as "pending" here — the next cell applies
     # it directly when the canvas is empty, and asks first when it
     # isn't. (This cell must not read the canvas itself: it would
     # re-run when the load replaces the widget, and mis-read the
     # freshly loaded canvas as one that needs another confirmation.)
-    def _tri_mode(config):
-        # calculation_mode is a case-independent string; None when the
-        # YAML leaves the mode unset (legacy boolean 'symbolic' still
-        # read on upload of old files)
-        mode = config.get('calculation_mode')
-        if mode is not None:
-            return str(mode).lower() == 'symbolic'
-        if 'symbolic' in config:
-            return bool(config['symbolic'])
-        return None
-
     def _load():
-        if new_btn.value:
-            set_pending({'graph': {'gates': {}, 'particles': {},
-                                   'links': []},
-                         'notes': [], 'title': 'my_network',
-                         'file': 'my_network', 'caption': '',
-                         'variables': {}, 'variables_text': '',
-                         'symbolic': None,
-                         'angle_unit': None, 'model_notes': '',
-                         'extras': {}, 'extras_text': {},
-                         'source': 'a new empty model'})
+        if nb_new_btn.value:
+            nb_set_pending(new_model())
             return None
-        if upload_go_btn.value and model_upload.contents():
-            text = model_upload.contents().decode()
-            source = model_upload.name()
-        elif open_go_btn.value and model_pick.value:
-            text = model_paths[model_pick.value].read_text()
-            source = model_pick.value
+        if nb_upload_go_btn.value and nb_model_upload.contents():
+            text = nb_model_upload.contents().decode()
+            source = nb_model_upload.name()
+        elif nb_open_go_btn.value and nb_model_pick.value:
+            text = nb_model_paths[nb_model_pick.value].read_text()
+            source = nb_model_pick.value
         else:
             return None
         try:
-            config = yaml.safe_load(text)
-            graph, notes = config_to_graph(config)
+            loaded = loaded_model(text, source)
         except Exception as exc:  # noqa: BLE001 — show, don't crash the app
             return mo.md(f'**could not load {source}** — {exc}')
-        from pathlib import PurePath
-        set_file_mode(None)
-        set_pending({'graph': graph, 'notes': notes,
-                     'title': config.get('title') or 'my_network',
-                     'file': PurePath(source).stem,
-                     'caption': config.get('caption') or '',
-                     'variables': config.get('variables') or {},
-                     # the file's variables section as written (comments
-                     # kept) seeds the editor; the parsed dict is the
-                     # fallback for files with none
-                     'variables_text': section_body(
-                         extract_sections(text).get('variables', '')),
-                     'symbolic': _tri_mode(config),
-                     'angle_unit': config.get('angle_unit'),
-                     'model_notes': config.get('notes') or '',
-                     # sections the builder does not edit (a sweep,
-                     # epr_stats, …) ride through to the saved file
-                     'extras': config_extras(config),
-                     # … and their raw text, so their comments survive
-                     'extras_text': extract_sections(text),
-                     'source': source})
+        nb_set_file_mode(None)
+        nb_set_pending(loaded)
         return None
 
     _load()
 
-
 @app.cell(hide_code=True)
-def _(builder, get_pending, mo, set_loaded, set_pending):
+def _(nb_builder, canvas_counts, nb_get_pending, mo, nb_set_loaded, nb_set_pending):
     # the really? step when a load would wipe a populated canvas; an
     # empty canvas loads straight through
-    confirm_load_btn = mo.ui.run_button(label='replace the canvas')
-    keep_canvas_btn = mo.ui.run_button(label='keep what I have')
+    nb_confirm_load_btn = mo.ui.run_button(label='replace the canvas')
+    nb_keep_canvas_btn = mo.ui.run_button(label='keep what I have')
 
     def _():
-        _p = get_pending()
+        _p = nb_get_pending()
         if _p is None:
             return None
-        _g = builder.value.get('graph') or {}
-        if not (_g.get('gates') or _g.get('particles')):
-            set_pending(None)
-            set_loaded(_p)
+        _n_g, _n_p = canvas_counts(nb_builder.value.get('graph') or {})
+        if not (_n_g or _n_p):
+            nb_set_pending(None)
+            nb_set_loaded(_p)
             return None
         return mo.vstack([
-            mo.md(f"⚠ the canvas holds {len(_g.get('gates') or {})} "
-                  f"gate(s) and {len(_g.get('particles') or {})} "
+            mo.md(f"⚠ the canvas holds {_n_g} gate(s) and {_n_p} "
                   f"particle(s) — really replace it with "
                   f"**{_p['source']}**?"),
-            mo.hstack([confirm_load_btn, keep_canvas_btn],
+            mo.hstack([nb_confirm_load_btn, nb_keep_canvas_btn],
                       justify='start', gap=1, wrap=True),
         ], align='start')
 
     _()
-    return confirm_load_btn, keep_canvas_btn
+    return nb_confirm_load_btn, nb_keep_canvas_btn
 
 
 @app.cell(hide_code=True)
-def _(confirm_load_btn, get_pending, keep_canvas_btn, set_loaded, set_pending):
+def _(nb_confirm_load_btn, nb_get_pending, nb_keep_canvas_btn, nb_set_loaded, nb_set_pending):
     def _():
-        _p = get_pending()
+        _p = nb_get_pending()
         if _p is None:
             return
-        if confirm_load_btn.value:
-            set_pending(None)
-            set_loaded(_p)
-        elif keep_canvas_btn.value:
-            set_pending(None)
+        if nb_confirm_load_btn.value:
+            nb_set_pending(None)
+            nb_set_loaded(_p)
+        elif nb_keep_canvas_btn.value:
+            nb_set_pending(None)
 
     _()
 
 
 @app.cell(hide_code=True)
 def _(
-    builder_config,
+    nb_builder_config,
     config_to_yaml,
-    file_name,
+    nb_file_name,
     mo,
-    models_top,
-    raw_sections,
-    save_btn,
+    nb_models_top,
+    nb_sections,
+    nb_save_btn,
 ):
     # save writes into the local models directory (the web deployment
     # has no server filesystem — download covers it there)
     def _():
-        if not (save_btn.value and builder_config and models_top):
+        if not (nb_save_btn.value and nb_builder_config and nb_models_top):
             return None
-        dest = models_top / 'extras' / f'{file_name.value}.yaml'
+        dest = nb_models_top / 'extras' / f'{nb_file_name.value}.yaml'
         try:
             dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_text(config_to_yaml(builder_config,
-                                           raw_sections=raw_sections))
+            dest.write_text(config_to_yaml(nb_builder_config,
+                                           raw_sections=nb_sections))
         except Exception as exc:  # noqa: BLE001 — show, don't crash the app
             return mo.md(f'**could not save** — {exc}')
         return mo.md('<span style="font-size: 0.9em">saved '
@@ -522,420 +441,241 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(get_loaded, mo, vars_text):
+def _(MODE_LABELS, nb_get_loaded, loaded_report, mo, vars_text):
     # the model's whole header is editable: title (into the YAML) and
     # file name (of the saved file) are separate; caption, variables,
     # and the calculation mode ride into the YAML too
-    _loaded = get_loaded() or {}
-    model_title = mo.ui.text(
+    _loaded = nb_get_loaded() or {}
+    nb_model_title = mo.ui.text(
         value=_loaded.get('title') or 'my_network', label='title')
-    file_name = mo.ui.text(
+    nb_file_name = mo.ui.text(
         value=_loaded.get('file') or 'my_network', label='file name')
     # tri-state: '-' leaves the calculation mode out of the YAML
     # (the loader's defaults decide at run time)
-    mode_pick = mo.ui.dropdown(
+    nb_mode_pick = mo.ui.dropdown(
         options=['-', 'Float', 'Symbolic'],
-        value={None: '-', False: 'Float',
-               True: 'Symbolic'}[_loaded.get('symbolic')],
+        value=MODE_LABELS[_loaded.get('symbolic')],
         label='calculation mode (default: Float)')
     # tri-state like the mode: '-' omits angle_unit from the YAML
     # (plain-number angles then read as radians)
-    unit_pick = mo.ui.dropdown(
+    nb_unit_pick = mo.ui.dropdown(
         options=['-', 'radians', 'degrees'],
         value=_loaded.get('angle_unit') or '-',
         label='angle unit (default: radians)')
-    caption_input = mo.ui.text_area(
+    nb_caption_input = mo.ui.text_area(
         value=_loaded.get('caption') or '', rows=2, full_width=True,
         placeholder='a caption to be displayed in the network diagram',
         label='**caption**')
-    notes_input = mo.ui.text_area(
+    nb_notes_input = mo.ui.text_area(
         value=_loaded.get('model_notes') or '', rows=3, full_width=True,
         placeholder='free-form text', label='**notes**')
 
-    variables_editor = mo.ui.text_area(
+    nb_variables_editor = mo.ui.text_area(
         value=(_loaded.get('variables_text')
                or vars_text(_loaded.get('variables'))), rows=6,
         full_width=True,
         placeholder='variable definitions in YAML format')
     # the loaded model's unhandled sections, kept for the save — their
     # parsed values (for the config) and their raw text (for the file)
-    loaded_extras = _loaded.get('extras') or {}
-    loaded_extras_text = _loaded.get('extras_text') or {}
-    _report = None
-    if _loaded and _loaded.get('source'):
-        _msg = ('<span style="font-size: 0.9em">loaded '
-                f"**{_loaded['source']}**</span>")
-        if _loaded['notes']:
-            _msg += '\n' + '\n'.join(f'- {n}' for n in _loaded['notes'])
-        _report = mo.md(_msg)
+    nb_loaded_extras = _loaded.get('extras') or {}
+    nb_loaded_extras_text = _loaded.get('extras_text') or {}
+    _report = loaded_report(_loaded)
     mo.vstack(
         ([_report] if _report is not None else [])
-        + [mo.vstack([file_name,
-                      mo.hstack([model_title, mode_pick, unit_pick],
+        + [mo.vstack([nb_file_name,
+                      mo.hstack([nb_model_title, nb_mode_pick, nb_unit_pick],
                                 justify='start', gap=0.75, wrap=True)])],
         align='stretch')
     return (
-        caption_input,
-        file_name,
-        loaded_extras,
-        loaded_extras_text,
-        mode_pick,
-        model_title,
-        notes_input,
-        unit_pick,
-        variables_editor,
+        nb_caption_input,
+        nb_file_name,
+        nb_loaded_extras,
+        nb_loaded_extras_text,
+        nb_mode_pick,
+        nb_model_title,
+        nb_notes_input,
+        nb_unit_pick,
+        nb_variables_editor,
     )
 
 
 @app.cell(hide_code=True)
-def _(mo, variables_editor, yaml):
+def _(mo, parse_vars, nb_variables_editor):
     # the parsed variables mapping; parse trouble shows here, and
     # definitions the engine can't evaluate show in the status line
-    def _():
-        text = variables_editor.value.strip()
-        if not text:
-            return {}, None
-        try:
-            v = yaml.safe_load(text)
-            if v is None:
-                return {}, None
-            if not isinstance(v, dict):
-                raise TypeError('expected a name: expression mapping')
-            return {str(k): val for k, val in v.items()}, None
-        except Exception as exc:  # noqa: BLE001 — show, don't crash
-            return {}, mo.md(f'**variables not parseable** — {exc}')
-
-    model_vars, _err = _()
-    _err  # noqa: B018 — the cell's output
-    return (model_vars,)
-
+    nb_model_vars, _err = parse_vars(nb_variables_editor.value)
+    mo.md(f'**{_err}**') if _err else None
+    return (nb_model_vars,)
 
 @app.cell(hide_code=True)
-def _(BuilderWidget, get_loaded, mo):
-    _loaded = get_loaded()
-    builder_widget = (BuilderWidget(graph=_loaded['graph']) if _loaded
+def _(BuilderWidget, nb_get_loaded, mo):
+    _loaded = nb_get_loaded()
+    nb_builder_widget = (BuilderWidget(graph=_loaded['graph']) if _loaded
                       else BuilderWidget())
-    builder = mo.ui.anywidget(builder_widget)
+    nb_builder = mo.ui.anywidget(nb_builder_widget)
     # the run's switch-off choices ('g:name' / 'p:name' -> False when
     # off), remembered across canvas edits, which rebuild the checkboxes
-    off_memory = {}
+    nb_off_memory = {}
     # the sweep editor's entries, remembered the same way
-    sweep_memory = {}
-    builder  # noqa: B018 — the cell's output
-    return builder, builder_widget, off_memory, sweep_memory
+    nb_sweep_memory = {}
+    nb_builder  # noqa: B018 — the cell's output
+    return nb_builder, nb_builder_widget, nb_off_memory, nb_sweep_memory
 
 
 @app.cell(hide_code=True)
 def _(
-    Addict,
-    Simulation,
-    angle_degrees,
-    angle_label,
-    builder,
-    builder_widget,
-    caption_input,
-    check_sweep,
-    coherence_warnings,
-    graph_to_config,
-    loaded_extras,
-    loaded_extras_text,
-    mo,
-    mode_pick,
-    model_title,
-    model_vars,
-    notes_input,
-    sweep_cfg,
-    switch_off,
-    switch_off_particles,
-    unit_pick,
-    validate_graph,
-    variables_block,
-    variables_editor,
-    variables_env,
+    angle_labels,
+    nb_builder,
+    nb_builder_widget,
+    nb_caption_input,
+    derive_config,
+    nb_loaded_extras,
+    nb_loaded_extras_text,
+    nb_mode_pick,
+    nb_model_title,
+    nb_model_vars,
+    nb_notes_input,
+    raw_sections,
+    status_view,
+    nb_sweep_cfg,
+    nb_switch_off,
+    nb_switch_off_particles,
+    nb_unit_pick,
+    nb_variables_editor,
 ):
     # The live translation of the canvas: either the list of problems
     # keeping it from running, or the derived model config — caption,
     # notes, variables, calculation mode, angle unit, and the loaded
     # model's other sections (extras) included.
-    _graph = builder.value.get('graph') or {}
-    _unit = None if unit_pick.value == '-' else unit_pick.value
-    problems = validate_graph(_graph, variables=model_vars,
-                              angle_unit=_unit or 'radians')
-    if switch_off_particles and all(
-            not switch_off.value.get(f'p:{p}', True) for p in switch_off_particles):
-        problems.append('every particle is switched off — nothing would enter')
-    builder_config = None
-    if not problems:
-        try:
-            builder_config = graph_to_config(
-                _graph, model_title.value,
-                caption=caption_input.value.strip() or None,
-                variables=model_vars or None,
-                symbolic={'-': None, 'Float': False,
-                          'Symbolic': True}[mode_pick.value],
-                angle_unit=_unit,
-                notes=notes_input.value.strip() or None,
-                extras={**{k: v for k, v in loaded_extras.items() if k != 'sweep'},
-                        **({'sweep': sweep_cfg} if sweep_cfg else {})})
-        except ValueError as exc:  # a wiring loop
-            problems = [str(exc)]
-    if builder_config is not None and sweep_cfg:
-        # the sweep must name the model's own variable, particle, and gate
-        try:
-            check_sweep(Simulation(Addict({'loglevel': 'warning', **builder_config})),
-                        sweep_cfg)
-        except Exception as exc:  # noqa: BLE001 — the engine's own wording
-            problems = [f'sweep: {exc}']
-            builder_config = None
-    _env, _ = variables_env(model_vars)
-
-    # display labels for the canvas ('pi/6 (30.0°)'); a spec the
-    # engine cannot parse shows flagged, with the specifics in the
-    # problems list above
-    def _labels():
-        out = {}
-        for _n, _gd in (_graph.get('gates') or {}).items():
-            if _gd.get('kind') == 'delay':
-                continue
-            _f = 'phase' if _gd.get('kind') == 'phase' else 'angle'
-            _spec = _gd.get(_f, 0)
-            try:
-                out[_n] = angle_label(
-                    _spec, angle_degrees(_spec, _env,
-                                         _unit or 'radians'), '°',
-                    variables=model_vars)
-            except Exception:  # noqa: BLE001 — reported via problems
-                out[_n] = f'⚠ {_spec}'
-        return out
-
-    builder_widget.angle_labels = _labels()
-
-    # what the save writes verbatim: the loaded file's unhandled sections
-    # and, when the editor holds variables, its text — comments included
-    raw_sections = {k: v for k, v in loaded_extras_text.items() if k != 'sweep'}   # regenerated
-    if model_vars and variables_editor.value.strip():
-        raw_sections['variables'] = variables_block(variables_editor.value)
-
-    def _status():
-        n_g = len(_graph.get('gates', {}))
-        n_p = len(_graph.get('particles', {}))
-        n_l = len(_graph.get('links', []))
-        summary = f'{n_g} gate(s), {n_p} particle(s), {n_l} wire(s)'
-        if problems:
-            msg = (summary + ' — **not runnable yet:**\n'
-                   + '\n'.join(f'- {p}' for p in problems))
-            # bright red: this is the one message that says why the Run
-            # button is disabled
-            return mo.Html(f'<div class="not-runnable">{mo.md(msg).text}</div>')
-        stages = ' | '.join(f"{name}: {', '.join(gs)}"
-                            for name, gs in builder_config['run_stages'].items())
-        msg = f'{summary} — runnable. Stages: {stages}'
-        warns = coherence_warnings(_graph)
-        if warns:
-            msg += '\n' + '\n'.join(f'- ⚠ {w}' for w in warns)
-        return mo.md(msg)
-
-    _status()
-    return builder_config, raw_sections
-
+    _graph = nb_builder.value.get('graph') or {}
+    nb_builder_config, problems = derive_config(
+        _graph, title=nb_model_title.value, caption=nb_caption_input.value,
+        model_vars=nb_model_vars, mode_label=nb_mode_pick.value,
+        unit_label=nb_unit_pick.value, notes=nb_notes_input.value,
+        extras=nb_loaded_extras, sweep_cfg=nb_sweep_cfg,
+        all_particles_off=bool(nb_switch_off_particles) and all(
+            not nb_switch_off.value.get(f'p:{p}', True) for p in nb_switch_off_particles))
+    # display labels for the canvas ('pi/6 (30.0°)')
+    nb_builder_widget.angle_labels = angle_labels(_graph, nb_model_vars, nb_unit_pick.value)
+    # what the save writes verbatim
+    nb_sections = raw_sections(nb_loaded_extras_text, nb_model_vars, nb_variables_editor.value)
+    status_view(_graph, problems, nb_builder_config)
+    return nb_builder_config, nb_sections
 
 @app.cell(hide_code=True)
-def _(builder, loaded_extras, model_vars, sweep_controls, sweep_memory):
+def _(nb_builder, nb_loaded_extras, nb_model_vars, sweep_controls, nb_sweep_memory):
     # the model's sweep, entered here: the variable to sweep (one of
     # the editor's), its range and point count, the particle and gate
     # whose arrival is recorded, and an optional sort. Seeded from a
     # loaded model's sweep section, remembered across rebuilds (the
     # elements are remade whenever the variables or the canvas change)
-    _graph = builder.value.get('graph') or {}
-    _decl = loaded_extras.get('sweep')
-    sweep_ui = sweep_controls(model_vars or {}, _graph.get('particles') or {},
+    _graph = nb_builder.value.get('graph') or {}
+    _decl = nb_loaded_extras.get('sweep')
+    nb_sweep_ui = sweep_controls(nb_model_vars or {}, _graph.get('particles') or {},
                               _graph.get('gates') or {},
                               _decl if isinstance(_decl, dict) else None,
-                              memory=sweep_memory, declare_box=True)
-    return (sweep_ui,)
+                              memory=nb_sweep_memory, declare_box=True)
+    return (nb_sweep_ui,)
 
 
 @app.cell(hide_code=True)
-def _(editor_spec, sweep_ui):
+def _(editor_spec, nb_sweep_ui):
     # the sweep as the model declares it (None when not declared)
-    sweep_cfg = editor_spec(sweep_ui.value)
-    return (sweep_cfg,)
+    nb_sweep_cfg = editor_spec(nb_sweep_ui.value)
+    return (nb_sweep_cfg,)
 
 
 @app.cell(hide_code=True)
-def _(builder_config, mo, sweep_cfg):
+def _(nb_builder_config, mo, nb_sweep_cfg):
     # the sweep runs on its own button (one engine run per point);
     # disabled until the network runs and a sweep is declared
-    sweep_button = mo.ui.run_button(label='Run sweep',
-                                    disabled=builder_config is None or sweep_cfg is None)
-    return (sweep_button,)
+    nb_sweep_button = mo.ui.run_button(label='Run sweep',
+                                    disabled=nb_builder_config is None or nb_sweep_cfg is None)
+    return (nb_sweep_button,)
 
 
 @app.cell(hide_code=True)
-def _(
-    Addict,
-    CalcMode,
-    Simulation,
-    builder_config,
-    mo,
-    sweep_button,
-    sweep_cfg,
-    sweep_chart,
-    sweep_run,
-    switch_off,
-    switched_off,
-    unit_pick,
-):
+def _(nb_builder_config, mo, run_sweep, nb_sweep_button, nb_sweep_cfg, nb_switch_off, nb_unit_pick):
     # the declared sweep, run and plotted: the switched-off gates and
     # particles apply to every point, as to a run of the network
-    def _():
-        if not sweep_button.value or builder_config is None or sweep_cfg is None:
-            return mo.md('_press **Run sweep** to run the network across the range_'
-                         if sweep_cfg else '')
-        CalcMode.default(
-            'Symbolic' if str(builder_config.get('calculation_mode')
-                              or '').lower() == 'symbolic' else 'Float')
-        config = Addict({'string_precision': 2, 'max_symbolic_len': 40,
-                         'loglevel': 'warning', **builder_config})
-        inert, absent = switched_off(switch_off.value)
-        try:
-            with mo.status.spinner(title='running the sweep…'):
-                res = sweep_run(Simulation(config), sweep_cfg, inert=inert, absent=absent)
-        except Exception as exc:  # noqa: BLE001 — show, don't crash the app
-            return mo.md(f'**sweep failed** — `{exc}`')
-        off = ''.join(f' — {what} off: {", ".join(ns)}'
-                      for what, ns in (('gates', inert), ('particles', absent)) if ns)
-        return mo.vstack([mo.md(f"{len(res['x'])} points{off}"),
-                          sweep_chart(res, sweep_cfg, unit_pick.value == 'degrees')],
-                         gap=0.3)
-
-    sweep_view = _()
-    return (sweep_view,)
-
+    nb_sweep_view = (
+        run_sweep(nb_builder_config, nb_sweep_cfg, nb_switch_off.value,
+                  nb_unit_pick.value == 'degrees')
+        if nb_sweep_button.value else
+        mo.md('_press **Run sweep** to run the network across the range_'
+              if nb_sweep_cfg else ''))
+    return (nb_sweep_view,)
 
 @app.cell(hide_code=True)
-def _(caption_input, editor_rows, mo, notes_input, sweep_button, sweep_ui, sweep_view, variables_editor):
+def _(nb_caption_input, editor_rows, mo, nb_notes_input, nb_sweep_button, nb_sweep_ui, nb_sweep_view, nb_variables_editor):
     # all entirely optional, so they live below the canvas
     mo.accordion({'#### Caption, notes, variables, and sweep':
                   mo.vstack([
-        caption_input,
-        notes_input,
+        nb_caption_input,
+        nb_notes_input,
         mo.md('<span style="font-size: 0.9em">**variables**</span>'),
-        variables_editor,
+        nb_variables_editor,
         mo.md('<span style="font-size: 0.9em">**sweep** — rerun the model across a '
               'range of one variable, recording a particle\'s arrival at a gate; a '
               'sweep on a phase plate\'s variable is a screen in the decoherence lab</span>'),
-        sweep_ui.elements['on'],
-        *editor_rows(sweep_ui),
-        sweep_button,
-        sweep_view,
+        nb_sweep_ui.elements['on'],
+        *editor_rows(nb_sweep_ui),
+        nb_sweep_button,
+        nb_sweep_view,
     ], align='stretch')})
 
 
 @app.cell(hide_code=True)
-def _(builder, graph_to_config, mo, off_memory, switch_off_boxes):
+def _(nb_builder, mo, nb_off_memory, run_order, switch_off_boxes):
     # switch off for the run: a checkbox per gate (a plain wire when
     # off) and per particle (a null input when off) — the quick way to
     # try a configuration without rewiring; the canvas crosses out
     # whatever is off
-    _graph = builder.value.get('graph') or {}
-    # gates in run order (the stages the translation derives), any it
-    # cannot place after, by name
-    try:
-        _staged = [g for stage in graph_to_config(_graph, 'x')
-                   .get('run_stages', {}).values() for g in stage]
-    except Exception:  # noqa: BLE001 — a wiring loop: no order to speak of
-        _staged = []
-    _gates = [n for n, g in (_graph.get('gates') or {}).items() if g.get('kind') != 'delay']
-    _gates = sorted(_gates, key=lambda n: (_staged.index(n) if n in _staged else len(_staged), n))
-    _particles = list(_graph.get('particles') or {})
+    _graph = nb_builder.value.get('graph') or {}
+    _gates, _particles = run_order(_graph)
 
-    switch_off = switch_off_boxes(off_memory, _gates, _particles)
+    nb_switch_off = switch_off_boxes(nb_off_memory, _gates, _particles)
     _rows = []
     if _gates:
         _rows.append(mo.hstack([mo.md('<span style="color: #000">gates on:</span>')]
-                               + [switch_off.elements[f'g:{n}'] for n in _gates],
+                               + [nb_switch_off.elements[f'g:{n}'] for n in _gates],
                                justify='start', align='center', wrap=True, gap=1.5))
     if _particles:
         _rows.append(mo.hstack([mo.md('<span style="color: #000">particles on:</span>')]
-                               + [switch_off.elements[f'p:{n}'] for n in _particles],
+                               + [nb_switch_off.elements[f'p:{n}'] for n in _particles],
                                justify='start', align='center', wrap=True, gap=1.5))
-    switch_off_particles = _particles
+    nb_switch_off_particles = _particles
     mo.vstack(_rows, gap=0.5) if _rows else None
-    return switch_off, switch_off_particles
+    return nb_switch_off, nb_switch_off_particles
 
 
 @app.cell(hide_code=True)
-def _(builder_config, mo):
+def _(nb_builder_config, mo):
     # the Run button: disabled whenever the network cannot run — the
     # status line above says why, in red
-    run_network_btn = mo.ui.run_button(label='▶ Run network',
-                                       disabled=builder_config is None)
-    run_network_btn  # noqa: B018 — the cell's output
-    return (run_network_btn,)
+    nb_run_network_btn = mo.ui.run_button(label='▶ Run network',
+                                       disabled=nb_builder_config is None)
+    nb_run_network_btn  # noqa: B018 — the cell's output
+    return (nb_run_network_btn,)
 
 
 @app.cell(hide_code=True)
-def _(
-    Addict,
-    CalcMode,
-    Simulation,
-    builder_config,
-    builder_widget,
-    mo,
-    run_network_btn,
-    switch_off,
-):
+def _(nb_builder_config, nb_builder_widget, run_network, nb_run_network_btn, nb_switch_off):
     # what is switched off: gates go inert (wires), particles absent
     # (null inputs); the canvas crosses them out as soon as they are
-    _inert = [k[2:] for k, v in switch_off.value.items() if k.startswith('g:') and not v]
-    _absent = [k[2:] for k, v in switch_off.value.items() if k.startswith('p:') and not v]
-    builder_widget.off = _inert + _absent
+    nb_builder_widget.off = [k[2:] for k, v in nb_switch_off.value.items() if not v]
 
     # sim_built is None until a successful run of the CURRENT network;
     # any canvas change recreates the button unpressed, clearing stale
     # results (the same staleness scheme as the main app)
-    def _build():
-        if not (run_network_btn.value and builder_config):
-            return None, None
-        CalcMode.default(
-            'Symbolic' if str(builder_config.get('calculation_mode')
-                              or '').lower() == 'symbolic' else 'Float')
-        base = {'string_precision': 2, 'max_symbolic_len': 40,
-                'loglevel': 'warning'}
-        base.update(builder_config)
-        config = Addict(base)
-        config.config_path = 'builder'
-        try:
-            s = Simulation(config, inert=_inert, absent=_absent)
-            s.run()
-        except Exception as exc:  # noqa: BLE001 — show, don't crash the app
-            return None, mo.md(f'**run failed** — `{exc}`')
-        total = sum(float(p.probability)
-                    for p in s.result_space.index.values())
-        bad = s.inexact_inputs()
-        note = ('' if not bad else
-                '<br><span style="color: #b00020">⚠ Symbolic mode, but '
-                + ', '.join(bad) + (' is' if len(bad) == 1 else ' are')
-                + ' not exact (a floating-point or long decimal value), '
-                'so these results carry floating point.</span>')
-        off_note = ''.join(
-            f' — {what} off: {", ".join(names)}'
-            for what, names in (('gates', _inert), ('particles', _absent)) if names)
-        return s, mo.md(
-            f'Ran **{config.title}** — '
-            f'{len(s.run_stages)} stage(s), '
-            f'{len(s.result_space.index)} final configuration-space '
-            f'point(s), total probability {total:.6f}' + off_note + note)
-
-    sim_built, _msg = _build()
+    nb_sim_built, _msg = run_network(nb_builder_config if nb_run_network_btn.value else None,
+                                  nb_switch_off.value)
     _msg  # noqa: B018 — the cell's output
-    return (sim_built,)
-
+    return (nb_sim_built,)
 
 @app.cell(hide_code=True)
-def _(DiagramWidget, diagram_geometry, mo, sim_built):
-    mo.stop(sim_built is None)
+def _(DiagramWidget, diagram_geometry, mo, nb_sim_built):
+    mo.stop(nb_sim_built is None)
 
     def _():
         # the one renderer: the results diagram drawn natively by the
@@ -949,9 +689,9 @@ def _(DiagramWidget, diagram_geometry, mo, sim_built):
                       'to reset · hover over or tap a port for its '
                       'values</span>'),
                 mo.ui.anywidget(DiagramWidget(
-                    geometry=diagram_geometry(sim_built, has_run=True,
-                                              disabled=tuple(sim_built.inert),
-                                              absent=tuple(sim_built.absent)))),
+                    geometry=diagram_geometry(nb_sim_built, has_run=True,
+                                              disabled=tuple(nb_sim_built.inert),
+                                              absent=tuple(nb_sim_built.absent)))),
             ], gap=0)
         except Exception as exc:  # noqa: BLE001 — show, don't crash the app
             return mo.md(f'_circuit diagram failed: {exc}_')
@@ -960,14 +700,14 @@ def _(DiagramWidget, diagram_geometry, mo, sim_built):
 
 
 @app.cell(hide_code=True)
-def _(NetworkGraph, NetworkGraphWidget, mo, sim_built):
+def _(NetworkGraph, NetworkGraphWidget, mo, nb_sim_built):
     # The weight-evolution graph, as in the main app: configuration-
     # space points × stages, with the lineage interaction
-    mo.stop(sim_built is None)
+    mo.stop(nb_sim_built is None)
 
     def _():
         try:
-            _model = NetworkGraph(sim_built.all_points, sim_built).build_model()
+            _model = NetworkGraph(nb_sim_built.all_points, nb_sim_built).build_model()
             return mo.vstack([
                 mo.ui.anywidget(NetworkGraphWidget(model=_model)),
                 mo.md('_Scroll or pinch to zoom, drag to pan, '
@@ -986,35 +726,14 @@ def _(NetworkGraph, NetworkGraphWidget, mo, sim_built):
 
 
 @app.cell(hide_code=True)
-def _(cs_point_sort_key, html_table, mo, particle_names, particle_tokens, sim_built, sym_or_float):
-    mo.stop(sim_built is None)
-
-    def _():
-        rows = []
-        for p in sorted(sim_built.result_space.index.values(),
-                        key=lambda p: cs_point_sort_key(sim_built, p)):
-            w = complex(p.weight)
-            # exact forms in Symbolic mode when short, floats otherwise;
-            # every number at the same fixed precision
-            w_txt = sym_or_float(p.weight, f'{w.real:.3f}{w.imag:+.3f}i')
-            pr_txt = sym_or_float(p.probability,
-                                  f'{float(p.probability):.3f}')
-            rows.append([f'`{tok}`' for _, tok in particle_tokens(sim_built, p)]
-                        + [w_txt, pr_txt])
-        # one column per particle under a 'configuration' heading that
-        # names each; cells with markdown go through the renderer
-        return mo.md(html_table(
-            [('configuration', particle_names(sim_built)), ('weight', None),
-             ('probability', None)], rows,
-            lambda t: mo.md(t).text if any(ch in t for ch in '$`*') else t))
-
-    _()
-
+def _(final_points_html, mo, nb_sim_built):
+    mo.stop(nb_sim_built is None)
+    mo.md(final_points_html(nb_sim_built))
 
 @app.cell(hide_code=True)
-def _(builder_config, config_to_yaml, mo, raw_sections):
-    mo.stop(builder_config is None)
-    _yaml = config_to_yaml(builder_config, raw_sections=raw_sections)
+def _(nb_builder_config, config_to_yaml, mo, nb_sections):
+    mo.stop(nb_builder_config is None)
+    _yaml = config_to_yaml(nb_builder_config, raw_sections=nb_sections)
     mo.accordion({'Model YAML': mo.md(f'```yaml\n{_yaml}```')})
 
 

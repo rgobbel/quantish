@@ -88,9 +88,9 @@ async def initialization():
     )
 
     init_engine()
-    EDITOR_UI = editor_ui(_wasm_editor) if WASM_MODE else editor_ui()
+    DL_EDITOR_UI = editor_ui(_wasm_editor) if WASM_MODE else editor_ui()
     return (
-        EDITOR_UI,
+        DL_EDITOR_UI,
         build_stamp,
         ScreenSpec,
         grouped_curves,
@@ -155,46 +155,46 @@ async def _(build_stamp, stamp_html):
 @app.cell(hide_code=True)
 def _(mo):
     # model files added at runtime join the catalog under 'upload:<name>'
-    uploads = mo.ui.file(filetypes=['.yaml', '.yml'], multiple=True, kind='button',
+    dl_uploads = mo.ui.file(filetypes=['.yaml', '.yml'], multiple=True, kind='button',
                          label='⬆ add model files')
     # re-read the library's files (after editing a model on disk)
-    rescan = mo.ui.run_button(label='↻ reload models')
+    dl_rescan = mo.ui.run_button(label='↻ reload models')
     # what each slot holds, remembered across catalog rebuilds (a reload
     # or an upload) so neither resets the selections: {slot: model id}.
     # A plain dict, not mo.state: the pickers themselves carry the live
     # value, so nothing needs to rerun when it changes
-    chosen = {'A': 'decoherence/double_slit_decoherence_chain',
+    dl_chosen = {'A': 'decoherence/double_slit_decoherence_chain',
               'B': 'decoherence/double_slit_eraser_chain'}
-    return chosen, rescan, uploads
+    return dl_chosen, dl_rescan, dl_uploads
 
 
 @app.cell(hide_code=True)
 def _(
-    chosen,
+    dl_chosen,
     library,
     mo,
     model_label,
     register,
     reload,
     remember_in,
-    rescan,
+    dl_rescan,
     ScreenSpec,
-    uploads,
+    dl_uploads,
     yaml,
 ):
     # The catalog, one collection at a time as everywhere else: the
     # library's collections plus 'uploads' for files added here; each
     # collection maps a model's picker label (file name — title) to its
     # id. The collection pickers open on the remembered models' collections.
-    if rescan.value:
+    if dl_rescan.value:
         reload()
     _bad = []
-    for _f in uploads.value or []:
+    for _f in dl_uploads.value or []:
         try:
             register(f'upload:{_f.name.rsplit(".", 1)[0]}', yaml.safe_load(_f.contents))
         except Exception as exc:  # noqa: BLE001 — a bad file is reported, not fatal
             _bad.append(f'{_f.name}: {exc}')
-    CATALOG = {}
+    DL_CATALOG = {}
     for _mid in library():
         try:
             _spec = ScreenSpec.load(_mid)
@@ -202,89 +202,89 @@ def _(
             continue
         _coll, _stem = (('uploads', _mid[len('upload:'):]) if _mid.startswith('upload:')
                         else tuple(_mid.split('/', 1)))
-        CATALOG.setdefault(_coll, {})[model_label(_stem, _spec.title)] = _mid
-    _colls = list(CATALOG)
-    _home = 'decoherence' if 'decoherence' in CATALOG else _colls[0]
+        DL_CATALOG.setdefault(_coll, {})[model_label(_stem, _spec.title)] = _mid
+    _colls = list(DL_CATALOG)
+    _home = 'decoherence' if 'decoherence' in DL_CATALOG else _colls[0]
 
     def _collection_of(model_id):
         if not model_id:
             return _home
         coll = 'uploads' if model_id.startswith('upload:') else model_id.split('/', 1)[0]
-        return coll if coll in CATALOG else _home
+        return coll if coll in DL_CATALOG else _home
 
-    def remember(slot):
+    def dl_remember(slot):
         # a picker's on_change: keep the slot's choice ('' = '(none)')
-        return remember_in(chosen, slot, lambda model_id: model_id or '')
+        return remember_in(dl_chosen, slot, lambda model_id: model_id or '')
 
-    coll_a = mo.ui.dropdown(options=_colls, value=_collection_of(chosen['A']),
+    dl_coll_a = mo.ui.dropdown(options=_colls, value=_collection_of(dl_chosen['A']),
                             label='slot A: collection')
-    coll_b = mo.ui.dropdown(options=_colls, value=_collection_of(chosen['B']),
+    dl_coll_b = mo.ui.dropdown(options=_colls, value=_collection_of(dl_chosen['B']),
                             label='slot B: collection')
-    upload_note = mo.md('  \n'.join(f'⚠ {b}' for b in _bad)) if _bad else mo.md('')
-    return CATALOG, coll_a, coll_b, remember, upload_note
+    dl_upload_note = mo.md('  \n'.join(f'⚠ {b}' for b in _bad)) if _bad else mo.md('')
+    return DL_CATALOG, dl_coll_a, dl_coll_b, dl_remember, dl_upload_note
 
 
 @app.cell(hide_code=True)
-def _(CATALOG, chosen, coll_a, mo, remember):
+def _(DL_CATALOG, dl_chosen, dl_coll_a, mo, dl_remember):
     # slot A's model picker, rebuilt when its collection changes; it
     # opens on the remembered model when that is in the collection
-    _models = CATALOG.get(coll_a.value) or {}
+    _models = DL_CATALOG.get(dl_coll_a.value) or {}
     _by_id = {mid: title for title, mid in _models.items()}
-    _opens_on = _by_id.get(chosen['A'], next(iter(_models), None))
-    pick_a = mo.ui.dropdown(options=_models, value=_opens_on,
-                            label='model', on_change=remember('A'))
+    _opens_on = _by_id.get(dl_chosen['A'], next(iter(_models), None))
+    dl_pick_a = mo.ui.dropdown(options=_models, value=_opens_on,
+                            label='model', on_change=dl_remember('A'))
     # what the picker opens on is the slot's model too (a collection
     # change opens on that collection's first model without a change event)
-    remember('A')(_models.get(_opens_on))
-    return (pick_a,)
+    dl_remember('A')(_models.get(_opens_on))
+    return (dl_pick_a,)
 
 
 @app.cell(hide_code=True)
-def _(CATALOG, chosen, coll_b, mo, remember):
+def _(DL_CATALOG, dl_chosen, dl_coll_b, mo, dl_remember):
     # slot B's model picker, with '(none)' to leave the slot empty
-    _models = CATALOG.get(coll_b.value) or {}
+    _models = DL_CATALOG.get(dl_coll_b.value) or {}
     _by_id = {mid: title for title, mid in _models.items()}
-    _opens_on = ('(none)' if chosen['B'] == ''
-                 else _by_id.get(chosen['B'], next(iter(_models), '(none)')))
-    pick_b = mo.ui.dropdown(options={**_models, '(none)': ''}, value=_opens_on,
-                            label='model', on_change=remember('B'))
-    remember('B')(_models.get(_opens_on))
-    return (pick_b,)
+    _opens_on = ('(none)' if dl_chosen['B'] == ''
+                 else _by_id.get(dl_chosen['B'], next(iter(_models), '(none)')))
+    dl_pick_b = mo.ui.dropdown(options={**_models, '(none)': ''}, value=_opens_on,
+                            label='model', on_change=dl_remember('B'))
+    dl_remember('B')(_models.get(_opens_on))
+    return (dl_pick_b,)
 
 
 @app.cell(hide_code=True)
 def _(mo):
     # the shared controls, created here so that no model change resets them
-    fringes = mo.ui.slider(steps=[1, 3, 5, 7, 9], value=3, label='fringes',
+    dl_fringes = mo.ui.slider(steps=[1, 3, 5, 7, 9], value=3, label='fringes',
                            show_value=True)
-    n_points = mo.ui.slider(41, 161, step=20, value=81,
+    dl_n_points = mo.ui.slider(41, 161, step=20, value=81,
                             label='screen resolution', show_value=True)
-    shots = mo.ui.slider(steps=[100, 200, 500, 1000, 2000, 5000, 10000],
+    dl_shots = mo.ui.slider(steps=[100, 200, 500, 1000, 2000, 5000, 10000],
                          value=1000, label='particles per volley',
                          show_value=True)
-    fire_btn = mo.ui.run_button(label='🔫 fire particles')
-    reset_btn = mo.ui.run_button(label='reset screens')
-    exact_sw = mo.ui.switch(value=False,
+    dl_fire_btn = mo.ui.run_button(label='🔫 fire particles')
+    dl_reset_btn = mo.ui.run_button(label='reset screens')
+    dl_exact_sw = mo.ui.switch(value=False,
                             label='one engine run per pixel on every change')
-    return exact_sw, fire_btn, fringes, n_points, reset_btn, shots
+    return dl_exact_sw, dl_fire_btn, dl_fringes, dl_n_points, dl_reset_btn, dl_shots
 
 
 @app.cell(hide_code=True)
 def _(
-    coll_a,
-    coll_b,
-    exact_sw,
-    fire_btn,
-    fringes,
+    dl_coll_a,
+    dl_coll_b,
+    dl_exact_sw,
+    dl_fire_btn,
+    dl_fringes,
     mo,
-    n_points,
-    pick_a,
-    pick_b,
-    rescan,
-    reset_btn,
-    shots,
-    upload_note,
-    uploads,
+    dl_n_points,
+    dl_pick_a,
+    dl_pick_b,
+    dl_rescan,
+    dl_reset_btn,
+    dl_shots,
+    dl_upload_note,
+    dl_uploads,
 ):
     mo.vstack([
         mo.md('## Simulation controls'),
@@ -299,11 +299,11 @@ def _(
               're-binned into the new pixels (coarser pixels collect more hits '
               'each and glow brighter). The hit counts in the titles do not '
               'change.'),
-        mo.hstack([mo.hstack([coll_a, pick_a], justify='start', gap=1),
-                   mo.hstack([coll_b, pick_b], justify='start', gap=1),
-                   uploads], justify='start', wrap=True, gap=3),
-        upload_note,
-        mo.hstack([fringes, n_points, shots, fire_btn, reset_btn, rescan, exact_sw],
+        mo.hstack([mo.hstack([dl_coll_a, dl_pick_a], justify='start', gap=1),
+                   mo.hstack([dl_coll_b, dl_pick_b], justify='start', gap=1),
+                   dl_uploads], justify='start', wrap=True, gap=3),
+        dl_upload_note,
+        mo.hstack([dl_fringes, dl_n_points, dl_shots, dl_fire_btn, dl_reset_btn, dl_rescan, dl_exact_sw],
                   wrap=True, justify='start'),
     ])
 
@@ -315,163 +315,163 @@ def _():
     # its new hits to the client — and the settings the curves were
     # last computed for, which fire and reset read instead of the
     # sliders, so a slider move never runs them
-    hit_store = {'seq': 0, 'hits': {}}
-    current = {}     # slot -> settings for fire/reset (never from sliders)
-    return current, hit_store
+    dl_hit_store = {'seq': 0, 'hits': {}}
+    dl_current = {}     # slot -> settings for fire/reset (never from sliders)
+    return dl_current, dl_hit_store
 
 
 @app.cell(hide_code=True)
-def _(make_screen_editor, pick_a):
+def _(make_screen_editor, dl_pick_a):
     # slot A's screen definition, rebuilt with the model choice
-    screen_a = make_screen_editor(pick_a.value)
-    return (screen_a,)
+    dl_screen_a = make_screen_editor(dl_pick_a.value)
+    return (dl_screen_a,)
 
 
 @app.cell(hide_code=True)
-def _(make_screen_editor, pick_b):
-    screen_b = make_screen_editor(pick_b.value)
-    return (screen_b,)
+def _(make_screen_editor, dl_pick_b):
+    dl_screen_b = make_screen_editor(dl_pick_b.value)
+    return (dl_screen_b,)
 
 
 @app.cell(hide_code=True)
-def _(hit_store, make_slot, pick_a, screen_a):
-    slot_a = make_slot('A', pick_a.value, screen_a, hit_store)
-    toggles_a = slot_a['toggles'] if slot_a else None
-    ptoggles_a = slot_a['ptoggles'] if slot_a else None
-    return ptoggles_a, slot_a, toggles_a
+def _(dl_hit_store, make_slot, dl_pick_a, dl_screen_a):
+    dl_slot_a = make_slot('A', dl_pick_a.value, dl_screen_a, dl_hit_store)
+    dl_toggles_a = dl_slot_a['toggles'] if dl_slot_a else None
+    dl_ptoggles_a = dl_slot_a['ptoggles'] if dl_slot_a else None
+    return dl_ptoggles_a, dl_slot_a, dl_toggles_a
 
 
 @app.cell(hide_code=True)
-def _(hit_store, make_slot, pick_b, screen_b):
-    slot_b = make_slot('B', pick_b.value, screen_b, hit_store)
-    toggles_b = slot_b['toggles'] if slot_b else None
-    ptoggles_b = slot_b['ptoggles'] if slot_b else None
-    return ptoggles_b, slot_b, toggles_b
+def _(dl_hit_store, make_slot, dl_pick_b, dl_screen_b):
+    dl_slot_b = make_slot('B', dl_pick_b.value, dl_screen_b, dl_hit_store)
+    dl_toggles_b = dl_slot_b['toggles'] if dl_slot_b else None
+    dl_ptoggles_b = dl_slot_b['ptoggles'] if dl_slot_b else None
+    return dl_ptoggles_b, dl_slot_b, dl_toggles_b
 
 
 @app.cell(hide_code=True)
-def _(hit_store, mo, refresh_panel, slot_a, slot_b):
+def _(dl_hit_store, mo, refresh_panel, dl_slot_a, dl_slot_b):
     # the screens, side by side
-    for _state in (slot_a, slot_b):
+    for _state in (dl_slot_a, dl_slot_b):
         if _state:
-            refresh_panel(_state, hit_store)
-    mo.hstack([_state['screen'] for _state in (slot_a, slot_b) if _state],
+            refresh_panel(_state, dl_hit_store)
+    mo.hstack([_state['screen'] for _state in (dl_slot_a, dl_slot_b) if _state],
               justify='start', align='start', gap=3, wrap=True)
 
 
 @app.cell(hide_code=True)
-def _(make_controls, mo, ptoggles_a, slot_a, toggles_a):
+def _(make_controls, mo, dl_ptoggles_a, dl_slot_a, dl_toggles_a):
     # slot A's sliders and details: rebuilt when a gate or particle is
     # toggled (the toggles' values), so a switched-off gate's slider is
     # disabled
-    sliders_a, _details_a = (make_controls(slot_a)
-                             if slot_a and toggles_a is not None and ptoggles_a is not None
+    dl_sliders_a, _details_a = (make_controls(dl_slot_a)
+                             if dl_slot_a and dl_toggles_a is not None and dl_ptoggles_a is not None
                              else (None, mo.md('')))
     _details_a  # noqa: B018 — the cell's output
-    return (sliders_a,)
+    return (dl_sliders_a,)
 
 
 @app.cell(hide_code=True)
-def _(make_controls, mo, ptoggles_b, slot_b, toggles_b):
-    sliders_b, _details_b = (make_controls(slot_b)
-                             if slot_b and toggles_b is not None and ptoggles_b is not None
+def _(make_controls, mo, dl_ptoggles_b, dl_slot_b, dl_toggles_b):
+    dl_sliders_b, _details_b = (make_controls(dl_slot_b)
+                             if dl_slot_b and dl_toggles_b is not None and dl_ptoggles_b is not None
                              else (None, mo.md('')))
     _details_b  # noqa: B018 — the cell's output
-    return (sliders_b,)
+    return (dl_sliders_b,)
 
 
 @app.cell(hide_code=True)
-def _(exact_sw):
-    via = 'pixels' if exact_sw.value else 'fit'
-    return (via,)
+def _(dl_exact_sw):
+    dl_via = 'pixels' if dl_exact_sw.value else 'fit'
+    return (dl_via,)
 
 
 @app.cell(hide_code=True)
-def _(current, fringes, hit_store, n_points, sliders_a, slot_a, update_slot, via):
+def _(dl_current, dl_fringes, dl_hit_store, dl_n_points, dl_sliders_a, dl_slot_a, update_slot, dl_via):
     # slot A's engine cell: it names sliders_a, so it reruns on A's
     # slider moves and on nothing else of B's
-    current['n'], current['fringes'] = n_points.value, fringes.value
-    if slot_a:
-        current['A'] = update_slot(slot_a, sliders_a, n_points.value,
-                                   fringes.value, via, hit_store)
+    dl_current['n'], dl_current['fringes'] = dl_n_points.value, dl_fringes.value
+    if dl_slot_a:
+        dl_current['A'] = update_slot(dl_slot_a, dl_sliders_a, dl_n_points.value,
+                                   dl_fringes.value, dl_via, dl_hit_store)
 
 
 @app.cell(hide_code=True)
-def _(current, fringes, hit_store, n_points, sliders_b, slot_b, update_slot, via):
-    if slot_b:
-        current['B'] = update_slot(slot_b, sliders_b, n_points.value,
-                                   fringes.value, via, hit_store)
+def _(dl_current, dl_fringes, dl_hit_store, dl_n_points, dl_sliders_b, dl_slot_b, update_slot, dl_via):
+    if dl_slot_b:
+        dl_current['B'] = update_slot(dl_slot_b, dl_sliders_b, dl_n_points.value,
+                                   dl_fringes.value, dl_via, dl_hit_store)
 
 
 @app.cell(hide_code=True)
 def _(
-    current,
-    fire_btn,
+    dl_current,
+    dl_fire_btn,
     grouped_curves,
-    hit_store,
+    dl_hit_store,
     mo,
     random,
     sample_hits,
     screen_curves,
     set_panel_curves,
-    shots,
-    slot_a,
-    slot_b,
+    dl_shots,
+    dl_slot_a,
+    dl_slot_b,
 ):
     # Fire and reset read the settings from `current`, so slider moves
     # do not run them; both recompute the curves with one engine run per
     # pixel, the sampled hits' source of truth. Slots without a screen
     # take no part.
-    def engine_curves():
+    def dl_engine_curves():
         out = {}
-        for slot, state in (('A', slot_a), ('B', slot_b)):
-            if not state or state['panel'] is None or slot not in current:
+        for slot, state in (('A', dl_slot_a), ('B', dl_slot_b)):
+            if not state or state['panel'] is None or slot not in dl_current:
                 continue
-            xs, curves = screen_curves(state['spec'], current[slot], current['n'],
-                                       current['fringes'], 'pixels',
+            xs, curves = screen_curves(state['spec'], dl_current[slot], dl_current['n'],
+                                       dl_current['fringes'], 'pixels',
                                        inert=state.get('inert', ()),
                                        absent=state.get('absent', ()))
-            set_panel_curves(state, xs, curves, hit_store)
+            set_panel_curves(state, xs, curves, dl_hit_store)
             out[slot] = (state, xs, curves)
         return out
 
-    mo.stop(not fire_btn.value)
+    mo.stop(not dl_fire_btn.value)
     with mo.status.spinner(title='running the exact simulations…'):
-        _runs = engine_curves()
+        _runs = dl_engine_curves()
     _rng = random.Random()
-    hit_store['seq'] += 1
+    dl_hit_store['seq'] += 1
     for _slot, (_state, _xs, _curves) in _runs.items():
         _total, _parts = grouped_curves(_curves)
         _parts = tuple(ys for _, ys in _parts) if _parts else None
-        _new = sample_hits(_xs, _total, shots.value, _rng, parts=_parts)
-        hit_store['hits'].setdefault(_slot, []).extend(_new)
+        _new = sample_hits(_xs, _total, dl_shots.value, _rng, parts=_parts)
+        dl_hit_store['hits'].setdefault(_slot, []).extend(_new)
         _state['panel'].hits_chunk = {
-            'seq': hit_store['seq'],
+            'seq': dl_hit_store['seq'],
             'pts': [list(_p) for _p in _new],
-            'total': len(hit_store['hits'][_slot])}
-    return (engine_curves,)
+            'total': len(dl_hit_store['hits'][_slot])}
+    return (dl_engine_curves,)
 
 
 @app.cell(hide_code=True)
-def _(engine_curves, hit_store, mo, reset_btn):
-    mo.stop(not reset_btn.value)
+def _(dl_engine_curves, dl_hit_store, mo, dl_reset_btn):
+    mo.stop(not dl_reset_btn.value)
     with mo.status.spinner(title='running the exact simulations…'):
-        _runs = engine_curves()
-    hit_store['seq'] += 1
+        _runs = dl_engine_curves()
+    dl_hit_store['seq'] += 1
     for _slot, (_state, _, _) in _runs.items():
-        hit_store['hits'][_slot] = []
-        _state['panel'].hits_chunk = {'seq': hit_store['seq'], 'reset': True}
+        dl_hit_store['hits'][_slot] = []
+        _state['panel'].hits_chunk = {'seq': dl_hit_store['seq'], 'reset': True}
 
 
 @app.cell(hide_code=True)
-def _(EDITOR_UI, mo):
+def _(DL_EDITOR_UI, mo):
     mo.Html('<div style="text-align: center; font-size: 1.6em; '
-            'margin: 2em 0 1em">&#8258;</div>') if not EDITOR_UI else None
+            'margin: 2em 0 1em">&#8258;</div>') if not DL_EDITOR_UI else None
 
 
 @app.cell(hide_code=True)
-def _(EDITOR_UI, mo):
-    mo.md(r"""## Support code""") if EDITOR_UI else None
+def _(DL_EDITOR_UI, mo):
+    mo.md(r"""## Support code""") if DL_EDITOR_UI else None
 
 
 if __name__ == "__main__":
