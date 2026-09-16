@@ -1,18 +1,22 @@
 """Quantish suite — every app on one page, in one kernel: the
 Weight-split Explorer, the double-slit demo, the quantish app, the
-network builder, and the decoherence lab as the tabs of a single
+network builder, and the decoherence lab as the sections of a single
 notebook, so what one app produces the next one takes — a model built
 in the builder opens in the quantish app and the lab; a gate clicked
 in a run opens in the explorer.
 
-Each page is one of the standalone notebooks embedded (App.embed):
-the notebooks stay the sources, this file only arranges them and
-passes the hand-offs between them as definitions.
+Each section is one of the standalone notebooks embedded (App.embed)
+in a cell of its own, so an interaction reruns that app alone; the
+hand-offs between them ride mo.state. Which section shows is the
+section row's choice (quantish.apps.suite_nav, also the page's URL
+fragment #sec-lab), applied by CSS (css/suite.css): a switch touches
+no cell, and any link to a section opens it.
 
 Run with:  marimo run notebooks/quantish_suite_app.py
-(css/quantish_suite_app.css is the two apps' stylesheets joined;
-tools/build_wasm_app.sh writes it, or: cat css/quantish_app.css
-css/double_slit_app.css > css/quantish_suite_app.css)
+(css/quantish_suite_app.css is the two apps' stylesheets and
+css/suite.css joined; tools/build_wasm_app.sh writes it, or: cat
+css/quantish_app.css css/double_slit_app.css css/suite.css >
+css/quantish_suite_app.css)
 """
 
 import marimo
@@ -64,92 +68,15 @@ async def initialization():
         sys.path.insert(0, str(_root))
 
     from quantish.apps import common as _common
-    _common.EMBEDDED = True   # the notebooks below run as pages of this one
+    _common.EMBEDDED = True   # the notebooks below run as sections of this one
 
     from notebooks.decoherence_app import app as dl_app
     from notebooks.double_slit_app import app as ds_app
     from notebooks.network_builder_app import app as nb_app
     from notebooks.quantish_app import app as qa_app
     from notebooks.weight_split_app import app as ws_app
-    from quantish.apps.common import WASM_MODE, build_stamp, remember_in, stamp_html
-    return (
-        WASM_MODE,
-        build_stamp,
-        dl_app,
-        ds_app,
-        mo,
-        nb_app,
-        qa_app,
-        remember_in,
-        stamp_html,
-        ws_app,
-    )
-
-
-@app.cell(hide_code=True)
-async def _(build_stamp, stamp_html):
-    # which build is this? (the site build writes public/version.json
-    # beside the page; a development copy says so instead)
-    stamp_html(await build_stamp())
-
-
-@app.cell(hide_code=True)
-def _():
-    # the tab last chosen, so the tab strip — rebuilt whenever an app
-    # reacts — opens where it was (a plain dict, as the apps' pickers
-    # remember themselves)
-    suite_memory = {'tab': 'Home'}
-    return (suite_memory,)
-
-
-@app.cell(hide_code=True)
-def _(mo):
-    suite_home = mo.md("""
-    # Quantish Physics
-
-    Simulations of the "quantish" universe from Chapter 4 of *Good and Real*
-    (Gary L. Drescher), as one application. The tabs:
-
-    - **Weight-split Explorer** — what one quantish Fredkin gate does to a
-      weight: the four-way split at any measurement angle, for either sign.
-    - **Double-slit experiment** — the classic experiment in the quantish
-      framework: fire particles and watch the fringes build up.
-    - **Quantish app** — the chapter's figures as live circuits: run one and
-      follow the weights through the gates. After a run, click a gate's frame
-      to open its split in the explorer.
-    - **Network builder** — build a circuit from scratch or from any model,
-      run it, and *send* it: the quantish app and the decoherence lab open it.
-    - **Decoherence lab** — the double-slit family side by side, angles as
-      sliders, screens and virtual screens.
-
-    Every tab keeps its state while you visit the others.
-    """)
-    return (suite_home,)
-
-
-@app.cell(hide_code=True)
-async def _(
-    WASM_MODE,
-    dl_app,
-    ds_app,
-    mo,
-    nb_app,
-    qa_app,
-    remember_in,
-    suite_home,
-    suite_memory,
-    ws_app,
-):
-    # The apps, embedded in this kernel, and the hand-offs between them
-    # as definitions: the builder's last sent model goes to the quantish
-    # app and the lab, the quantish app's picked gate to the explorer.
-    # Any interaction in an embedded app reruns this cell; an app whose
-    # inputs did not change comes back from its cache.
-    def _def(result, name):
-        try:
-            return result.defs[name]
-        except (KeyError, AttributeError):
-            return None
+    from quantish.apps.common import WASM_MODE, build_stamp, stamp_html
+    from quantish.apps.suite_nav import SectionNav
 
     # Under WASM an embedded app's runtime serves widget code as
     # virtual files the page cannot fetch (marimo 0.24: the embedded
@@ -160,23 +87,118 @@ async def _(
         for _a in (nb_app, qa_app, ws_app, dl_app, ds_app):
             _a._get_kernel_runner()._runtime_context.virtual_files_supported = False
 
+    def embedded_def(result, name):
+        """One of an embedded notebook's globals, None when unset."""
+        try:
+            return result.defs[name]
+        except (KeyError, AttributeError):
+            return None
+
+    def section(name, content):
+        """An app's output as the section the URL fragment #sec-<name>
+        shows (css/suite.css)."""
+        return mo.Html(f'<div class="suite-sec suite-sec-{name}">{mo.as_html(content).text}</div>')
+
+    return (
+        SectionNav,
+        build_stamp,
+        dl_app,
+        ds_app,
+        embedded_def,
+        mo,
+        nb_app,
+        qa_app,
+        section,
+        stamp_html,
+        ws_app,
+    )
+
+
+@app.cell(hide_code=True)
+def _(SectionNav, mo):
+    # the section row; `suite_nav.value['current']` is the section shown
+    suite_nav = mo.ui.anywidget(SectionNav(sections=[
+        ['home', 'Home'], ['explorer', 'Weight-split Explorer'],
+        ['double-slit', 'Double-slit experiment'], ['quantish', 'Quantish app'],
+        ['builder', 'Network builder'], ['lab', 'Decoherence lab']]))
+    suite_nav  # noqa: B018 — the cell's output
+    return (suite_nav,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    # what passes between the sections: the model the builder last
+    # sent, and the gate the quantish app last picked for the explorer
+    suite_slot_get, suite_slot_set = mo.state(None)
+    suite_seed_get, suite_seed_set = mo.state(None)
+    return suite_seed_get, suite_seed_set, suite_slot_get, suite_slot_set
+
+
+@app.cell(hide_code=True)
+async def _(build_stamp, mo, section, stamp_html):
+    section('home', mo.vstack([mo.md("""
+    # Quantish Physics
+
+    Simulations of the "quantish" universe from Chapter 4 of *Good and Real*
+    (Gary L. Drescher), as one application. The sections:
+
+    - [Weight-split Explorer](#sec-explorer) — what one quantish Fredkin
+      gate does to a weight: the four-way split at any measurement angle, for
+      either sign.
+    - [Double-slit experiment](#sec-double-slit) — the classic experiment
+      in the quantish framework: fire particles and watch the fringes build up.
+    - [Quantish app](#sec-quantish) — the chapter's figures as live
+      circuits: run one and follow the weights through the gates. After a run,
+      click a gate's frame to open its split in the explorer.
+    - [Network builder](#sec-builder) — build a circuit from scratch or
+      from any model, run it, and *send* it: the quantish app and the
+      decoherence lab open it.
+    - [Decoherence lab](#sec-lab) — the double-slit family side by side,
+      angles as sliders, screens and virtual screens.
+
+    Every section keeps its state while you visit the others.
+    """), stamp_html(await build_stamp())]))
+
+
+@app.cell(hide_code=True)
+async def _(embedded_def, nb_app, section, suite_slot_get, suite_slot_set):
+    # the builder; a model it sends goes out through the slot state
     nb = await nb_app.embed(defs={'nb_suite': True})
-    _slot = _def(nb, 'nb_sent')
-    qa = await qa_app.embed(defs={'qa_suite': True, 'qa_model_in': _slot})
-    _seed = _def(qa, 'qa_seed')
-    ws = await ws_app.embed(defs={'ws_seed_in': _seed})
-    dl = await dl_app.embed(defs={'dl_model_in': _slot})
+    _sent = embedded_def(nb, 'nb_sent')
+    if _sent is not None and _sent != suite_slot_get():
+        suite_slot_set(_sent)
+    section('builder', nb.output)
+
+
+@app.cell(hide_code=True)
+async def _(embedded_def, qa_app, section, suite_seed_get, suite_seed_set, suite_slot_get):
+    # the quantish app, opening on the sent model; a gate it picks
+    # goes out through the seed state
+    qa = await qa_app.embed(defs={'qa_suite': True, 'qa_model_in': suite_slot_get()})
+    _seed = embedded_def(qa, 'qa_seed')
+    if _seed is not None and _seed != suite_seed_get():
+        suite_seed_set(_seed)
+    section('quantish', qa.output)
+
+
+@app.cell(hide_code=True)
+async def _(section, suite_seed_get, ws_app):
+    # the explorer, opening on the picked gate
+    ws = await ws_app.embed(defs={'ws_seed_in': suite_seed_get()})
+    section('explorer', ws.output)
+
+
+@app.cell(hide_code=True)
+async def _(dl_app, section, suite_slot_get):
+    # the lab, opening slot A on the sent model
+    dl = await dl_app.embed(defs={'dl_model_in': suite_slot_get()})
+    section('lab', dl.output)
+
+
+@app.cell(hide_code=True)
+async def _(ds_app, section):
     ds = await ds_app.embed()
-    _tabs = {
-        'Home': suite_home,
-        'Weight-split Explorer': ws.output,
-        'Double-slit experiment': ds.output,
-        'Quantish app': qa.output,
-        'Network builder': nb.output,
-        'Decoherence lab': dl.output,
-    }
-    mo.ui.tabs(_tabs, value=suite_memory.get('tab') if suite_memory.get('tab') in _tabs
-               else 'Home', on_change=remember_in(suite_memory, 'tab'))
+    section('double-slit', ds.output)
 
 
 if __name__ == "__main__":

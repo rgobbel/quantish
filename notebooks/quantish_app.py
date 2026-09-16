@@ -213,7 +213,8 @@ def _(qa_last_collection_set, qa_last_models_get, qa_last_models_set, qa_model_i
 def _(ExplorerSeed, WASM_MODE, explorer_url, mo, qa_diagram, qa_sim, qa_suite):
     # a gate picked on the diagram after a run: its angle and the weight
     # arriving on its switch wires, handed to the Weight-split Explorer
-    # (in the suite: its tab; on the site: the page next door, by its
+    # (in the suite: its section, by a link the section row catches; on
+    # the site: the page next door, by its
     # query string; from the repo the values are shown to carry over)
     def _():
         _picked = (getattr(qa_diagram, 'value', None) or {}).get('picked')
@@ -227,7 +228,7 @@ def _(ExplorerSeed, WASM_MODE, explorer_url, mo, qa_diagram, qa_sim, qa_suite):
                    if (p, sg) != _mine]
         _more = f' — also arriving: {", ".join(_others)}' if _others else ''
         if qa_suite:
-            _link = 'open the **Weight-split Explorer** tab'
+            _link = '[open in the Weight-split Explorer →](#sec-explorer)'
         elif WASM_MODE:
             _link = f'[open in the Weight-split Explorer ↗]({explorer_url(_seed)})'
         else:
