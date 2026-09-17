@@ -47,22 +47,24 @@ reconverge. Quantish is just those elements, so that interference, the effect of
 decoherence,
 entanglement, and the EPR correlations that break Bell's inequality can all be followed step by step.
 
-## What an observation is
+## The nature of an "observation" in Everett and quantish
 
 The chapter's reading of quantum mechanics, and this site's, is Everett's: nothing ever collapses. An observation is one
-more gate. A recorder particle passes through a gate controlled by the particle being observed, and comes out on one
-wire or the other according to where that particle went. The superposition now holds configuration-space points in which
-the record reads "upper" and points in which it reads "lower", and no rule picks between them. Each version of the
-recorder sees one definite outcome, and from the inside the outcome looks random, with the frequencies the squared
-magnitudes predict.
+more Fredkin gate. A recorder particle passes through a gate controlled by the particle being observed, and comes out on
+one wire or the other according to where that particle went. The superposition now holds configuration-space points in which
+the record reads "upper" and points in which it reads "lower", and no rule picks between them. Each classical-world instance of the
+recorder sees one definite outcome. From within one classical world the outcome looks random, with the frequencies the
+squared magnitudes predict.
 
-Nothing forbids the versions from interfering. They simply no longer coincide, because the recorder now differs between
-them, so there is nothing for the merge rule to add. That is *decoherence*, and it is why observing which slit a
-particle used destroys the fringes without touching the particle. Undo the record, and the points coincide again and the
-fringes return: the quantum eraser. Let the record spread to more particles and the fringes are gone for good, not by
-any law against interference but because the points that would have to merge never meet again. The same machinery, run
-on two particles prepared together and measured apart, gives the EPR correlations, which no assignment of hidden local
-properties can reproduce.
+Nothing forbids the versions from interfering. They simply no longer coincide, because after transiting the recorder 
+they are not at the same coordinate in configuration space, so there is nothing for the merge rule to add. 
+That is *decoherence*, and it is why observing which slit a particle used destroys the fringes without touching the 
+particle. Undoing the record by transiting a gate that restores coordinate correspondence makes the points coincide
+again, and the fringes return: that is the quantum eraser. If on the other hand we let the record spread to more 
+particles, the fringes are gone permanently, not due to any law against interference but because the points that would 
+have to merge never meet again, barring some mechanism that sends them through a set of gates that precisely undoes the
+decoherence. The same machinery, run on two particles prepared together and measured apart, gives the EPR correlations, 
+which no assignment of hidden local properties can reproduce.
 
 ## How the site is organized
 
