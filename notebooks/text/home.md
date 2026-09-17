@@ -18,7 +18,7 @@ revised draft of the book.*
 
 A quantish particle travels along a wire and has a *sign*, plus or minus. Wires meet at *Fredkin gates*, with three
 wires in,
-three wires out, with a *measurement angle* θ.
+three wires out, and a *measurement angle* θ.
 
 A quantish gate is equivalent to a standard two-qubit operation in quantum computing. Given a particle with
 sign qubit $s$ ($\vert0\rangle = \mathrm{plus}$, $\vert1\rangle = \mathrm{minus}$) a position qubit $x$, and a gate
