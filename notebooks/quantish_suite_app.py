@@ -140,19 +140,25 @@ def _(mo):
     return suite_seed_get, suite_seed_set, suite_slot_get, suite_slot_set
 
 
+# the sections, in the order of the section row (marimo's outline
+# panel lists their headings in cell order)
 @app.cell(hide_code=True)
 async def _(build_stamp, mo, prose, section, stamp_html):
     section('home', mo.vstack([mo.md(await prose('home')), stamp_html(await build_stamp())]))
 
 
 @app.cell(hide_code=True)
-async def _(embedded_def, nb_app, section, suite_slot_get, suite_slot_set):
-    # the builder; a model it sends goes out through the slot state
-    nb = await nb_app.embed(defs={'nb_suite': True})
-    _sent = embedded_def(nb, 'nb_sent')
-    if _sent is not None and _sent != suite_slot_get():
-        suite_slot_set(_sent)
-    section('builder', nb.output)
+async def _(section, suite_seed_get, ws_app):
+    # the explorer, opening on the picked gate
+    ws = await ws_app.embed(defs={'ws_seed_in': suite_seed_get()})
+    section('explorer', ws.output)
+
+
+@app.cell(hide_code=True)
+async def _(ds_app, section):
+    ds = await ds_app.embed()
+    section('double-slit', ds.output)
+
 
 
 @app.cell(hide_code=True)
@@ -167,10 +173,13 @@ async def _(embedded_def, qa_app, section, suite_seed_get, suite_seed_set, suite
 
 
 @app.cell(hide_code=True)
-async def _(section, suite_seed_get, ws_app):
-    # the explorer, opening on the picked gate
-    ws = await ws_app.embed(defs={'ws_seed_in': suite_seed_get()})
-    section('explorer', ws.output)
+async def _(embedded_def, nb_app, section, suite_slot_get, suite_slot_set):
+    # the builder; a model it sends goes out through the slot state
+    nb = await nb_app.embed(defs={'nb_suite': True})
+    _sent = embedded_def(nb, 'nb_sent')
+    if _sent is not None and _sent != suite_slot_get():
+        suite_slot_set(_sent)
+    section('builder', nb.output)
 
 
 @app.cell(hide_code=True)
@@ -178,13 +187,6 @@ async def _(dl_app, section, suite_slot_get):
     # the lab, opening slot A on the sent model
     dl = await dl_app.embed(defs={'dl_model_in': suite_slot_get()})
     section('lab', dl.output)
-
-
-@app.cell(hide_code=True)
-async def _(ds_app, section):
-    ds = await ds_app.embed()
-    section('double-slit', ds.output)
-
 
 if __name__ == "__main__":
     app.run()
