@@ -18,13 +18,23 @@ MODEL_FILES = sorted(p for p in MODELS.rglob('*.yaml')
 TOL = 1e-9
 
 
-def load(path: Path) -> Simulation:
+def load(path: Path, **kw) -> Simulation:
     with open(MODELS / 'defaults.yaml') as f:
         cfg = yaml.safe_load(f)
     with open(path) as f:
         cfg.update(yaml.safe_load(f))
     cfg['loglevel'] = 'warning'
-    return Simulation(Addict(cfg))
+    return Simulation(Addict(cfg), **kw)
+
+
+def assert_matches_engine(sim):
+    space, _ = sim.run()
+    expected = {p.key: complex(p.weight) for p in space.index.values()}
+    got = compile_qubits(sim).final_points()
+    assert set(got) == set(expected), (sorted(set(got) ^ set(expected)))
+    for key, weight in expected.items():
+        assert abs(got[key] - weight) < TOL, (key, got[key], weight)
+    assert abs(sum(abs(w) ** 2 for w in got.values()) - 1) < 1e-6
 
 
 @pytest.fixture(autouse=True)
@@ -37,15 +47,24 @@ def float_mode():
 @pytest.mark.parametrize('path', MODEL_FILES,
                          ids=[str(p.relative_to(MODELS)) for p in MODEL_FILES])
 def test_compiled_circuit_matches_engine(path):
-    sim = load(path)
-    space, _ = sim.run()
-    expected = {p.key: complex(p.weight) for p in space.index.values()}
-    circuit = compile_qubits(sim)
-    got = circuit.final_points()
-    assert set(got) == set(expected), (sorted(set(got) ^ set(expected)))
-    for key, weight in expected.items():
-        assert abs(got[key] - weight) < TOL, (key, got[key], weight)
-    assert abs(sum(abs(w) ** 2 for w in got.values()) - 1) < 1e-6
+    assert_matches_engine(load(path))
+
+
+@pytest.mark.parametrize('rel', ['gr2026/fig4.13', 'gr2026/fig4.17',
+                                 'decoherence/double_slit_eraser'])
+def test_inert_gate_is_a_wire(rel):
+    """A switched-off gate compiles to nothing: the circuit still
+    matches the engine with each Fredkin gate inert in turn."""
+    for gate in load(MODELS / f'{rel}.yaml').fredkin_gates:
+        assert_matches_engine(load(MODELS / f'{rel}.yaml', inert=(gate,)))
+
+
+def test_qiskit_source_is_python():
+    sim = load(MODELS / 'gr2026/fig4.13.yaml')
+    sim.run()
+    src = compile_qubits(sim).to_qiskit_source('fig4.13')
+    compile(src, 'fig4_13_qiskit.py', 'exec')
+    assert 'QuantumCircuit(' in src and 'RXGate(' in src and 'ctrl_state=' in src
 
 
 def test_gate_identity_matches_switch_components():
@@ -92,3 +111,7 @@ def test_qiskit_export_agrees():
         theirs = Statevector(circuit.to_qiskit()).data * circuit.weight
         import numpy as np
         assert np.allclose(ours, theirs, atol=1e-9), rel
+        # the source builds the same circuit
+        ns = {'__name__': 'quantish_export'}
+        exec(circuit.to_qiskit_source(rel), ns)  # noqa: S102 — our own generated source
+        assert np.allclose(ours, Statevector(ns['qc']).data * circuit.weight, atol=1e-9), rel

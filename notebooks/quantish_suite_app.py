@@ -22,7 +22,7 @@ css/quantish_suite_app.css)
 import marimo
 
 __generated_with = "0.24.2"
-app = marimo.App(width="full", css_file="css/quantish_suite_app.css")
+app = marimo.App(width="full", app_title="Quantish Physics", css_file="css/quantish_suite_app.css")
 
 
 @app.cell(hide_code=True)
@@ -61,6 +61,11 @@ async def initialization():
                       'network_builder_app', 'decoherence_app'):
             _resp = await pyfetch(f'{_base}/public/notebooks/{_name}.py')
             (_nbdir / f'{_name}.py').write_text(await _resp.string())
+        _txdir = Path('/wasm-data/text')
+        _txdir.mkdir(parents=True, exist_ok=True)
+        for _name in ('home', 'explorer', 'double-slit', 'figures', 'builder', 'lab', 'qubits'):
+            _resp = await pyfetch(f'{_base}/public/text/{_name}.md')
+            (_txdir / f'{_name}.md').write_text(await _resp.string())
         _root = Path('/wasm-data')
     else:
         _root = Path(__file__).resolve().parents[1]
@@ -75,7 +80,7 @@ async def initialization():
     from notebooks.network_builder_app import app as nb_app
     from notebooks.quantish_app import app as qa_app
     from notebooks.weight_split_app import app as ws_app
-    from quantish.apps.common import WASM_MODE, build_stamp, stamp_html
+    from quantish.apps.common import WASM_MODE, build_stamp, prose, stamp_html
     from quantish.apps.suite_nav import SectionNav
 
     # Under WASM an embedded app's runtime serves widget code as
@@ -100,15 +105,16 @@ async def initialization():
         return mo.Html(f'<div class="suite-sec suite-sec-{name}">{mo.as_html(content).text}</div>')
 
     return (
-        SectionNav,
         build_stamp,
         dl_app,
         ds_app,
         embedded_def,
         mo,
         nb_app,
+        prose,
         qa_app,
         section,
+        SectionNav,
         stamp_html,
         ws_app,
     )
@@ -119,7 +125,7 @@ def _(SectionNav, mo):
     # the section row; `suite_nav.value['current']` is the section shown
     suite_nav = mo.ui.anywidget(SectionNav(sections=[
         ['home', 'Home'], ['explorer', 'Weight-split Explorer'],
-        ['double-slit', 'Double-slit experiment'], ['quantish', 'Quantish app'],
+        ['double-slit', 'Double-slit experiment'], ['quantish', 'Book figures'],
         ['builder', 'Network builder'], ['lab', 'Decoherence lab']]))
     suite_nav  # noqa: B018 — the cell's output
     return (suite_nav,)
@@ -135,29 +141,8 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-async def _(build_stamp, mo, section, stamp_html):
-    section('home', mo.vstack([mo.md("""
-    # Quantish Physics
-
-    Simulations of the "quantish" universe from Chapter 4 of *Good and Real*
-    (Gary L. Drescher), as one application. The sections:
-
-    - [Weight-split Explorer](#sec-explorer) — what one quantish Fredkin
-      gate does to a weight: the four-way split at any measurement angle, for
-      either sign.
-    - [Double-slit experiment](#sec-double-slit) — the classic experiment
-      in the quantish framework: fire particles and watch the fringes build up.
-    - [Quantish app](#sec-quantish) — the chapter's figures as live
-      circuits: run one and follow the weights through the gates. After a run,
-      click a gate's frame to open its split in the explorer.
-    - [Network builder](#sec-builder) — build a circuit from scratch or
-      from any model, run it, and *send* it: the quantish app and the
-      decoherence lab open it.
-    - [Decoherence lab](#sec-lab) — the double-slit family side by side,
-      angles as sliders, screens and virtual screens.
-
-    Every section keeps its state while you visit the others.
-    """), stamp_html(await build_stamp())]))
+async def _(build_stamp, mo, prose, section, stamp_html):
+    section('home', mo.vstack([mo.md(await prose('home')), stamp_html(await build_stamp())]))
 
 
 @app.cell(hide_code=True)

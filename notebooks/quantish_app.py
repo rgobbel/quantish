@@ -16,25 +16,8 @@ app = marimo.App(width="full", css_file="css/quantish_app.css")
 
 
 @app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""
-    # Quantish Physics
-    This [Marimo](https://marimo.io) notebook contains a simulation of the quantish universe described in Chapter 4 of
-    *Good and Real: Demystifying Paradoxes from Physics to Ethics* by Gary L. Drescher (MIT Press, 2006). Included are
-    simulations of Fredkin gates, complex-weighted configuration space points, and the classic
-    Einstein-Podolsky-Rosen experiment.
-
-    Several types of results are available:
-    - A diagram of network topology, including results after a model is run
-    - A graphical trace of how weights evolve through the running of the loaded model
-    - Tables with exact numeric results from a model's run
-
-    In addition to the basic simulation, there are:
-    - a Monte Carlo simulation, in which a model is run many times, tracing a single execution path depending on the
-      probabilities of outputs at each gate, and tabulated to show statistics to simulate inexact results from real-world experiments
-    - a simulation of the Einstein-Podolsky-Rosen (EPR) experiment, including results for both Bell's inequality and
-      the Clauser–Horne–Shimony–Holt (CHSH) inequality
-    """)
+async def _(mo, prose):
+    mo.md(await prose('figures'))
 
 
 @app.cell(hide_code=True)
@@ -929,17 +912,18 @@ async def initialization():
 
     import quantish.qnumber as qn
     from quantish.apps.common import (
-        MODELS_TOP,
-        WASM_MODE,
         build_stamp,
         editor_ui,
         in_div,
         init_engine,
         load_config,
+        MODELS_TOP,
         parse_vars,
+        prose,
         stamp_html,
         switch_off_boxes,
         vars_text,
+        WASM_MODE,
     )
     from quantish.apps.epr_ui import epr_angle_entries, epr_report
     from quantish.apps.results import detailed_results
@@ -991,54 +975,55 @@ async def initialization():
     # key off this
     QA_EDITOR_UI = editor_ui(_wasm_editor) if WASM_MODE else editor_ui()
     return (
-        DiagramWidget,
-        ExplorerSeed,
-        NetworkGraphWidget,
-        explorer_url,
-        QA_EDITOR_UI,
-        MODELS_TOP,
-        NetworkGraph,
-        model_label,
-        model_title,
-        WASM_MODE,
+        angle_entries,
+        angle_sliders,
+        build_sim,
         build_stamp,
+        checked_spec,
+        declared_sweep,
+        detailed_results,
         diagram_geometry,
+        DiagramWidget,
+        editor_rows,
+        epr_angle_entries,
+        epr_report,
+        EPR_SAMPLER_LABELS,
+        explorer_url,
+        ExplorerSeed,
         in_div,
         inexact_note,
         load_config,
         mo,
+        model_angles,
+        model_label,
+        model_title,
+        MODELS_TOP,
+        NetworkGraph,
+        NetworkGraphWidget,
+        new_job,
         parse_vars,
+        picked_modes,
+        progress_view,
+        projection,
+        prose,
+        QA_EDITOR_UI,
         qn,
+        results_view,
+        run_job,
+        run_job_async,
+        SAMPLER_LABELS,
+        sampling_explanation,
+        sampling_seconds,
         stamp_html,
         supports_epr,
-        switch_off_boxes,
-        checked_spec,
-        declared_sweep,
-        editor_rows,
         sweep_chart,
         sweep_controls,
         sweep_run,
         sweep_table,
-        EPR_SAMPLER_LABELS,
-        SAMPLER_LABELS,
-        angle_entries,
-        angle_sliders,
-        build_sim,
-        detailed_results,
-        epr_angle_entries,
-        epr_report,
-        model_angles,
-        new_job,
-        picked_modes,
-        progress_view,
-        projection,
-        results_view,
-        run_job,
-        run_job_async,
-        sampling_explanation,
-        sampling_seconds,
+        switch_off_boxes,
         trial_count,
         vars_text,
+        WASM_MODE,
     )
 
 

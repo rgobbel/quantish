@@ -63,19 +63,21 @@ async def initialization():
         run_sweep,
         status_view,
     )
+    from quantish.apps.qubits_ui import qubit_panel
     from quantish.apps.session import ModelSlot
     from quantish.apps.common import (
-        MODELS_TOP,
-        WASM_MODE,
         build_stamp,
         in_div,
         init_engine,
         model_files,
+        MODELS_TOP,
         parse_vars,
+        prose,
         remember_in,
         stamp_html,
         switch_off_boxes,
         vars_text,
+        WASM_MODE,
     )
     from quantish.apps.sweep_ui import editor_rows, editor_spec, sweep_controls
     from quantish.builder import config_to_yaml
@@ -95,19 +97,14 @@ async def initialization():
     nb_models_top = MODELS_TOP if MODELS_TOP.is_dir() else None
     nb_model_paths = model_files(MODELS_TOP)
     return (
-        BuilderWidget,
-        DiagramWidget,
-        MODE_LABELS,
-        ModelSlot,
-        NetworkGraph,
-        NetworkGraphWidget,
-        WASM_MODE,
         angle_labels,
         build_stamp,
+        BuilderWidget,
         canvas_counts,
         config_to_yaml,
         derive_config,
         diagram_geometry,
+        DiagramWidget,
         editor_rows,
         editor_spec,
         final_points_html,
@@ -115,11 +112,17 @@ async def initialization():
         loaded_model,
         loaded_report,
         mo,
+        MODE_LABELS,
         model_options,
+        ModelSlot,
         nb_model_paths,
         nb_models_top,
+        NetworkGraph,
+        NetworkGraphWidget,
         new_model,
         parse_vars,
+        prose,
+        qubit_panel,
         raw_sections,
         remember_in,
         run_network,
@@ -130,16 +133,13 @@ async def initialization():
         sweep_controls,
         switch_off_boxes,
         vars_text,
+        WASM_MODE,
     )
 
 
 @app.cell(hide_code=True)
-def _(in_div, mo):
-    _intro = mo.md(r"""
-    # Quantish Network Builder
-
-    With this tool you can build a complete quantish model, either from scratch or by modifying an existing model.
-    """)
+async def _(in_div, mo, prose):
+    _intro = mo.md(await prose('builder'))
     # a sub-section's body sits one list level under its '- ' heading
     # (.qb-doc-body in css/quantish_app.css, via in_div)
     _doc = mo.vstack([mo.md(r"""
@@ -289,7 +289,7 @@ def _(
     # send: the model into the `uploads` collection the quantish app and
     # the decoherence lab read (from the repo: a rescan there finds it;
     # in the browser each page has its own files, so download instead)
-    nb_send_btn = mo.ui.run_button(label='⇢ send to the apps',
+    nb_send_btn = mo.ui.run_button(label='⇢ send to the other sections',
                                    disabled=nb_builder_config is None)
     _download = (
         mo.download(data=config_to_yaml(nb_builder_config,
@@ -472,10 +472,10 @@ def _(MODELS_TOP, mo, nb_send_btn, nb_slot, nb_suite):
             return None, mo.md(f'**could not send** — {exc}')
         if nb_suite:
             return nb_slot, mo.md('<span style="font-size: 0.9em">sent — the '
-                                  '[quantish app](#sec-quantish) and the '
+                                  '[book figures](#sec-quantish) and the '
                                   '[decoherence lab](#sec-lab) open it</span>')
         return nb_slot, mo.md('<span style="font-size: 0.9em">sent as '
-                              f'**{dest}** — rescan the models in the quantish app or the '
+                              f'**{dest}** — rescan the models in the book figures or the '
                               'decoherence lab to open it</span>')
 
     nb_sent, _note = _()
@@ -777,6 +777,14 @@ def _(NetworkGraph, NetworkGraphWidget, mo, nb_sim_built):
 def _(final_points_html, mo, nb_sim_built):
     mo.stop(nb_sim_built is None)
     mo.md(final_points_html(nb_sim_built))
+
+@app.cell(hide_code=True)
+async def _(mo, nb_sim_built, prose, qubit_panel):
+    # the run as a qubit circuit (quantish.apps.qubits_ui); its
+    # explanation is notebooks/text/qubits.md
+    mo.stop(nb_sim_built is None)
+    mo.accordion({'#### As a qubit circuit': qubit_panel(nb_sim_built, await prose('qubits'))})
+
 
 @app.cell(hide_code=True)
 def _(nb_builder_config, config_to_yaml, mo, nb_sections):

@@ -73,11 +73,12 @@ async def initialization():
         sys.path.insert(0, str(_repo))
 
     from quantish.apps.common import (
-        WASM_MODE,
         build_stamp,
         editor_ui,
         init_engine,
+        prose,
         stamp_html,
+        WASM_MODE,
     )
     from quantish.apps.curves import (
         double_slit_curves,
@@ -106,63 +107,34 @@ async def initialization():
     init_engine()
     DS_EDITOR_UI = editor_ui(_wasm_editor) if WASM_MODE else editor_ui()
     return (
+        build_stamp,
         DEFAULT_THETA_S,
+        diagram_geom,
         DiagramWidget,
+        double_slit_curves,
+        DS_EDITOR_UI,
+        eraser_curves,
+        LinePlotWidget,
+        main_curves,
         MAIN_MODES,
+        math,
+        mo,
         MODES,
         PANEL_TITLES,
-        build_stamp,
-        diagram_geom,
-        eraser_curves,
-        main_curves,
-        tunable_curve,
-        DS_EDITOR_UI,
-        LinePlotWidget,
-        ScreenPanelWidget,
-        double_slit_curves,
-        math,
+        prose,
         push_curves,
-        mo,
         random,
         sample_hits,
         screen_positions,
+        ScreenPanelWidget,
         stamp_html,
+        tunable_curve,
     )
 
 
 @app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""
-    # The double-slit experiment, in quantish physics
-
-    Particles are fired one at a time at a barrier with two slits.
-    In the quantish universe of *Good and Real* (chapter 4), the two slits
-    are the two switch outputs of a splitting Fredkin gate; blocking a slit is
-    diverting an output wire away (figures 4.13 and 4.14). The slits are idealized as
-    infinitely narrow, so there is no single-slit diffraction envelope.
-
-    Three conditions are simulated:
-
-    1. **Both slits open**: each particle traverses both slits in superposed
-      worlds that interfere. Dark fringes appear where the worlds cancel
-      (positions where either slit alone would deliver particles receive
-      none), and bright fringes receive up to twice what the two
-      single-slit curves sum to.
-    2. **One slit blocked**: there is only one world, so there is nothing to interfere with.
-      We see a flat line at that slit's intensity.
-    3. **Recorder on one slit** (figures 4.10 and 4.15): both slits stay open,
-      but on the right-hand slit we place a particle whose output destination
-      indicates which slit (i.e., which switch wire) the main input particle
-      went through. The two outputs now end
-      in distinguishable configurations, so the engine's remerge rule
-      forbids their interference: the fringes wash out and the screen
-      shows exactly the classical sum, though nothing blocked either path.
-
-    Below each screen is a diagram of the actual gate network the
-    engine ran to produce it. Every
-    particle's landing point is drawn from exact world-amplitudes
-    computed by the quantish engine.
-    """)
+async def _(mo, prose):
+    mo.md(await prose('double-slit'))
 
 
 @app.cell(hide_code=True)

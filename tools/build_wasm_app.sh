@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build the quantish app as a static WASM site.
+# Build the Quantish Physics site (static, WASM).
 # Usage: build_wasm_app.sh <repo> <outdir>
 set -euo pipefail
 REPO=${1:?repo dir}
@@ -7,9 +7,9 @@ OUT=${2:?output dir}
 cd "$REPO"
 
 # 0) the build stamp: commit (plus '+wip' when the tree has uncommitted
-#    changes) and UTC time. It lands on the landing page, under each
-#    app's title (public/version.json), and in version.json at the site
-#    root, so a visitor can tell which build they are looking at.
+#    changes) and UTC time. It lands under the home section's text
+#    (public/version.json) and in version.json at the site root, so a
+#    visitor can tell which build they are looking at.
 COMMIT=$(git rev-parse --short HEAD)
 if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
   BUILD="$COMMIT+wip"
@@ -25,50 +25,40 @@ echo "build $BUILD ($BUILT_AT)"
 uv build --wheel -q
 WHEEL=$(ls -t dist/quantish-*.whl | head -1)
 
-# 2) export the apps (from notebooks/ so the relative css_file
-#    resolves), each into its own subdirectory, in two variants: the
-#    read-only app view and the full in-browser editor. The site root
-#    is a landing page linking to all of them. The suite's stylesheet
-#    is the two apps' stylesheets joined.
+# 2) export the site (from notebooks/ so the relative css_file
+#    resolves): the suite notebook, which holds the five apps as its
+#    sections, is the site root, and edit/ is the same notebook in the
+#    full in-browser editor. Its stylesheet is the two apps' stylesheets
+#    and the suite's joined. The layout before 2026-09-16 (one directory
+#    per app plus a landing page) is cleared out of the output first.
+rm -rf "$OUT"/quantish_app "$OUT"/quantish_app_edit "$OUT"/double_slit_app \
+       "$OUT"/double_slit_app_edit "$OUT"/builder_app "$OUT"/builder_app_edit \
+       "$OUT"/decoherence_app "$OUT"/decoherence_app_edit \
+       "$OUT"/weight_split_app "$OUT"/weight_split_app_edit "$OUT"/suite "$OUT"/suite_edit
 cat notebooks/css/quantish_app.css notebooks/css/double_slit_app.css notebooks/css/suite.css > notebooks/css/quantish_suite_app.css
-(cd notebooks && uv run marimo export html-wasm quantish_suite_app.py -o "$OUT/suite" --mode run -f)
-(cd notebooks && uv run marimo export html-wasm quantish_suite_app.py -o "$OUT/suite_edit" --mode edit -f)
-(cd notebooks && uv run marimo export html-wasm quantish_app.py -o "$OUT/quantish_app" --mode run -f)
-(cd notebooks && uv run marimo export html-wasm double_slit_app.py -o "$OUT/double_slit_app" --mode run -f)
-(cd notebooks && uv run marimo export html-wasm network_builder_app.py -o "$OUT/builder_app" --mode run -f)
-(cd notebooks && uv run marimo export html-wasm decoherence_app.py -o "$OUT/decoherence_app" --mode run -f)
-(cd notebooks && uv run marimo export html-wasm weight_split_app.py -o "$OUT/weight_split_app" --mode run -f)
-(cd notebooks && uv run marimo export html-wasm quantish_app.py -o "$OUT/quantish_app_edit" --mode edit -f)
-(cd notebooks && uv run marimo export html-wasm double_slit_app.py -o "$OUT/double_slit_app_edit" --mode edit -f)
-(cd notebooks && uv run marimo export html-wasm network_builder_app.py -o "$OUT/builder_app_edit" --mode edit -f)
-(cd notebooks && uv run marimo export html-wasm decoherence_app.py -o "$OUT/decoherence_app_edit" --mode edit -f)
-(cd notebooks && uv run marimo export html-wasm weight_split_app.py -o "$OUT/weight_split_app_edit" --mode edit -f)
+(cd notebooks && uv run marimo export html-wasm quantish_suite_app.py -o "$OUT" --mode run -f)
+(cd notebooks && uv run marimo export html-wasm quantish_suite_app.py -o "$OUT/edit" --mode edit -f)
 # Two config patches on the exported pages. The exporter pins
 # auto_instantiate off for editable exports; we want the notebooks to
 # run on load. And it bakes in theme "system", which hands dark-mode
 # visitors marimo's dark theme under stylesheets tuned for the light
 # one — pin every app to light.
-python3 - "$OUT"/quantish_app*/index.html "$OUT"/double_slit_app*/index.html "$OUT"/builder_app*/index.html "$OUT"/decoherence_app*/index.html "$OUT"/weight_split_app*/index.html "$OUT"/suite*/index.html <<'PYPATCH'
+python3 - "$OUT"/index.html "$OUT"/edit/index.html <<'PYPATCH'
 import os
 import sys
 for path in sys.argv[1:]:
     with open(path) as f:
         t = f.read()
     t = t.replace('"theme": "system"', '"theme": "light"')
-    if os.path.dirname(path).endswith('_edit'):
+    if os.path.basename(os.path.dirname(path)) == 'edit':
         t = t.replace('"auto_instantiate": false', '"auto_instantiate": true')
     with open(path, 'w') as f:
         f.write(t)
 PYPATCH
 
-# 3) bundle the wheels (both apps resolve them relative to their own
-#    page via mo.notebook_location)
-for W in "$OUT"/quantish_app/public/wheels "$OUT"/double_slit_app/public/wheels \
-         "$OUT"/builder_app/public/wheels "$OUT"/builder_app_edit/public/wheels \
-         "$OUT"/quantish_app_edit/public/wheels "$OUT"/double_slit_app_edit/public/wheels \
-         "$OUT"/decoherence_app/public/wheels "$OUT"/decoherence_app_edit/public/wheels \
-         "$OUT"/weight_split_app/public/wheels "$OUT"/weight_split_app_edit/public/wheels \
-         "$OUT"/suite/public/wheels "$OUT"/suite_edit/public/wheels; do
+# 3) bundle the wheels (the page resolves them relative to itself via
+#    mo.notebook_location)
+for W in "$OUT"/public/wheels "$OUT"/edit/public/wheels; do
   mkdir -p "$W"
   cp "$WHEEL" "$W/"
   if [ ! -f "$W/addict-2.4.0-py3-none-any.whl" ]; then
@@ -77,19 +67,18 @@ for W in "$OUT"/quantish_app/public/wheels "$OUT"/double_slit_app/public/wheels 
   fi
 done
 
-# 3b) the build stamp beside each app, and at the site root
-for D in "$OUT"/quantish_app "$OUT"/quantish_app_edit "$OUT"/double_slit_app \
-         "$OUT"/double_slit_app_edit "$OUT"/builder_app "$OUT"/builder_app_edit \
-         "$OUT"/decoherence_app "$OUT"/decoherence_app_edit \
-         "$OUT"/weight_split_app "$OUT"/weight_split_app_edit \
-         "$OUT"/suite "$OUT"/suite_edit; do
+# 3b) the build stamp beside each page, and at the site root
+for D in "$OUT" "$OUT"/edit; do
   echo "$VERSION_JSON" > "$D/public/version.json"
 done
 # the suite embeds the five notebooks: it fetches them from its page
-for D in "$OUT"/suite "$OUT"/suite_edit; do
+for D in "$OUT" "$OUT"/edit; do
   mkdir -p "$D/public/notebooks"
   cp notebooks/weight_split_app.py notebooks/double_slit_app.py notebooks/quantish_app.py \
      notebooks/network_builder_app.py notebooks/decoherence_app.py "$D/public/notebooks/"
+  # ...and the sections' texts (notebooks/text/*.md)
+  mkdir -p "$D/public/text"
+  cp notebooks/text/*.md "$D/public/text/"
 done
 echo "$VERSION_JSON" > "$OUT/version.json"
 
@@ -119,112 +108,15 @@ for p in sorted(top.rglob('*.yaml')):
         continue
     models[str(p.relative_to(top))] = p.read_text()
 payload = json.dumps(models)
-for app_dir in ('quantish_app', 'quantish_app_edit', 'builder_app',
-                'builder_app_edit', 'double_slit_app',
-                'double_slit_app_edit', 'decoherence_app',
-                'decoherence_app_edit', 'suite', 'suite_edit'):
+for app_dir in ('.', 'edit'):
     (out / app_dir / 'public' / 'models.json').write_text(payload)
 print(f'bundled {len(models)} model files')
 PYEOF
 
-# 5) the site root: a landing page linking to the apps (the explorer
-#    first — one gate — then the double-slit demo), a serve
-#    script, and a short readme
-cat > "$OUT/index.html" <<'HTML'
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Quantish Physics</title>
-  <style>
-    body { font-family: -apple-system, "Segoe UI", Helvetica, Arial,
-           sans-serif; color: #000; background: #fff; max-width: 44em;
-           margin: 3em auto; padding: 0 1em; line-height: 1.5; }
-    h1 { font-weight: 600; }
-    a.app { display: block; border: 1px solid #ccc; border-radius: 8px;
-            padding: 1em 1.2em; margin: 1em 0; text-decoration: none;
-            color: #000; }
-    a.app:hover { border-color: #5c64d1; background: #f6f7ff; }
-    a.app b { color: #2b3aa0; }
-    p.build { font-size: 0.85em; color: #444; margin-top: 2.5em; }
-  </style>
-</head>
-<body>
-  <h1>Quantish Physics</h1>
-  <p>Simulations of the &ldquo;quantish&rdquo; universe from Chapter 4
-     of <i>Good and Real</i> (Gary L. Drescher). These apps use Web Assembly (WASM) to
-     run everything in
-     your browser. The first visit downloads the Python runtime
-     and may take a minute or two. Subsequent visits should start much more quickly.</p>
-  <a class="app" href="suite/">
-    <b>The suite</b><br>
-    Every app below on one page, in one running kernel, under tabs: a
-    model built in the network builder opens in the quantish app and the
-    decoherence lab, and a gate clicked in a run opens in the Weight-split
-    Explorer. Each tab keeps its state while you visit the others. One
-    download serves all of them, so the first load is the longest.
-  </a>
-  <a class="app" href="weight_split_app/">
-    <b>Weight-split Explorer</b><br>
-    What one quantish Fredkin gate does to a weight: the four-way split at any
-    measurement angle, for either sign, drawn as vectors and listed as
-    numbers, with the two destinations' sums.
-  </a>
-  <a class="app" href="double_slit_app/">
-    <b>The double-slit experiment</b><br>
-    The classic double-slit experiment, demonstrating interference between streams of
-    photons, electrons, or other particles, implemented in
-    the quantish framework. Fire particles, watch fringes build up
-    dot by dot, and see the circuit for each condition.
-  </a>
-  <a class="app" href="quantish_app/">
-    <b>Quantish app</b><br>
-    This app presents the chapter's figures as live circuits. Load any figure
-    from the chapter, run it, and follow the weights through the gates,
-    including configuration-space points at every stage, the interference
-    where they merge, and the final probabilities.
-    Monte Carlo sampling runs a model many times to imitate the inexact
-    statistics of a real experiment, and a sweep runs it across a range of
-    one variable. The app also includes a simulation of the
-    Einstein-Podolsky-Rosen (EPR) / Bell experiment, with Bell's and the
-    CHSH inequalities tested against the quantish and the local
-    hidden-variable predictions.
-  </a>
-  <a class="app" href="builder_app/">
-    <b>Network builder</b><br>
-    A GUI for building a quantish circuit from scratch, or modifying any of the predefined models.
-    Place gates and particles on a canvas, wire them together, and run the result.
-    Models created in this app can be downloaded as YAML
-    model files that the quantish app can load.
-  </a>
-  <a class="app" href="decoherence_app/">
-    <b>Decoherence lab</b><br>
-    A workbench for the double-slit family: put any two of its circuits side
-    by side — the plain double slit, complete and partial which-way recorders,
-    the quantum eraser, a chain of partial recorders, the chain with an eraser
-    on one recorder — set their angles, and watch the fringes fade or return.
-  </a>
-  <p>Every app also comes as an editable notebook, with the same code in
-     the full marimo editor, where you can read it, change it, and
-     re-run cells. Edits run entirely in your browser and affect
-     only your copy. Reload to start fresh, or use the editor's
-     download button to keep your changes.</p>
-  <p><a href="suite_edit/">The suite (editable)</a> &middot;
-     <a href="weight_split_app_edit/">Weight-split Explorer (editable)</a> &middot;
-     <a href="double_slit_app_edit/">Double-slit app (editable)</a> &middot;
-     <a href="quantish_app_edit/">Quantish app (editable)</a> &middot;
-     <a href="builder_app_edit/">Network builder (editable)</a> &middot;
-     <a href="decoherence_app_edit/">Decoherence lab (editable)</a></p>
-  <p class="build">Build @BUILD@ &middot; @BUILT_AT@</p>
-</body>
-</html>
-HTML
-sed -i '' -e "s/@BUILD@/$BUILD/" -e "s/@BUILT_AT@/$BUILT_AT/" "$OUT/index.html"
-
+# 5) a serve script and a short readme
 cat > "$OUT/serve.sh" <<'SH'
 #!/bin/bash
-# Serve the quantish WASM apps.
+# Serve the Quantish Physics site.
 #
 # Static files only: no Python code runs on this machine; the quantish
 # engine executes in each visitor's browser via Pyodide (WebAssembly).
@@ -235,17 +127,10 @@ usage() {
   cat <<USAGE
 Usage: ./serve.sh [options] [PORT]
 
-Serves the app directory over HTTP. One server covers both apps:
+Serves the site directory over HTTP:
 
-    http://<host>:<port>/                   a landing page linking to all
-    http://<host>:<port>/quantish_app/      the quantish app
-    http://<host>:<port>/double_slit_app/   the double-slit app
-    http://<host>:<port>/builder_app/       the network builder
-    http://<host>:<port>/decoherence_app/   the decoherence lab
-    http://<host>:<port>/weight_split_app/  the weight-split explorer
-    http://<host>:<port>/suite/             all of them as one app
-    (plus the *_edit/ variants: the same notebooks in the in-browser
-    editor)
+    http://<host>:<port>/        the site
+    http://<host>:<port>/edit/   the same notebook in the in-browser editor
 
 Options:
   -d, --directory DIR   directory to serve
@@ -291,30 +176,22 @@ if [ ! -d "$DIR" ]; then
 fi
 
 echo "Serving $DIR"
-echo "  landing page:    http://localhost:$PORT/"
-echo "  quantish app:    http://localhost:$PORT/quantish_app/"
-echo "  double-slit app: http://localhost:$PORT/double_slit_app/"
-echo "  network builder: http://localhost:$PORT/builder_app/"
-echo "  decoherence lab: http://localhost:$PORT/decoherence_app/"
-echo "  weight split:    http://localhost:$PORT/weight_split_app/"
-echo "  the suite:       http://localhost:$PORT/suite/"
+echo "  the site:   http://localhost:$PORT/"
+echo "  editable:   http://localhost:$PORT/edit/"
 exec python3 -m http.server --directory "$DIR" "$PORT"
 SH
 chmod +x "$OUT/serve.sh"
 
 cat > "$OUT/README-wasm.txt" <<'TXT'
-Quantish apps, compiled to WebAssembly (static site).
+Quantish Physics, compiled to WebAssembly (static site).
 
   ./serve.sh [-d DIR] [-p PORT]     # default port 2718
 
-then open  http://<host>:<port>/  in a browser: the root is a landing
-page linking to the quantish app (quantish_app/), the double-slit app
-(double_slit_app/), the network builder (builder_app/), the decoherence
-lab (decoherence_app/), the weight-split explorer (weight_split_app/),
-all five as pages of one app (suite/), and editable-notebook variants
-of each (quantish_app_edit/, double_slit_app_edit/, builder_app_edit/,
-decoherence_app_edit/, weight_split_app_edit/, suite_edit/). Edits run entirely in the
-visitor's browser and affect only their own copy.
+then open  http://<host>:<port>/  in a browser: the site is one page
+with its sections (the Weight-split Explorer, the double-slit
+experiment, the book's figures, the network builder, the decoherence
+lab), and edit/ is the same notebook in the in-browser editor. Edits run entirely in the visitor's browser and affect only
+their own copy.
 
 Notes:
 - Nothing runs server-side: the Python engine executes in the visitor's
@@ -323,7 +200,7 @@ Notes:
 - First load downloads ~30MB (Pyodide + sympy/scipy) from CDNs,
   taking a couple of minutes; after browser caching, ~10-15 seconds.
 - Rebuilt from the repo with tools/build_wasm_app.sh; the model library
-  is frozen into quantish_app/public/models.json at build time.
+  is frozen into public/models.json at build time.
 TXT
 
 echo "site built at $OUT"

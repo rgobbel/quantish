@@ -25,7 +25,7 @@ __all__ = [
     'CONSTANTS', 'MODELS_TOP', 'REPO_DIR', 'WASM_MODE', 'build_stamp', 'collections',
     'editor_ui', 'in_div', 'init_engine', 'load_config', 'md_cell',
     'model_files', 'model_label', 'model_title', 'parse_vars',
-    'merge_defaults', 'remember_in', 'settable', 'stamp_html', 'switch_off_boxes',
+    'merge_defaults', 'prose', 'remember_in', 'settable', 'stamp_html', 'switch_off_boxes',
     'switched_off', 'vars_text',
 ]
 
@@ -220,6 +220,23 @@ async def build_stamp() -> str:
         return f"build {v['build']} · {v['built_at']}"
     except Exception:  # noqa: BLE001 — an unstamped site shows nothing
         return ''
+
+
+async def prose(name: str) -> str:
+    """A section's text — its title, the blurb under it, and its
+    introduction — from notebooks/text/<name>.md: plain Markdown files,
+    editable without touching code. Under WASM the site build copies
+    them to public/text/, fetched once into /wasm-data/text/ (the suite
+    fetches all of them up front)."""
+    if not WASM_MODE:
+        return (REPO_DIR / 'notebooks' / 'text' / f'{name}.md').read_text()
+    cached = Path('/wasm-data/text') / f'{name}.md'
+    if not cached.exists():
+        from pyodide.http import pyfetch  # type: ignore[import-not-found]
+        cached.parent.mkdir(parents=True, exist_ok=True)
+        cached.write_text(await (await pyfetch(
+            f'{mo.notebook_location()}/public/text/{name}.md')).string())
+    return cached.read_text()
 
 
 def stamp_html(stamp: str):

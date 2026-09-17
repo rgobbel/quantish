@@ -5,6 +5,10 @@
    section. Home shows until a section is chosen. Appended to the two
    apps' stylesheets by the build. */
 .suite-sec { display: none; }
+/* a hidden section's cell takes no room: marimo's margins around an
+   output block go, for every section's block (the shown one spaces
+   itself with its title's margin) */
+.output.block:has(> .suite-sec) { margin: 0 !important; }
 :root:not([data-section]) .suite-sec-home,
 :root[data-section="home"] .suite-sec-home,
 :root[data-section="explorer"] .suite-sec-explorer,
@@ -14,9 +18,11 @@
 :root[data-section="lab"] .suite-sec-lab { display: block; }
 
 .suite-nav { display: flex; flex-wrap: wrap; gap: 0.2em; align-items: flex-end;
-             border-bottom: 1px solid #c8c8c8; margin: 0.4em 0 1.2em;
-             /* stays in view while a long section scrolls */
-             position: sticky; top: 0; z-index: 20; background: #fff; }
+             border-bottom: 1px solid #c8c8c8; margin: 0;
+             /* stays in view while a long section scrolls: fixed at the
+                top of the viewport, placed over its spacer by the widget */
+             position: fixed; top: 0; z-index: 20; background: #fff;
+             box-sizing: border-box; }
 .suite-nav a { display: inline-block; padding: 0.45em 0.95em; margin-bottom: -1px;
                color: #333 !important; text-decoration: none !important;
                border: 1px solid transparent; border-bottom: 1px solid #c8c8c8;
@@ -29,3 +35,17 @@
 .suite-sec a[href^="#sec-"] { color: var(--link, #0b68cb) !important;
                               text-decoration: underline !important;
                               text-underline-offset: 0.15em; }
+
+/* One style for every section's opening: the title, and right under
+   it a one-line blurb (the first paragraph of the section's text
+   file, notebooks/text/<section>.md), a little smaller and closer to
+   the title than body text. */
+.markdown h1 { margin-bottom: 0.1em !important; }
+.markdown h1 + .paragraph, .markdown h1 + p {
+    display: block; font-size: 0.88em; line-height: 1.45; color: #333;
+    margin-top: 0 !important; margin-bottom: 1em; }
+
+/* Paragraphs sit closer together than the theme's default */
+.markdown .paragraph, .markdown p { margin-top: 0; margin-bottom: 0.65em; }
+.markdown ul, .markdown ol { margin-top: 0.2em; margin-bottom: 0.65em; }
+.markdown li > .paragraph, .markdown li > p { margin-bottom: 0.2em; }

@@ -39,9 +39,8 @@ async def initialization():
     if str(_repo) not in sys.path:
         sys.path.insert(0, str(_repo))
 
-    from quantish.apps.common import build_stamp, init_engine, stamp_html
+    from quantish.apps.common import build_stamp, init_engine, prose, stamp_html
     from quantish.apps.explorer import (
-        EXPLANATION,
         chart_selection,
         explorer_controls,
         explorer_view,
@@ -50,22 +49,20 @@ async def initialization():
 
     init_engine()
     return (
-        EXPLANATION,
         ExplorerSeed,
         build_stamp,
         chart_selection,
         explorer_controls,
         explorer_view,
         mo,
+        prose,
         stamp_html,
     )
 
 
 @app.cell(hide_code=True)
-def _(EXPLANATION, mo):
-    mo.md('# Weight-split Explorer\n\n'
-          '<span style="font-size:0.85em">An interactive tool showing what '
-          'happens to weights going through a quantish Fredkin gate</span>\n' + EXPLANATION)
+async def _(mo, prose):
+    mo.md(await prose('explorer'))
 
 
 @app.cell(hide_code=True)

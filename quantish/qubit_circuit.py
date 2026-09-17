@@ -201,54 +201,154 @@ class QubitCircuit:
         return _render(self.qubit_names, cols)
 
     # ---- export
+    def _qiskit_steps(self):
+        """The ops as Qiskit steps, shared by to_qiskit and
+        to_qiskit_source: ('barrier', stage label), ('global_phase',
+        angle), ('x', qubit), or ('gate', kind, angle, controls, target,
+        label) with kind 'p' | 'rx' | 'ry' | 'x'. A phase on the basis
+        states matching some controls is a PhaseGate on the last
+        control, controlled by the rest, X-conjugated when that control
+        is on 0."""
+        marks = dict(self.stage_marks)
+        for i, op in enumerate(self.ops):
+            if i in marks:
+                yield ('barrier', marks[i])
+            if op.kind == 'phase':
+                if not op.controls:
+                    yield ('global_phase', op.angle)
+                    continue
+                (last_q, last_v), rest = op.controls[-1], op.controls[:-1]
+                if last_v == 0:
+                    yield ('x', last_q)
+                yield ('gate', 'p', op.angle, rest, last_q, op.label)
+                if last_v == 0:
+                    yield ('x', last_q)
+            else:
+                yield ('gate', op.kind, op.angle, op.controls, op.target, op.label)
+
     def to_qiskit(self):
         """A qiskit QuantumCircuit of the same ops (Qiskit optional)."""
         from qiskit import QuantumCircuit
         from qiskit.circuit.library import PhaseGate, RXGate, RYGate, XGate
+        rotations = {'p': PhaseGate, 'rx': RXGate, 'ry': RYGate}
         qc = QuantumCircuit(self.n_qubits)
-        for op in self.ops:
-            if op.kind == 'phase':
-                if not op.controls:
-                    qc.global_phase += op.angle
-                    continue
-                # a phase on the basis states matching the controls: a
-                # PhaseGate on the last control, controlled by the rest
-                (last_q, last_v), rest = op.controls[-1], op.controls[:-1]
-                gate = PhaseGate(op.angle) if last_v == 1 else None
-                if gate is None:      # phase where last_q == 0: X-conjugate
-                    qc.x(last_q)
-                    gate = PhaseGate(op.angle)
-                self._append_controlled(qc, gate, rest, [last_q])
-                if last_v == 0:
-                    qc.x(last_q)
-                continue
-            if op.kind == 'rx':
-                base = RXGate(op.angle)
-            elif op.kind == 'ry':
-                base = RYGate(op.angle)
+        for step in self._qiskit_steps():
+            if step[0] == 'barrier':
+                qc.barrier(label=step[1])
+            elif step[0] == 'global_phase':
+                qc.global_phase += step[1]
+            elif step[0] == 'x':
+                qc.x(step[1])
             else:
-                base = XGate()
-            self._append_controlled(qc, base, op.controls, [op.target])
+                _, kind, angle, controls, target, _ = step
+                base = XGate() if kind == 'x' else rotations[kind](angle)
+                self._append_controlled(qc, base, controls, [target])
         return qc
 
     @staticmethod
-    def _append_controlled(qc, gate, controls, targets):
+    def _ctrl_state(controls) -> str:
+        return ''.join(str(v) for _, v in reversed(controls))
+
+    @classmethod
+    def _append_controlled(cls, qc, gate, controls, targets):
         if controls:
-            state = ''.join(str(v) for _, v in reversed(controls))
-            gate = gate.control(len(controls), ctrl_state=state)
+            gate = gate.control(len(controls), ctrl_state=cls._ctrl_state(controls))
             qc.append(gate, [q for q, _ in controls] + targets)
         else:
             qc.append(gate, targets)
 
+    def to_qiskit_source(self, title: str = '') -> str:
+        """Python source that builds the same circuit with Qiskit, for
+        a visitor to run where Qiskit is installed (the site's Python
+        runs in the browser, without it). Run as a script it draws the
+        circuit and prints the final amplitudes."""
+        names = self.qubit_names
+        n = self.n_qubits
+        lines = [
+            f'# {title}: the quantish circuit as a Qiskit circuit' if title
+            else '# A quantish circuit as a Qiskit circuit',
+            '#',
+            '# Compiled by quantish (quantish/qubit_circuit.py). Every particle has',
+            '# a sign qubit (|0> plus, |1> minus) and a position qubit (which of a',
+            "# gate's two switch wires it is on), plus a flag qubit wherever two of",
+            '# its paths would otherwise share a code. A quantish gate at',
+            '# measurement angle t acting on a particle is',
+            '#     Rx(-2t) on sign . CNOT(sign -> position) . Rx(+2t) on sign',
+            '# and a control particle present adds a NOT on the position,',
+            "# conditioned on where the control particle is. Barriers mark the",
+            "# model's stages.",
+            'from math import pi',
+            '',
+            'from qiskit import QuantumCircuit',
+            'from qiskit.circuit.library import PhaseGate, RXGate, RYGate, XGate',
+            '',
+            '# qubits:',
+        ]
+        for name, pq in self.particles.items():
+            flags = ''.join(f', flag q{f}' for f in pq.flags)
+            lines.append(f'#   {name}: sign q{pq.sign} ({names[pq.sign]}), '
+                         f'position q{pq.x} ({names[pq.x]}){flags}')
+        lines += [f'qc = QuantumCircuit({n})']
+        if abs(self.weight - 1) > 1e-12:
+            lines.append(f'# the particles\' initial weights multiply to {self.weight:.6g}, '
+                         f'which scales every amplitude below')
+        rotations = {'p': 'PhaseGate', 'rx': 'RXGate', 'ry': 'RYGate'}
+        for step in self._qiskit_steps():
+            if step[0] == 'barrier':
+                lines.append(f'qc.barrier(label={step[1]!r})')
+            elif step[0] == 'global_phase':
+                lines.append(f'qc.global_phase += {_angle_source(step[1])}')
+            elif step[0] == 'x':
+                lines.append(f'qc.x({step[1]})')
+            else:
+                _, kind, angle, controls, target, label = step
+                expr = 'XGate()' if kind == 'x' else f'{rotations[kind]}({_angle_source(angle)})'
+                if controls:
+                    expr += f".control({len(controls)}, ctrl_state='{self._ctrl_state(controls)}')"
+                qargs = [q for q, _ in controls] + [target]
+                lines.append(f'qc.append({expr}, {qargs})' + (f'  # {label}' if label else ''))
+        lines += [
+            '',
+            "if __name__ == '__main__':",
+            '    from qiskit.quantum_info import Statevector',
+            '    print(qc.draw())',
+            '    # the final amplitudes; a basis state reads qubit 0 first',
+            '    for i, a in enumerate(Statevector(qc).data):',
+            '        if abs(a) > 1e-9:',
+            f"            print(format(i, '0{n}b')[::-1], a)",
+            '',
+        ]
+        return '\n'.join(lines)
 
-def _angle_text(angle: float) -> str:
-    """An angle as a short multiple of π when it is one, else degrees."""
+
+def _pi_multiple(angle: float):
+    """(k, denom) with angle == k·π/denom for a small denom, else None."""
     for denom in (1, 2, 3, 4, 6, 8, 12, 16):
         k = angle * denom / math.pi
         if abs(k - round(k)) < 1e-9 and round(k) != 0:
-            k = round(k)
-            num = {1: '', -1: '-'}.get(k, str(k))
-            return f'{num}π' + ('' if denom == 1 else f'/{denom}')
+            return round(k), denom
+    return None
+
+
+def _angle_source(angle: float) -> str:
+    """An angle as Python source: a multiple of pi when it is one."""
+    if abs(angle) < 1e-12:
+        return '0'
+    km = _pi_multiple(angle)
+    if km is None:
+        return f'{angle:.12g}'
+    k, denom = km
+    num = {1: 'pi', -1: '-pi'}.get(k, f'{k}*pi')
+    return num if denom == 1 else f'{num}/{denom}'
+
+
+def _angle_text(angle: float) -> str:
+    """An angle as a short multiple of π when it is one, else degrees."""
+    km = _pi_multiple(angle)
+    if km is not None:
+        k, denom = km
+        num = {1: '', -1: '-'}.get(k, str(k))
+        return f'{num}π' + ('' if denom == 1 else f'/{denom}')
     if abs(angle) < 1e-12:
         return '0'
     return f'{math.degrees(angle):.4g}°'
@@ -313,7 +413,9 @@ def _link_dest(sim, origin: GatePort) -> GatePort:
 
 
 def _is_pass_through(gate, port) -> bool:
-    return gate.report_type() in ('DelayGate', 'PhasePlate') or port in (None, CONTROL)
+    # an inert gate (switched off) is a wire: everything passes straight
+    return (getattr(gate, 'inert', False)
+            or gate.report_type() in ('DelayGate', 'PhasePlate') or port in (None, CONTROL))
 
 
 def compile_qubits(sim) -> QubitCircuit:
@@ -400,7 +502,8 @@ def compile_qubits(sim) -> QubitCircuit:
         snapshot = {name: dict(pq.positions) for name, pq in qc.particles.items()}
         for gname, gate in stage_gates.items():
             theta = float(qn.to_float(gate.theta)) if gate.report_type() == 'FredkinGate' else 0.0
-            phi = float(qn.to_float(gate.phase)) if not qn.zerop(gate.phase) else 0.0
+            phi = (float(qn.to_float(gate.phase))
+                   if not qn.zerop(gate.phase) and not getattr(gate, 'inert', False) else 0.0)
             for name, pq in qc.particles.items():
                 # switch-wire entries, grouped by flag pattern
                 groups = {}

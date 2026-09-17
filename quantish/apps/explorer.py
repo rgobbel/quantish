@@ -24,17 +24,6 @@ CHART_SIZE = 500
 # the controls' defaults; a seed (a gate out of a run) overrides them
 DEFAULT_SEED = {'theta_deg': 30, 'plus_sign': True, 'wmag': 1.0, 'wphase_deg': 0}
 
-EXPLANATION = r"""
-This tool demonstrates the four-way split of one quantish Fredkin gate measurement at angle $\theta$:
-$c_{2a} = w\cos^2\theta$, $c_{2b} = i\,w\sin\theta\cos\theta$
-(straight), $c_{3a} = w\sin^2\theta$,
-$c_{3b} = -i\,w\sin\theta\cos\theta$ (cross); $c_2 = c_{2a}+c_{2b}$,
-$c_3 = c_{3a}+c_{3b}$. A minus-sign particle swaps the roles.
-
-**Note:** Individual components can be selected by clicking on either their vectors on the chart or their entry in the legend. Shift-click toggles a component's selected state. Drag the chart's bottom-right corner to resize it; double-click the chart to reset the zoom.
-"""
-
-
 def split_components(theta_deg: float, weight: complex, plus_sign: bool = True) -> dict:
     """The split of `weight` at `theta_deg`, by name: the four
     components and the two destination sums, as Python complexes."""

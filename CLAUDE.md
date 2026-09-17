@@ -239,6 +239,10 @@ Configuration options (usually in defaults.yaml):
     builder's `builder_ui.py` (a loaded model as a dict, the canvas's
     translation into a runnable config, its status line and angle
     labels, the run, the sweep run, the final-points table);
+    `qubits_ui.py`: the builder's "As a qubit circuit" panel — the run
+    compiled by `quantish/qubit_circuit.py`, drawn, its statevector
+    checked against the engine, and its Qiskit source to download
+    (its text is `notebooks/text/qubits.md`);
     `explorer.py`: the Weight-split Explorer — one gate's split of a
     weight by name (`FredkinGate.components`), the seedable controls,
     the chart and table view, the chart's selection; `session.py`:
@@ -256,6 +260,11 @@ Configuration options (usually in defaults.yaml):
     share one kernel without name collisions (the `ws_` explorer cells
     in the weight-split explorer)
   - `epr.py`: EPR experiment sweeps and statistics
+  - `qubit_circuit.py`: a loaded Simulation as a qubit circuit (a gate
+    is a rotated CNOT between a particle's sign and position qubits),
+    simulated in numpy to check the engine; `to_qiskit()` needs Qiskit,
+    `to_qiskit_source()` writes the Python for a session that has it;
+    `--qubits` on the CLI, the builder's panel in the site
   - `montecarlo.py`: Monte Carlo sampling mode
   - `mermaid_diagram.py`, `network_graph.py`, `tikz_diagram.py`: Diagrams
   - `double_slit.py`: the double-slit demo's engine side
@@ -292,6 +301,11 @@ Configuration options (usually in defaults.yaml):
   picked gate as an `ExplorerSeed`). Its stylesheet
   `css/quantish_suite_app.css` is generated (gitignored) by the build
   from the two apps' stylesheets plus `css/suite.css`
+- `notebooks/text/`: each section's opening prose as Markdown
+  (`# Title`, then the one-line blurb, then the introduction), read
+  by `apps.common.prose(name)`; Randy edits these directly. The site's
+  user-facing wording avoids "app" and "suite": it is one site, the
+  Quantish Physics site, with sections
 - `HIDEME/`: Historical/experimental code and archived dead code (ignore)
 
 ## Notes for Development
