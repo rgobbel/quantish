@@ -50,6 +50,17 @@ uv run pytest tests/test_wiring.py
 pytest (with pytest-subtests) is in the dev dependency group; `uv sync`
 installs it.
 
+### Building and releasing the site
+
+`tools/build_wasm_app.sh . <outdir>` exports the site (WASM, static);
+for a preview, build into `~/Documents/quantish-handoff/preview` and
+serve it with `python -m http.server 2740 --directory <that dir>`.
+`tools/release.sh` (no arguments; commit and push first) is the
+release: the production build into
+`~/Documents/quantish-handoff/quantish-wasm-site`, both handoff
+tarballs refreshed, and `npx wrangler pages deploy` to
+quantish.pages.dev. It refuses a dirty tree.
+
 ### Configuration
 
 Configuration is split between:
