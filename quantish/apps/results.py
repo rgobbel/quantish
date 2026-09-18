@@ -193,7 +193,7 @@ def marginals(sim):
                   'in which that particle, with that sign, sits at that '
                   'port — its probability there *regardless of where the '
                   'other particles ended up* (the marginal over the rest '
-                  "of the configuration). The +/− rows at one port "
+                  "of the configuration). The $+$/$-$ rows at one port "
                   "together give the port's total output probability.\n" +
                   md_table(['coordinate', 'probability'], rows))
     })

@@ -1,4 +1,4 @@
-# The book's figures
+# Book figures
 
 *Good and Real* chapter four's figures as live circuits. You can load one, run it, and follow the weights through the gates.
 

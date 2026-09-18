@@ -1,7 +1,7 @@
-"""The qubit-circuit panel: a run compiled to a qubit circuit
+"""The qubit-circuit panel: a network compiled to a qubit circuit
 (quantish.qubit_circuit) — the qubits per particle, the drawn circuit,
 its statevector checked against the engine's final configuration-space
-points, and the Qiskit source to take away. Its explanation is
+points once the network has run, and the Qiskit source to take away. Its explanation is
 notebooks/text/qubits.md, passed in by the notebook (prose('qubits'))."""
 from __future__ import annotations
 
@@ -15,7 +15,8 @@ __all__ = ['qubit_panel']
 
 
 def qubit_panel(sim, intro: str = ''):
-    """The panel for a Simulation that has run."""
+    """The panel for a loaded Simulation, run or not (the statevector
+    check line needs the run)."""
     try:
         circuit = compile_qubits(sim)
     except NotImplementedError as exc:
@@ -34,7 +35,7 @@ def qubit_panel(sim, intro: str = ''):
               + '\n'.join(rows)),
         mo.md(f'```text\n{circuit.draw()}\n```'),
         mo.md(_check(circuit, sim)),
-        mo.accordion({'Qiskit source': mo.vstack([
+        mo.accordion({'#### Qiskit source': mo.vstack([
             mo.download(data=source.encode(), filename=f'{stem}_qiskit.py',
                         label='Download the Python file'),
             mo.md(f'```python\n{source}\n```'),

@@ -53,7 +53,7 @@ def epr_report(sim_model, raw_angles: dict, n: int, modes, units: str, env: dict
     except Exception as exc:  # noqa: BLE001 — show, don't crash the app
         return mo.md(f'**unparseable sweep angle** — {exc}')
     if len({round(float(v) % math.pi, 9) for v in values.values()}) < 3:
-        return mo.md('**sweep angles must be distinct (mod π)** — equal '
+        return mo.md('**sweep angles must be distinct (mod $\\pi$)** — equal '
                      'angles make cells compare an angle with itself and '
                      'the inequalities degenerate')
     # one sweep per chosen interpretation (the exact, analytical and

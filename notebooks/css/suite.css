@@ -31,6 +31,10 @@
 .suite-nav a.active { background: #fff; border-color: #c8c8c8; border-bottom-color: #fff;
                       color: #2b3aa0 !important; font-weight: 600; }
 
+/* A heading scrolled to (marimo's outline panel) lands below the
+   fixed section row, not under it */
+.suite-sec :is(h1, h2, h3, h4, h5, h6) { scroll-margin-top: 3rem; }
+
 /* Links to sections in prose read as links: blue and underlined */
 .suite-sec a[href^="#sec-"] { color: var(--link, #0b68cb) !important;
                               text-decoration: underline !important;

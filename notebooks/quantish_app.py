@@ -100,9 +100,9 @@ def _(
 @app.cell(hide_code=True)
 def _(
     DiagramWidget,
-    build_sim,
     diagram_geometry,
     mo,
+    qa_new_sim,
     qa_show_values,
     qa_sim,
     qa_sim_model,
@@ -130,7 +130,7 @@ def _(
             _s = qa_sim
             if _s is None:
                 try:
-                    _s = build_sim()
+                    _s = qa_new_sim()
                     _s.run()
                 except Exception:  # noqa: BLE001 — fall back to plain wiring
                     _s = None
@@ -374,8 +374,6 @@ def _(
     Each model has a set of particles, a set of gates each with a particular angle, and links that connect particles and gates. Once a model is loaded, its gate angles can be modified below. Angles can be input using the sliders, each with a range from -180º to 180º, or the text entry fields, using values in either degrees or radians, according to the radio button selector. Added specifically for the simulation of the double-slit experiment, gates have an optional _phase_ parameter, allowing a gate with a zero angle to act as a _phase plate_, but that option is not surfaced in this application.
 
     Calculations within models often produce very small values, and floating-point roundoff errors can compound, appreciably affecting final results. Models can be run using exact values using symbolic arithmetic. In order to take best advantage of symbolic math, input values such as gate angles should be specified symbolically (e.g., "pi/6" rather than "30.0º"). All numeric values can be in the form of expressions parsable by SymPy, such as "rad(30)", equivalent to "pi/6" arithmetic expressions such as "pi/6 + pi/8", and references to variables defined in a `variables` clause in a model's YAML specification.
-
-    _Note:_ Symbolic math is much slower than floating-point, so model execution in Symbolic mode may take several seconds, especially for large models like the EPR setup (2026 figure 4.17, 2006 figure 4.16).
     """)
 
     def _():
@@ -446,6 +444,7 @@ def _(
     SAMPLER_LABELS,
     qa_mc_button,
     qa_mc_cancel,
+    qa_mc_clock,
     qa_mc_job_slot,
     qa_mc_modes,
     qa_mc_note,
@@ -464,7 +463,8 @@ def _(
     trial_count,
 ):
     qa_mc_button      # noqa: B018 — re-render when a job starts
-    qa_mc_tick_get()  # ...and on every worker chunk and at completion
+    qa_mc_tick_get()  # ...on every worker chunk and at completion (standalone)
+    qa_mc_clock.value  # noqa: B018 — ...and on the clock's ticks (the suite)
 
     def _projection():
         chosen = picked_modes(qa_mc_modes, SAMPLER_LABELS)
@@ -482,7 +482,8 @@ def _(
             return qa_mc_note
         if _job is None:
             return mo.md('_press **Run Monte Carlo** to sample_')
-        return progress_view(_job, qa_mc_cancel) if not _job['done'] else results_view(_job)
+        return (progress_view(_job, qa_mc_cancel, clock=qa_mc_clock) if not _job['done']
+                else results_view(_job))
 
     mo.accordion({'## Monte Carlo Sampling\n\n<span style="font-size:0.85em">Optional sampled trials on top of the exact run above</span>':
         mo.vstack([
@@ -639,9 +640,9 @@ def _(
 
     **The splitting rule.** A gate measuring at angle $Q$ splits each
     incoming weight into a *measurement-parallel* component — the
-    particle passes straight across, weight × $e^{iQ}\cos Q$ — and a
+    particle passes straight across, weight $\times\, e^{iQ}\cos Q$ — and a
     *measurement-perpendicular* component — the particle crosses over,
-    weight × $e^{i(Q+\pi/2)}\sin Q$. Perpendicular is literal: the
+    weight $\times\, e^{i(Q+\pi/2)}\sin Q$. Perpendicular is literal: the
     crossed component is rotated $\pi/2$ from the straight one, so
     adding $\pi/2$ to a gate's angle swaps the roles of its two
     switch-wire outputs.
@@ -692,20 +693,18 @@ def _(
         in_div('tight-paragraphs', mo.md(r"""
     **Choosing the sweep angles.** Only differences matter — the law is
     $\sin^2(\theta_1-\theta_2)$, with period $\pi$ — so the one hard
-    constraint is that the three angles be **distinct (mod π)**: equal
+    constraint is that the three angles be **distinct (mod $\pi$)**: equal
     angles make cells compare an angle with itself and the inequalities
     degenerate. Any distinct triple is a valid experiment; whether it
     violates the classical bounds depends on spacing. With equal
     spacing $\delta$, Bell is violated exactly when $0 < \delta < 45°$
     (largest excess at $\delta = 30°$), and the default set
-    $(0°, 22.5°, 45°)$ drives CHSH to $1{+}\sqrt2 \approx 2.414$.
+    $(0^\circ, 22.5^\circ, 45^\circ)$ drives CHSH to $1{+}\sqrt2 \approx 2.414$.
     A bare number below uses the units selector at the top; anything
     else is read as a symbolic radian expression (`pi/8`, `rad(30)`).
 
-    **Note: Symbolic mode (settable above in [Custom Model Parameters](#custom-model-parameters)) multiplies the cost**: nine exact symbolic runs
-    with non-special angles may take several seconds even at 0 trials.
     Values may be entered here as either symbolic or floating-point expressions.
-    Computation will use the selected mode in either case.
+    Computation will use the selected mode (settable above in [Custom Model Parameters](#custom-model-parameters)) in either case.
 
     """)),
         mo.hstack([qa_epr_angle_elems['qa'], qa_epr_angle_elems['qb'],
@@ -1225,7 +1224,12 @@ def _(SAMPLER_LABELS, mo):
     qa_mc_seed = mo.ui.number(value=42, label='seed')
     qa_mc_button = mo.ui.run_button(label='Run Monte Carlo')
     qa_mc_cancel = mo.ui.run_button(label='Cancel')
-    return qa_mc_button, qa_mc_cancel, qa_mc_modes, qa_mc_seed, qa_mc_trials, qa_mc_trials_text
+    # the clock: shown (hidden) in the progress row while a job runs,
+    # so the display re-renders on its ticks — the worker's state bumps
+    # reach the page only when this app has a kernel of its own, not as
+    # a section of the suite (an embedded app's kernel queues no reruns)
+    qa_mc_clock = mo.ui.refresh(default_interval=0.5)
+    return qa_mc_button, qa_mc_cancel, qa_mc_clock, qa_mc_modes, qa_mc_seed, qa_mc_trials, qa_mc_trials_text
 
 
 @app.cell(hide_code=True)
@@ -1235,7 +1239,8 @@ def _(mo):
     # so state setters reach the frontend). The display cell depends
     # on the counter and re-renders as sampling progresses — no
     # polling, and results land even if the section is collapsed
-    # while the job runs.
+    # while the job runs. (In the suite the bumps rerun nothing; there
+    # the progress row's clock, qa_mc_clock, does the re-rendering.)
     qa_mc_job_slot = {}
     qa_mc_tick_get, qa_mc_tick_set = mo.state(0)
     return qa_mc_job_slot, qa_mc_tick_get, qa_mc_tick_set

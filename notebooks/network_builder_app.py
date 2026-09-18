@@ -50,6 +50,7 @@ async def initialization():
     from quantish.apps.builder_ui import (
         MODE_LABELS,
         angle_labels,
+        build_network,
         canvas_counts,
         derive_config,
         final_points_html,
@@ -151,8 +152,8 @@ async def _(in_div, mo, prose):
     """), mo.accordion({'- Types of components': in_div('qb-doc-body', r"""
     - **gates** are quantish Fredkin gates, as described in *Good and Real*.
     - **particles** are the entities that travel through a quantish network.
-      Each starts with a sign (+ or −) and a complex-valued weight, and enters the network through one gate input.
-    - **phase plates** (φ) are gates that rotate every traversing weight in the complex plane without
+      Each starts with a sign ($+$ or $-$) and a complex-valued weight, and enters the network through one gate input.
+    - **phase plates** ($\varphi$) are gates that rotate every traversing weight in the complex plane without
       affecting amplitude, simulating an alteration to [optical path length](https://en.wikipedia.org/wiki/Optical_path_length). One example of a real-world phase plate device is an
       [electro-optic modulator](https://en.wikipedia.org/wiki/Electro-optic_modulator). 
     - **delay gates** are simple passthroughs, useful for manipulating diagram layout, but having no effect on execution.
@@ -779,18 +780,23 @@ def _(final_points_html, mo, nb_sim_built):
     mo.md(final_points_html(nb_sim_built))
 
 @app.cell(hide_code=True)
-async def _(mo, nb_sim_built, prose, qubit_panel):
-    # the run as a qubit circuit (quantish.apps.qubits_ui); its
-    # explanation is notebooks/text/qubits.md
-    mo.stop(nb_sim_built is None)
-    mo.accordion({'#### As a qubit circuit': qubit_panel(nb_sim_built, await prose('qubits'))})
+async def _(build_network, mo, nb_builder_config, nb_sim_built, nb_switch_off, prose, qubit_panel):
+    # the network as a qubit circuit (quantish.apps.qubits_ui), shown as
+    # soon as the canvas translates to a runnable config — compiled from
+    # the run when there is one (the panel then also checks its
+    # statevector against the engine), else from the network loaded
+    # unrun; its explanation is notebooks/text/qubits.md
+    _sim = (nb_sim_built if nb_sim_built is not None
+            else build_network(nb_builder_config, nb_switch_off.value))
+    mo.stop(_sim is None)
+    mo.accordion({'#### As a qubit circuit': qubit_panel(_sim, await prose('qubits'))})
 
 
 @app.cell(hide_code=True)
 def _(nb_builder_config, config_to_yaml, mo, nb_sections):
     mo.stop(nb_builder_config is None)
     _yaml = config_to_yaml(nb_builder_config, raw_sections=nb_sections)
-    mo.accordion({'Model YAML': mo.md(f'```yaml\n{_yaml}```')})
+    mo.accordion({'#### Model YAML': mo.md(f'```yaml\n{_yaml}```')})
 
 
 if __name__ == "__main__":

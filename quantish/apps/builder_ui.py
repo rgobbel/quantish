@@ -235,6 +235,19 @@ def _off_note(inert, absent) -> str:
                    if names)
 
 
+def build_network(config: dict | None, off_values: dict):
+    """The network loaded but not run — the Simulation the qubit panel
+    compiles before any Run — or None when there is nothing to load or
+    the load fails (the Run reports why)."""
+    if not config:
+        return None
+    inert, absent = switched_off(off_values)
+    try:
+        return Simulation(run_config(config), inert=inert, absent=absent)
+    except Exception:  # noqa: BLE001 — the Run's report shows the error
+        return None
+
+
 def run_network(config: dict | None, off_values: dict):
     """The Run: (Simulation, report) after a successful run, (None,
     why not) on failure, (None, None) with nothing to run. Switched-off

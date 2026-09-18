@@ -18,21 +18,21 @@ revised draft of the book.*
 
 A quantish particle travels along a wire and has a *sign*, plus or minus. Wires meet at *Fredkin gates*, with three
 wires in,
-three wires out, and a *measurement angle* θ.
+three wires out, and a *measurement angle* $\theta$.
 
 A quantish gate is equivalent to a standard two-qubit operation in quantum computing. Given a particle with
 sign qubit $s$ ($\vert0\rangle = \mathrm{plus}$, $\vert1\rangle = \mathrm{minus}$) a position qubit $x$, and a gate
 at measurement angle $\theta$ with no control particle present, the result is
 
-$$U (θ) = Rx (\mathrm{s},-2θ) · CNOT (s \rightarrow x)  · Rx (\mathrm{s},+2θ)$$
+$$U(\theta) = R_x^{(s)}(-2\theta) \cdot \mathrm{CNOT}_{s \rightarrow x} \cdot R_x^{(s)}(+2\theta)$$
 
 A particle on the control wire passes straight through and controls
 whether the other two wires, the upper and the lower switch ports, cross or run straight. The angle acts on a particle
 entering by
 the upper or lower wire. This is where quantish parts from classical physics. The particle does not take one exit.
 Its weight splits four ways, over the two exits and the two signs, into the
-*components* $\mathrm{cos}^2\theta$, $i · \mathrm{sin}\theta · \mathrm{cos}\theta$, $\mathrm{sin}^2\theta$, and
-$−i·\mathrm{sin}\theta · \mathrm{cos}\theta$. The squared magnitudes of the four components sum to one.
+*components* $\cos^2\theta$, $i \cdot \sin\theta \cdot \cos\theta$, $\sin^2\theta$, and
+$-i \cdot \sin\theta \cdot \cos\theta$. The squared magnitudes of the four components sum to one.
 
 So the state of a quantish universe is never a single arrangement of its particles. It is a *superposition* of
 *configuration-space points*, each a complete assignment of a position and a sign to every particle, each carrying one
@@ -84,6 +84,7 @@ incoming weight.
   the final probabilities; run it many times to see an experiment's statistics; sweep an angle; test Bell's and the CHSH
   inequalities against quantish and local hidden-variable predictions.
 - [**Network builder**](#sec-builder) — build a circuit of your own, or change one of the chapter's on a canvas, run
-  it, and send it to the other sections or download it as a YAML file.
+  it, and send it to the other sections or download it as a YAML file, or as Qiskit source for running on a real quantum
+  computer.
 - [**Decoherence lab**](#sec-lab) — the double-slit family side by side, with every angle a slider: the plain double
   slit, complete and partial which-way recorders, a quantum eraser, and chains of recorders.

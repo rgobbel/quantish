@@ -8,7 +8,9 @@ fragment (#sec-<key>), so a section can be linked from any prose, and
 the widget catches clicks on such links wherever they are on the page
 (the fragment alone would not do: marimo moves the address through
 the history API, which leaves CSS `:target` behind). `current` syncs
-to Python, and setting it from Python switches the page.
+to Python, and setting it from Python switches the page. A scroll to
+an element of a hidden section (marimo's outline panel scrolling to a
+heading) opens that section first.
 """
 from __future__ import annotations
 
@@ -92,6 +94,22 @@ function render({ model, el }) {
   document.addEventListener('click', onClick, true);
   const onHash = () => apply(keyOf(location.hash));
   window.addEventListener('hashchange', onHash);
+  // marimo's outline panel (the table of contents at the page's right
+  // edge) brings a heading into view with scrollIntoView, which does
+  // nothing for a heading in a section not shown — so a scroll to
+  // anything inside a hidden section opens that section first
+  const sectionOf = (node) => {
+    const sec = node.closest && node.closest('.suite-sec');
+    if (!sec) return null;
+    for (const c of sec.classList) if (c.startsWith('suite-sec-')) return c.slice(10);
+    return null;
+  };
+  const scrollIntoView = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = function (...args) {
+    const key = sectionOf(this);
+    if (key && key !== root.getAttribute('data-section')) goTo(key);
+    return scrollIntoView.apply(this, args);
+  };
   model.on('change:current', () => {
     const key = model.get('current');
     if (key && key !== root.getAttribute('data-section')) goTo(key);
@@ -101,6 +119,7 @@ function render({ model, el }) {
     window.removeEventListener('resize', place);
     document.removeEventListener('click', onClick, true);
     window.removeEventListener('hashchange', onHash);
+    Element.prototype.scrollIntoView = scrollIntoView;
   };
 }
 export default { render };

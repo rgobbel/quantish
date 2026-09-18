@@ -178,7 +178,7 @@ def _(DEFAULT_THETA_S, math, mo):
     | real-world experiment                                            | quantish circuit                                           |
     |------------------------------------------------------------------|:-----------------------------------------------------------|
     | a photon or electron, fired at the barrier                       | particle $p_1$, weight 1                                   |
-    | the two slits                                                    | the two switch outputs of Fredkin gate $g_{split}$ (angle 45°): upper for the left slit, lower for the right   |
+    | the two slits                                                    | the two switch outputs of Fredkin gate $g_{split}$ (angle $45^\circ$): upper for the left slit, lower for the right   |
     | passing through both slits at once                               | Fredkin gate $g_{split}$ splits $p_1$'s world into superposed configuration-space points, one per slit, each carrying part of the weight |
     | the two slits themselves                                         | delay gates $S_1$ and $S_2$ (passthroughs) |
     | different path lengths from the two slits to screen position $x$ | the phase plate $\varphi$ rotates the passing amplitude by its *angle* parameter and changes nothing else                      |
@@ -190,7 +190,7 @@ def _(DEFAULT_THETA_S, math, mo):
 
     - ##### The **splitter** $g_{split}$
 
-        $g_{split}$ puts each input particle into superposition. Its 45° angle splits its input evenly between top and bottom, so left and right slits.
+        $g_{split}$ puts each input particle into superposition. Its $45^\circ$ angle splits its input evenly between top and bottom, so left and right slits.
 
     - ##### **slits** $S_1$ and $S_2$ and **blocks** $B_1$ and $B_2$
 
@@ -414,10 +414,10 @@ def _(mo):
                                 label='θ sorter (°)', show_value=True)
     # .gates-note (css/double_slit_app.css) keeps the lead-in line snug
     # against its list
-    _gates_note = mo.Html('<div class="gates-note">' + mo.md("""
+    _gates_note = mo.Html('<div class="gates-note">' + mo.md(r"""
     _Gate angles:_
-    - _an unequal split (θ split ≠ 45°) fills in the dark fringes_
-    - _a mismatched merge (θ merge ≠ θ split) reduces the maximum intensity_
+    - _an unequal split ($\theta_{split} \neq 45^\circ$) fills in the dark fringes_
+    - _a mismatched merge ($\theta_{merge} \neq \theta_{split}$) reduces the maximum intensity_
     - _changing the sorter angle reduces the contrast between high and low intensities._
     """).text + '</div>')
     # How the curves under the screens are computed. While a slider
@@ -633,7 +633,7 @@ def _(LinePlotWidget, mo):
     the cell below feeds it the current curves, so a slider move
     updates the plot in place and this section never re-renders."""
     ds_additivity_widget = LinePlotWidget(data={})
-    mo.accordion({'#### Note: Interference is not additivity\n\n<span style='
+    mo.accordion({'#### Note: Interference instead of additivity\n\n<span style='
                   '"font-size:0.85em">the classical sum of the single-slit '
                   'curves against what actually happens</span>': mo.vstack([
         mo.md('Opening the second slit removes particles from the dark '

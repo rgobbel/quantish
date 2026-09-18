@@ -105,18 +105,20 @@ def trial_count(text: str, slider_value) -> int:
         return int(slider_value)
 
 
-_calibration: dict = {}
-
-
 def sampling_seconds(model_sim, modes, n_trials: int, cells: int = 1) -> float:
     """A projection of how long a sampling job will take, from a
     calibration on this circuit: a few hundred trials of each
     interpretation are timed once per loaded model (and one run of
     the circuit, for a sweep's per-cell rebuild), then scaled to
     n_trials × cells. Measured where it will run, so the browser
-    build's slower Python is accounted for."""
-    key = id(model_sim)
-    if key not in _calibration:
+    build's slower Python is accounted for. The calibration lives on
+    the Simulation itself (a cache keyed by id() would serve a stale
+    one when a freed Simulation's address is reused), so a new load or
+    a rerun in the other calculation mode is measured afresh; the draws
+    themselves cost about the same in either mode (the samplers work
+    from the weights' float probabilities), the circuit's rerun does
+    not."""
+    if getattr(model_sim, '_sampling_calibration', None) is None:
         t0 = time.perf_counter()
         cfg = deepcopy(model_sim.config)
         cfg['loglevel'] = 'warning'
@@ -136,8 +138,8 @@ def sampling_seconds(model_sim, modes, n_trials: int, cells: int = 1) -> float:
         t0 = time.perf_counter()
         sample_hidden_variable(0.0, 1.0, k, rng)
         per_trial['hidden'] = (time.perf_counter() - t0) / k
-        _calibration[key] = (run_cost, fit_cost, per_trial)
-    run_cost, fit_cost, per_trial = _calibration[key]
+        model_sim._sampling_calibration = (run_cost, fit_cost, per_trial)
+    run_cost, fit_cost, per_trial = model_sim._sampling_calibration
     secs = (run_cost if cells > 1 else 0.0) * cells
     for m in modes:
         secs += cells * (n_trials * per_trial[m] + (fit_cost if m == 'pilot' else 0.0))
@@ -240,15 +242,22 @@ async def run_job_async(job: dict, seed: int, bump) -> None:
     bump(lambda v: v + 1)
 
 
-def progress_view(job: dict, cancel_button):
-    """A running job: its bar, the count, and the Cancel button."""
+def progress_view(job: dict, cancel_button, clock=None):
+    """A running job: its bar, the count, and the Cancel button. `clock`
+    is a `mo.ui.refresh`, carried unseen in the row while the job runs:
+    its ticks re-render the display like any widget change, which the
+    worker's own state bumps cannot do when the app is a section of
+    the suite (an embedded app's kernel queues no reruns of its own)."""
     pct = 100 * job['progress'] / max(1, job['total'])
-    return mo.hstack([
+    parts = [
         mo.Html(f'<progress value="{job["progress"]}" max="{job["total"]}" '
                 'style="width: 24em; max-width: 100%"></progress>'),
         mo.md(f'{pct:.0f}% — {job["progress"]:,} of {job["total"]:,} draws'),
         cancel_button,
-    ], justify='start', gap=1, align='center', wrap=True)
+    ]
+    if clock is not None:
+        parts.append(mo.Html(f'<span style="display: none">{clock}</span>'))
+    return mo.hstack(parts, justify='start', gap=1, align='center', wrap=True)
 
 
 def results_view(job: dict):

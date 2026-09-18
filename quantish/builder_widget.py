@@ -2430,7 +2430,18 @@ function render({ model, el }) {
         apply();
       } else place();
     };
-    settle();
+    // the observer below is the usual trigger once a hidden frame gets
+    // its size, but a frame sized in a later layout pass (a phone
+    // rebuilding a section) has been seen to keep the unplaced
+    // drawing: the first placement is also retried by frame for a
+    // while, as the section row places itself
+    let tries = 0;
+    const retry = () => {
+      if (placed) return;
+      settle();
+      if (!placed && tries++ < 600) requestAnimationFrame(retry);
+    };
+    retry();
     // zoom by a factor k about the client point (cx, cy)
     const zoomAt = (k, cx, cy) => {
       const r = svg.getBoundingClientRect();
@@ -2456,6 +2467,7 @@ function render({ model, el }) {
     };
     gestures(svg, {
       down: (ev) => {
+        onSize();   // a frame whose width changed unobserved re-places first
         pan = { x: ev.clientX, y: ev.clientY, vx, vy, target: ev.target };
         svg.classList.add('panning');
       },
@@ -2503,7 +2515,7 @@ function render({ model, el }) {
     // stretching the frame (the resize grip) extends the view at the
     // same scale; a width change (window resize, phone rotation, a
     // section unfolding) re-fits
-    const ro = new ResizeObserver(() => {
+    function onSize() {
       const r = root.getBoundingClientRect();
       if (!r.width) return;
       if (!placed) settle();
@@ -2512,9 +2524,14 @@ function render({ model, el }) {
         if (r.height && !narrow(r.width)) st.boxH = Math.round(r.height);
         apply();
       }
-    });
+    }
+    const ro = new ResizeObserver(onSize);
     ro.observe(root);
-    root._cleanup = () => ro.disconnect();
+    window.addEventListener('resize', onSize);
+    root._cleanup = () => {
+      ro.disconnect();
+      window.removeEventListener('resize', onSize);
+    };
   }
 
   model.on('change:geometry', draw);
