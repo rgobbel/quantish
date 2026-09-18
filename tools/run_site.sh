@@ -44,15 +44,27 @@ done
 case "$PORT" in ''|*[!0-9]*) echo "run_site.sh: port must be a number, got '$PORT'" >&2; exit 2 ;; esac
 case "$OUT" in *quantish-handoff*) echo "run_site.sh: $OUT is the release's directory; pick another" >&2; exit 2 ;; esac
 
-# a port already taken gives a page from whatever holds it (a marimo
+# A port already taken gives a page from whatever holds it (a marimo
 # server on 127.0.0.1 answers ahead of a static server on the same
-# number), so refuse rather than serve beside it
-if HOLDER=$(lsof -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null) && [ -n "$HOLDER" ]; then
-  echo "run_site.sh: port $PORT is in use:" >&2
-  echo "$HOLDER" >&2
-  echo "stop that process, or pick another port with -p" >&2
-  exit 1
-fi
+# number). An earlier run of this script is simply replaced: that is
+# the edit loop. Anything else is left alone, and the script refuses.
+for PID in $(lsof -nP -t -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null); do
+  CMD=$(ps -o command= -p "$PID")
+  case "$CMD" in
+    *"quantish_suite_app.py --port $PORT"*|*"python3 - "*" $PORT")
+      echo "run_site.sh: replacing the earlier run on port $PORT (pid $PID)"
+      kill "$PID"
+      for _ in 1 2 3 4 5 6 7 8 9 10; do
+        kill -0 "$PID" 2>/dev/null || break
+        sleep 0.5
+      done ;;
+    *)
+      echo "run_site.sh: port $PORT is in use by another program:" >&2
+      echo "  pid $PID: $CMD" >&2
+      echo "stop it, or pick another port with -p" >&2
+      exit 1 ;;
+  esac
+done
 
 cd "$REPO"
 if [ "$MODE" = wasm ]; then

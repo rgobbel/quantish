@@ -67,7 +67,7 @@ def test_view_and_selection():
     assert native.widget.data['order'] == ['c2', 'c3a']
     assert native.widget.selected == ['c3a']          # c2b is not shown
     text = html.unescape(view.text)
-    assert 'c3a &=' in text and 'c2b' not in text.split('aligned')[1]
+    assert 'c_{3a} &=' in text and 'c_{2b}' not in text.split('begin{align*}')[1]
     assert explorer.chart_selection(native, ('c3a',)) is None
     native.widget.selected = ['c2']
     assert explorer.chart_selection(native, ('c3a',)) == ('c2',)

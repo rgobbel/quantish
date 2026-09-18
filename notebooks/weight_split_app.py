@@ -48,6 +48,7 @@ async def initialization():
     from quantish.apps.common import build_stamp, init_engine, prose, stamp_html
     from quantish.apps.explorer import (
         chart_selection,
+        controls_row,
         explorer_controls,
         explorer_view,
     )
@@ -58,6 +59,7 @@ async def initialization():
         ExplorerSeed,
         build_stamp,
         chart_selection,
+        controls_row,
         explorer_controls,
         explorer_view,
         mo,
@@ -69,6 +71,7 @@ async def initialization():
 @app.cell(hide_code=True)
 async def _(mo, prose):
     mo.md(await prose('explorer'))
+    return
 
 
 @app.cell(hide_code=True)
@@ -76,6 +79,7 @@ async def _(build_stamp, stamp_html):
     # which build is this? (the site build writes public/version.json
     # beside the page; a development copy says so instead)
     stamp_html(await build_stamp())
+    return
 
 
 @app.cell(hide_code=True)
@@ -96,7 +100,7 @@ def _(ExplorerSeed, mo, ws_seed_in):
 
 
 @app.cell(hide_code=True)
-def _(explorer_controls, mo, ws_seed):
+def _(controls_row, explorer_controls, mo, ws_seed):
     ws_controls = explorer_controls(ws_seed.as_controls() if ws_seed else None)
     # the chart's mouse selection, persisted across parameter changes
     # (the chart is rebuilt on every slider move and reseeded from here)
@@ -104,7 +108,7 @@ def _(explorer_controls, mo, ws_seed):
     mo.vstack(
         ([mo.md(f'<span style="font-size: 0.9em">opened on **{ws_seed.describe()}**'
                 '</span>')] if ws_seed else [])
-        + [mo.hstack(list(ws_controls.elements.values()), wrap=True)], align='stretch')
+        + [mo.hstack(controls_row(ws_controls), wrap=True)], align='stretch')
     return ws_controls, ws_sel_get, ws_sel_set
 
 
@@ -122,6 +126,7 @@ def _(chart_selection, ws_native, ws_sel_get, ws_sel_set):
     _sel = chart_selection(ws_native, ws_sel_get())
     if _sel is not None:
         ws_sel_set(_sel)
+    return
 
 
 if __name__ == "__main__":

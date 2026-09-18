@@ -48,7 +48,7 @@ def explorer_controls(seed: dict | None = None) -> mo.ui.dictionary:
     return mo.ui.dictionary({
         'theta': mo.ui.slider(-90, 90, step=5, value=_snap(s['theta_deg'], 5, -90, 90),
                               label='θ (º)', show_value=True),
-        'sign': mo.ui.switch(value=bool(s['plus_sign']), label='sign + (off = −)'),
+        'sign': mo.ui.switch(value=bool(s['plus_sign'])),   # labeled by controls_row
         'wmag': mo.ui.slider(0.0, 1.0, step=0.05, value=_snap(s['wmag'], 0.05, 0, 1),
                              label='|w|', show_value=True),
         'wphase': mo.ui.slider(-180, 180, step=5,
@@ -57,6 +57,20 @@ def explorer_controls(seed: dict | None = None) -> mo.ui.dictionary:
         'components': mo.ui.multiselect(options=COMPONENTS, value=list(COMPONENTS),
                                         label='components'),
     })
+
+
+def controls_row(controls: mo.ui.dictionary) -> list:
+    """The controls as the elements of one row. The sign switch reads
+    `sign  − [switch] +`: the word says what the switch is, the − and +
+    hard by its ends what its two positions mean (off, on)."""
+    def cell(key, element):
+        if key != 'sign':
+            return element
+        # (an inline group: a nested hstack would take the row's spare width)
+        return mo.Html('<span style="display: inline-flex; align-items: center; '
+                       'gap: 0.4em"><span style="margin-right: 0.5em">sign</span>'
+                       f'−{element}+</span>')
+    return [cell(k, e) for k, e in controls.elements.items()]
 
 
 def _snap(x, step, lo, hi):
