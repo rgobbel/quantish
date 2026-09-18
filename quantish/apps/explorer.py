@@ -71,13 +71,21 @@ def explorer_view(values: dict, selected=()) -> tuple:
     `selected` trait comes back through it) and shows the view."""
     data = split_components(values['theta'], polar_weight(values['wmag'], values['wphase']),
                             values['sign'])
+    component_strings = {
+        'c2': '&c_2',
+        'c3': '&c_3',
+        'c2a': '&c_{2a}',
+        'c2b': '&c_{2b}',
+        'c3a': '&c_{3a}',
+        'c3b': '&c_{3b}',
+    }
     shown = [c for c in COMPONENTS if c in values['components']]
     sign_str = '+' if values['sign'] else '−'
-    lines = [rf"{name} &= {latex_weight(data[name], prec=2)}"
+    lines = [rf"&{component_strings[name]} &= {latex_weight(data[name], prec=2)}"
              rf" &\quad \texttt{{Pr}} &= {abs(data[name])**2:.2f}"
              rf" & \phi &= {phase_deg(data[name]):.1f}\degree\\"
              for name in shown]
-    latex = '$$\n\\begin{aligned}\n' + '\n'.join(lines) + '\n\\end{aligned}\n$$'
+    latex = '$$\n\\begin{align*}\n' + '\n'.join(lines) + '\n\\end{align*}\n$$'
     # native SVG: Finder-style selection synced through the widget's
     # `selected` trait, wheel zoom, drag pan, a resizable frame
     native = mo.ui.anywidget(WeightSplitWidget(

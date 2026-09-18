@@ -1,3 +1,9 @@
+# /// script
+# requires-python = ">=3.13"
+# dependencies = [
+#     "marimo",
+# ]
+# ///
 """Quantish Weight-split Explorer — what one quantish Fredkin gate does to a
 weight: the four-way split at any measurement angle, for either sign,
 as vectors and as numbers.
