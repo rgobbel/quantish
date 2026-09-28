@@ -604,9 +604,9 @@ def _(ds_diagrams, ds_eraser_controls, mo, ds_panels):
     condition, which is why the erasure can be "chosen" after $p_1$ has
     hit the screen without changing anything there.
 
-    On the film below, each hit is colored by $p_2$'s sign (red for
-    plus, green for minus; the colors are additive, so a pixel both
-    signs hit turns yellow): the brightness is the flat total, the
+    On the film below, each hit is colored by $p_2$'s sign (orange for
+    plus, blue for minus; the colors are additive, so a pixel both
+    signs hit turns white): the brightness is the flat total, the
     colors are the two fringe patterns. At $\theta_{erase} = 0$ the
     gate passes $p_2$ straight through and the condition is the plain
     recorder, every hit plus; between $0$ and $45°$ the minus-sign

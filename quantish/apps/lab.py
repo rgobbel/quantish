@@ -314,7 +314,7 @@ def update_slot(state, sliders, n, fringes, via, hit_store):
     return variables
 
 
-STRIP_RGB = [(255, 0, 0), (0, 255, 0), (0, 0, 255)]   # the film's group colors
+STRIP_RGB = [(255, 127, 0), (0, 128, 255), (0, 255, 0)]   # the film's group colors (orange, azure, green)
 STRIP_W, STRIP_H, LABEL_W = 560, 26, 120
 
 
