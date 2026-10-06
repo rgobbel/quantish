@@ -8,7 +8,20 @@ Quantish Physics is a simulation of "quantish" physics from Chapter 4 of *Good a
 
 ### Terminology
 
-Follow the book's terms. A **configuration-space point** (`ConfigSpacePoint` and `cs_point` in code — the book calls it a *classical state*) is a full assignment of a position and sign to every particle, with one complex weight. Write the term out in prose and displays; the abbreviation "CS point" is reserved for variable names (`cs_point`) and very informal communication. The **quantum state** (the full quantish world) is the weighted superposition of configuration-space points. Avoid the bare word "world" for either. The squared magnitudes of the configuration-space points' weights always sum to 1 (the `check_total_probability` invariant), and a configuration-space point's |weight|² is its probability of being the successor to its immediate predecessor. The four split values a gate applies to a switch-wire particle are its **components** — c2a, c2b, c3a, c3b in the book's order (cos²θ, i·sinθcosθ, sin²θ, −i·sinθcosθ); per-particle displays label them by particle, not "factor".
+Follow the book's terms. A **configuration-space point** (`ConfigSpacePoint` and `cs_point` in code — the book calls it a *classical state*) is a full assignment of a position and sign to every particle, with one complex weight. Write the term out in prose and displays; the abbreviation "CS point" is reserved for variable names (`cs_point`) and very informal communication. The **quantum state** (the full quantish world) is the weighted superposition of configuration-space points. Avoid the bare word "world" for either. The squared magnitudes of the configuration-space points' weights always sum to 1 (the `check_total_probability` invariant), and a configuration-space point's |weight|² is its probability of being the successor to its immediate predecessor. The displays name a particle's two sign values in one of two
+vocabularies (`quantish/signs.py`, a process-wide setting like
+`CalcMode.mode`): the book's plus and minus, written before the name
+(`+p1`, `−p1`, `±p1`; the attribute is the *sign*), or the polarization
+vocabulary H and V, a superscript after the name (p1ᴴ, p1ⱽ, p1ᴴ⁄ⱽ; the
+attribute is the *polarization*). The engine's `Sign` never changes;
+every display goes through `signs.mark/label/attr`, prose carries
+`⟦sign⟧`/`⟦plus⟧`/`⟦+p_2⟧` tokens that `signs.prose` expands, and the
+canvases read `data-signs` on the page root. The CLI and tests keep
+the book's (`--signs hv` switches the CLI); the site defaults to H/V
+with a switch on the section row (`apps/sign_toggle.py`), each
+notebook's `<prefix>_signs` cell being what its displays depend on. A
+model file may spell a sign `polarization: H` (or `V`) and a sweep's
+coordinate `polarization`. The four split values a gate applies to a switch-wire particle are its **components** — c2a, c2b, c3a, c3b in the book's order (cos²θ, i·sinθcosθ, sin²θ, −i·sinθcosθ); per-particle displays label them by particle, not "factor".
 
 ## Development Commands
 

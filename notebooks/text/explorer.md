@@ -14,6 +14,6 @@ The four-way split of one quantish Fredkin gate measurement at angle $\theta$ is
 - $c_2 = c_{2a}+c_{2b}$
 - $c_3 = c_{3a}+c_{3b}$.
 
-A minus-sign particle swaps the roles of $c_2$ and $c_3$.
+A ⟦minus-sign⟧ particle swaps the roles of $c_2$ and $c_3$.
 
 Individual components can be selected by clicking on either their vectors on the chart or their entry in the legend. Shift-click toggles a component's selected state. Drag the chart's bottom-right corner to resize it; double-click the chart to reset the zoom.

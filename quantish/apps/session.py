@@ -18,6 +18,7 @@ from urllib.parse import urlencode
 
 import yaml
 
+from quantish import signs
 from quantish import screen
 from quantish.apps.common import MODELS_TOP, merge_defaults
 from quantish.builder import config_to_yaml
@@ -172,7 +173,7 @@ class ExplorerSeed:
 
     def describe(self) -> str:
         """One line: where the seed came from and what it carries."""
-        where = (f'{self.particle} ({"+" if self.plus_sign else "−"}) entering '
+        where = (f'{signs.label(self.particle, 1 if self.plus_sign else -1)} entering '
                  f'{self.gate}' + (f' in {self.model}' if self.model else ''))
         return (f'{where}: θ = {self.theta_deg:g}°, |w| = {self.wmag:.3f}, '
                 f'φ(w) = {self.wphase_deg:.1f}°')

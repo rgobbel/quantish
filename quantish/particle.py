@@ -6,6 +6,7 @@ conditions parsed from the model YAML, and labels for diagrams.
 from collections import namedtuple
 
 from quantish.qnumber import Complex, probability, qify, zerop
+from quantish import signs
 from quantish.util import Sign
 
 # the separator of a two-sign weight spec: 'plus; minus'
@@ -32,6 +33,23 @@ def sign_components(spec, sign=Sign.plus, env: dict | None = None) -> dict:
                 for s, h in zip((Sign.plus, Sign.minus), halves)}
     return {Sign(Sign.plus if sign is None else sign): Complex(qify(spec, env))}
 
+def particle_sign(name: str, spec: dict, env: dict | None = None):
+    """A particle's declared sign from its model entry, or None: `sign`
+    (+1 / −1, an expression) or, the polarization spelling of the same
+    thing, `polarization` ('H' / 'V'). Both at once is an error."""
+    sign, pol = spec.get('sign'), spec.get('polarization')
+    if sign is not None and pol is not None:
+        raise ValueError(f"particle '{name}': declare sign or polarization, not both")
+    if pol is not None:
+        if str(pol).strip().upper() not in ('H', 'V'):
+            raise ValueError(f"particle '{name}': polarization must be H or V, not {pol!r}")
+        return Sign.plus if str(pol).strip().upper() == 'H' else Sign.minus
+    if sign is None:
+        return None
+    from quantish.qnumber import to_float
+    return Sign(int(to_float(qify(sign, env))))
+
+
 CompositeKey = namedtuple('CompositeKey', ['name', 'sign'])
 
 class PKey(CompositeKey):
@@ -39,7 +57,9 @@ class PKey(CompositeKey):
     def __repr__(self):
         # sign first ('+p1'), the convention of every particle display:
         # the sign is a coordinate, not a modifier of the name
-        return f'{self.sign}{self.name}'
+        if not signs.hv():
+            return f'{self.sign}{self.name}'   # str(Sign): '+', '-', '*'
+        return signs.label(self.name, self.sign)
 
 
 class Particle:
@@ -96,7 +116,9 @@ class Particle:
         return self.components.get(self.sign, Complex(0))
 
     def __repr__(self):
-        return f'{"±" if self.superposed else self.sign}{self.name}'
+        if not signs.hv():
+            return f'{"±" if self.superposed else self.sign}{self.name}'
+        return signs.label(self.name, 0 if self.superposed else self.sign)
 
     @property
     def pkey(self):

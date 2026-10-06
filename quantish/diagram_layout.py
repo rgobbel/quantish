@@ -14,6 +14,7 @@ import math
 import re
 from bisect import bisect_right
 
+from quantish import signs
 from quantish.display import entry_summary, pos_sign_lines, pos_value_str
 from quantish.tikz_diagram import (
     CONTROL_HALF_W,
@@ -486,7 +487,7 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
         sign = spec.topology['topo']['particle_signs'].get(pname, 1)
         _pline, _pruns = display_text(pname)
         # sign 0: a superposition of both signs
-        label = f'{"±" if sign == 0 else "+" if sign > 0 else "−"}{_pline}'
+        label = signs.label(_pline, sign)
         pw = 2 * PORT_PAD + CHAR_W * (len(label) + 1)
         ph = 2 * PORT_PAD + LINE_H
         cx, cy = fx(px), py * KY
@@ -500,8 +501,11 @@ def diagram_geometry(sim, has_run: bool = False, scale: float = 46.0,
             particle_marks.append((cx - pw / 2, cy - ph / 2, cx + pw / 2, cy + ph / 2))
         _ptx = {'x': cx, 'y': cy, 'lines': [label],
                     'size': 11, 'color': '#333333', 'weight': 'bold'}
-        if _pruns:
-            _ptx['runs'] = [[(('+' if sign > 0 else '−'), 0)] + _pruns]
+        # the sign as a run: before the name (the book's '+p1'), or a
+        # real superscript after it (p1ᴴ); a plain name's runs are the
+        # unicode-subscripted line itself
+        if _pruns or signs.hv():
+            _ptx['runs'] = [signs.label_runs(_pruns or [(_pline, 0)], sign)]
         texts.append(_ptx)
         # the particle's wire starts at the blob: clip its first point
         # to the stadium's right edge

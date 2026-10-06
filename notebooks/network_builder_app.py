@@ -67,6 +67,9 @@ async def initialization():
     from quantish.apps.qubits_ui import qubit_panel
     from quantish.apps.session import ModelSlot
     from quantish.apps.common import (
+        apply_signs,
+        sign_prose,
+        signs_toggle,
         build_stamp,
         in_div,
         init_engine,
@@ -98,6 +101,9 @@ async def initialization():
     nb_models_top = MODELS_TOP if MODELS_TOP.is_dir() else None
     nb_model_paths = model_files(MODELS_TOP)
     return (
+        apply_signs,
+        sign_prose,
+        signs_toggle,
         angle_labels,
         build_stamp,
         BuilderWidget,
@@ -139,7 +145,8 @@ async def initialization():
 
 
 @app.cell(hide_code=True)
-async def _(in_div, mo, prose):
+async def _(in_div, mo, prose, nb_signs, sign_prose):
+    nb_signs  # noqa: B018 — rerender in the chosen sign vocabulary
     _intro = mo.md(await prose('builder'))
     # a sub-section's body sits one list level under its '- ' heading
     # (.qb-doc-body in css/quantish_app.css, via in_div)
@@ -149,15 +156,15 @@ async def _(in_div, mo, prose):
     one of them. Basic circuit elements are above the divider, grouping elements are below.
     In most contexts, text can use [Markdown](https://docs.marimo.io/api/markdown/) formatting, including interpolated
     [LaTeX](https://www.latex-project.org/).
-    """), mo.accordion({'- Types of components': in_div('qb-doc-body', r"""
+    """), mo.accordion({'- Types of components': in_div('qb-doc-body', sign_prose(r"""
     - **gates** are quantish Fredkin gates, as described in *Good and Real*.
     - **particles** are the entities that travel through a quantish network.
-      Each starts with a sign ($+$ or $-$) and a complex-valued weight, and enters the network through one gate input.
+      Each starts with a ⟦sign⟧ (⟦+⟧ or ⟦−⟧) and a complex-valued weight, and enters the network through one gate input.
     - **phase plates** ($\varphi$) are gates that rotate every traversing weight in the complex plane without
       affecting amplitude, simulating an alteration to [optical path length](https://en.wikipedia.org/wiki/Optical_path_length). One example of a real-world phase plate device is an
       [electro-optic modulator](https://en.wikipedia.org/wiki/Electro-optic_modulator). 
     - **delay gates** are simple passthroughs, useful for manipulating diagram layout, but having no effect on execution.
-    """), '- Grouping': in_div('qb-doc-body', r"""
+    """)), '- Grouping': in_div('qb-doc-body', r"""
     - A **run stage** is a set of gates that fire together, one step
       of a run. By default execution proceeds serially in an order determined by network topology. Run stages can be
       used for cases in which the automatically-determined order is ambiguous.
@@ -168,7 +175,7 @@ async def _(in_div, mo, prose):
       **⬆ load into builder**. The selected model replaces the contents of canvas
     - **✕ clear** starts over with an empty canvas, with confirmation. **Note**: _Undo_ will restore the superseded canvas.
 
-    """), '- Creating and editing a network': in_div('qb-doc-body', r"""
+    """), '- Creating and editing a network': in_div('qb-doc-body', sign_prose(r"""
     - Drag from an **output port** on the right side of any gate or particle to a free
       **input port** on the left side of another element to wire them together.
     - Double-click in the middle of a Fredkin gate to set its measurement angle, or for a phase
@@ -178,9 +185,9 @@ async def _(in_div, mo, prose):
         - Arithmetic expressions such `pi/6`, `rad(30)`, `acos(4/5)`, or `pi/2 + pi/8` produce values in radians.
         - Numeric values with no other expressions included, or suffixed with a degree symbol (°) are interpreted as degrees.
         - Anything unparseable is flagged on the gate and detailed in the status line.
-    - Double-click anywhere on a particle to edit it: its name (sign
-      first, as `+p1` or `-p1`, with an optional display string after a
-      space) and its initial weight, which can be a number, a complex
+    - Double-click anywhere on a particle to edit it: its name (with its ⟦sign⟧,
+      as the dialog shows it: `+p1` or `-p1`, `p1ᴴ` or `p1ⱽ`, with an
+      optional display string after a space) and its initial weight, which can be a number, a complex
       literal such as `0.5+0.87j`, a magnitude and phase such as `0.7@30°`,
       an expression, or a variable name. A particle wired to **two** inputs
       starts in a superposition over both (the book's U2 branching); its
@@ -212,7 +219,7 @@ async def _(in_div, mo, prose):
       icon shows their run stage name (drawn as a teal box) and the
       group icon their diagram group name (a dashed box; an empty name
       clears either)
-    """), '- Optional fields': in_div('qb-doc-body', r"""
+    """)), '- Optional fields': in_div('qb-doc-body', r"""
     - The model's **title**, **calculation mode**, and **angle unit**
       are editable above the canvas. 
     - The model's **caption**, **variables**, and free-text **notes** can be edited
@@ -229,6 +236,33 @@ async def _(build_stamp, stamp_html):
     # which build is this? (the site build writes public/version.json
     # beside the page; a development copy says so instead)
     stamp_html(await build_stamp())
+
+
+@app.cell(hide_code=True)
+def _():
+    # the sign vocabulary the suite hands in ('hv' or 'pm'; 'follow' for
+    # a section it never re-embeds) — None on its own page, where the
+    # switch below decides
+    nb_signs_in = None
+    return (nb_signs_in,)
+
+
+@app.cell(hide_code=True)
+def _(nb_signs_in, signs_toggle):
+    # the switch between H / V (polarization, a superscript after the
+    # name) and the book's + / − — shown on this app's own page; the
+    # suite's section row has the one switch for every section
+    nb_signs_pick = signs_toggle()
+    nb_signs_pick if nb_signs_in is None else None
+    return (nb_signs_pick,)
+
+
+@app.cell(hide_code=True)
+def _(apply_signs, nb_signs_in, nb_signs_pick):
+    # the vocabulary in force: every cell that writes a sign depends on
+    # this name, so a switch rerenders it (and nothing reruns an engine)
+    nb_signs = apply_signs(nb_signs_in, nb_signs_pick)
+    return (nb_signs,)
 
 
 @app.cell(hide_code=True)
@@ -775,12 +809,14 @@ def _(NetworkGraph, NetworkGraphWidget, mo, nb_sim_built):
 
 
 @app.cell(hide_code=True)
-def _(final_points_html, mo, nb_sim_built):
+def _(final_points_html, mo, nb_sim_built, nb_signs):
+    nb_signs  # noqa: B018 — rerender in the chosen sign vocabulary
     mo.stop(nb_sim_built is None)
     mo.md(final_points_html(nb_sim_built))
 
 @app.cell(hide_code=True)
-async def _(build_network, mo, nb_builder_config, nb_sim_built, nb_switch_off, prose, qubit_panel):
+async def _(build_network, mo, nb_builder_config, nb_sim_built, nb_switch_off, prose, qubit_panel, nb_signs):
+    nb_signs  # noqa: B018 — rerender in the chosen sign vocabulary
     # the network as a qubit circuit (quantish.apps.qubits_ui), shown as
     # soon as the canvas translates to a runnable config — compiled from
     # the run when there is one (the panel then also checks its
@@ -793,7 +829,8 @@ async def _(build_network, mo, nb_builder_config, nb_sim_built, nb_switch_off, p
 
 
 @app.cell(hide_code=True)
-def _(nb_builder_config, config_to_yaml, mo, nb_sections):
+def _(nb_builder_config, config_to_yaml, mo, nb_sections, nb_signs):
+    nb_signs  # noqa: B018 — rerender in the chosen sign vocabulary
     mo.stop(nb_builder_config is None)
     _yaml = config_to_yaml(nb_builder_config, raw_sections=nb_sections)
     mo.accordion({'#### Model YAML': mo.md(f'```yaml\n{_yaml}```')})

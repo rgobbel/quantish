@@ -30,6 +30,17 @@
 .suite-nav a:hover { background: #f4f5fb; }
 .suite-nav a.active { background: #fff; border-color: #c8c8c8; border-bottom-color: #fff;
                       color: #2b3aa0 !important; font-weight: 600; }
+/* the sign-vocabulary switch at the row's right end
+   (quantish.apps.sign_toggle) */
+.suite-nav .signs-toggle { display: inline-flex; align-items: center; gap: 0.3em;
+                           margin-left: auto; align-self: center; padding: 0 0.4em 0.2em;
+                           font-size: 0.85em; color: #333; }
+.suite-nav .signs-toggle .signs-label { margin-right: 0.25em; }
+.suite-nav .signs-toggle button { font: inherit; padding: 0.15em 0.6em; line-height: 1.3;
+                                  border: 1px solid #c8c8c8; background: #fff; color: #333;
+                                  border-radius: 4px; cursor: pointer; }
+.suite-nav .signs-toggle button:hover { background: #f4f5fb; }
+.suite-nav .signs-toggle button.active { background: #2b3aa0; color: #fff; border-color: #2b3aa0; }
 
 /* A heading scrolled to (marimo's outline panel) lands below the
    fixed section row, not under it */

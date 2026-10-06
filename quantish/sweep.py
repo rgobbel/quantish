@@ -28,6 +28,7 @@ import logging
 from copy import deepcopy
 
 from quantish.qnumber import qify
+from quantish.signs import coordinate_key
 
 log = logging.getLogger('quantish')
 
@@ -72,7 +73,7 @@ def check_sweep(sim, raw: dict) -> dict:
         if grp.get('particle') not in sim.particles:
             raise ValueError(f"sweep groups by particle '{grp.get('particle')}'"
                              f", which the model does not declare")
-        grp.setdefault('coordinate', 'sign')
+        grp['coordinate'] = coordinate_key(grp.get('coordinate', 'sign'))
         if grp['coordinate'] not in COORDINATES:
             raise ValueError(f"sweep group_by coordinate must be one of "
                              f"{COORDINATES}, not '{grp['coordinate']}'")

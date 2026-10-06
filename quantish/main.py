@@ -16,6 +16,7 @@ from addict import Dict as Addict
 import quantish.qnumber as qn
 from quantish.mermaid_diagram import diagram, mmdc_cmd
 from quantish.network_graph import NetworkGraph
+from quantish import signs
 from quantish.qnumber import CalcMode
 from quantish.simulation import Simulation
 from quantish.util import QLogger, flat_list, show_points
@@ -98,6 +99,9 @@ def main():
     parser.add_argument('--sweep', action='store_true',
                         help="Run the model's declared sweep (its `sweep` section) and "
                              "log the table; with --csv-output also writes <name>_sweep.csv")
+    parser.add_argument('--signs', choices=('pm', 'hv'), default='pm',
+                        help="how displays name a particle's two states: "
+                             "the book's + and − (default), or H and V")
     parser.add_argument('--qubits', action='store_true',
                         help='Compile the model to a qubit circuit (quantish/qubit_circuit.py): log '
                              'the qubit map and a drawing, simulate it, and check its final '
@@ -138,6 +142,7 @@ def main():
         'symbolic' if config.get('symbolic') else 'float')
     symbolic = str(_mode).lower() == 'symbolic'
     CalcMode.default('Symbolic' if symbolic else 'Float')
+    signs.set_style(args.signs)
     if args.loglevel is not None:
         loglevel = args.loglevel.upper()
     elif 'loglevel' in config:

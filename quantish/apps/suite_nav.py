@@ -17,7 +17,9 @@ from __future__ import annotations
 import anywidget
 import traitlets
 
-_ESM = r"""
+from quantish.apps.sign_toggle import SIGNS_JS
+
+_ESM = SIGNS_JS + r"""
 function render({ model, el }) {
   const root = document.documentElement;
   const keyOf = (hash) => (hash || '').replace(/^#sec-/, '');
@@ -57,6 +59,9 @@ function render({ model, el }) {
     a.textContent = label;
     nav.appendChild(a);
   }
+  // the sign-vocabulary switch at the row's right end (its choice
+  // syncs as `signs`; quantish.apps.sign_toggle)
+  nav.appendChild(signsControl(model, 'signs'));
   el.appendChild(spacer);
   el.appendChild(nav);
   // (a ResizeObserver never fires in marimo's page, so the placement
@@ -128,7 +133,9 @@ export default { render };
 
 class SectionNav(anywidget.AnyWidget):
     """The section row. `sections`: [(key, label), …]; `current`: the
-    key shown (synced both ways)."""
+    key shown (synced both ways); `signs`: the sign vocabulary chosen
+    on the row's switch, 'hv' or 'pm' (synced both ways)."""
     _esm = _ESM
     sections = traitlets.List([]).tag(sync=True)
     current = traitlets.Unicode('home').tag(sync=True)
+    signs = traitlets.Unicode('hv').tag(sync=True)

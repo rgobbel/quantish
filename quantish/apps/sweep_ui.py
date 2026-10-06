@@ -16,6 +16,7 @@ from quantish.apps.common import remember_in, settable
 from quantish.builder_widget import LinePlotWidget
 from quantish.display import md_table, sym_or_float
 from quantish.sweep import check_sweep, run_sweep, sweep_spec, sweep_values
+from quantish.signs import coordinate_name, group_display
 
 __all__ = [
     'COORDINATES', 'PALETTE', 'UNSORTED', 'checked_spec', 'declared_sweep',
@@ -85,7 +86,9 @@ def sweep_controls(variables, particles, gates, decl=None, memory=None,
                    'arriving at'),
         'sort': pick('sort', [UNSORTED, *particles], grp.get('particle', UNSORTED),
                      'sort by'),
-        'coordinate': pick('coordinate', list(COORDINATES),
+        # the coordinate keys are the engine's; 'sign' reads as the
+        # current vocabulary says (attr)
+        'coordinate': pick('coordinate', {coordinate_name(c): c for c in COORDINATES},
                            grp.get('coordinate', 'sign'), 'coordinate'),
     })
     return mo.ui.dictionary(elements)
@@ -144,7 +147,7 @@ def sweep_series(res: dict, spec: dict, degrees: bool = True):
     xs = [math.degrees(qn.to_float(x)) if degrees else qn.to_float(x)
           for x in res['x']]
     grp = spec.get('group_by')
-    names = {lab: f"{lab}{grp['particle']}" if grp else lab
+    names = {lab: group_display(lab, grp['particle']) if grp else lab
              for lab in res['series']}
     series = [{'name': names[lab], 'x': xs,
                'y': [qn.to_float(v) for v in ys],

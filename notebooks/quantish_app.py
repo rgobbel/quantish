@@ -16,7 +16,8 @@ app = marimo.App(width="full", css_file="css/quantish_app.css")
 
 
 @app.cell(hide_code=True)
-async def _(mo, prose):
+async def _(mo, prose, qa_signs):
+    qa_signs  # noqa: B018 — rerender in the chosen sign vocabulary
     mo.md(await prose('figures'))
 
 
@@ -25,6 +26,33 @@ async def _(build_stamp, stamp_html):
     # which build is this? (the site build writes public/version.json
     # beside the page; a development copy says so instead)
     stamp_html(await build_stamp())
+
+
+@app.cell(hide_code=True)
+def _():
+    # the sign vocabulary the suite hands in ('hv' or 'pm'; 'follow' for
+    # a section it never re-embeds) — None on its own page, where the
+    # switch below decides
+    qa_signs_in = None
+    return (qa_signs_in,)
+
+
+@app.cell(hide_code=True)
+def _(qa_signs_in, signs_toggle):
+    # the switch between H / V (polarization, a superscript after the
+    # name) and the book's + / − — shown on this app's own page; the
+    # suite's section row has the one switch for every section
+    qa_signs_pick = signs_toggle()
+    qa_signs_pick if qa_signs_in is None else None
+    return (qa_signs_pick,)
+
+
+@app.cell(hide_code=True)
+def _(apply_signs, qa_signs_in, qa_signs_pick):
+    # the vocabulary in force: every cell that writes a sign depends on
+    # this name, so a switch rerenders it (and nothing reruns an engine)
+    qa_signs = apply_signs(qa_signs_in, qa_signs_pick)
+    return (qa_signs,)
 
 
 @app.cell(hide_code=True)
@@ -106,7 +134,9 @@ def _(
     qa_show_values,
     qa_sim,
     qa_sim_model,
+    qa_signs,
 ):
+    qa_signs  # noqa: B018 — rerender in the chosen sign vocabulary
     # The circuit diagram, always current for the model loaded above.
     # Before a run it shows wiring only, but laid out (via the shadow
     # run below) exactly as the results view; once ▶ Run has computed
@@ -193,7 +223,8 @@ def _(qa_last_collection_set, qa_last_models_get, qa_last_models_set, qa_model_i
 
 
 @app.cell(hide_code=True)
-def _(ExplorerSeed, WASM_MODE, explorer_url, mo, qa_diagram, qa_sim, qa_suite):
+def _(ExplorerSeed, WASM_MODE, explorer_url, mo, qa_diagram, qa_sim, qa_suite, qa_signs):
+    qa_signs  # noqa: B018 — rerender in the chosen sign vocabulary
     # a gate picked on the diagram after a run: its angle and the weight
     # arriving on its switch wires, handed to the Weight-split Explorer
     # (in the suite: its section, by a link the section row catches; on
@@ -207,7 +238,7 @@ def _(ExplorerSeed, WASM_MODE, explorer_url, mo, qa_diagram, qa_sim, qa_suite):
         if _seed is None:
             return None, mo.md(f'_{_picked}: nothing arrives on its switch wires to split_')
         _mine = (_seed.particle, 1 if _seed.plus_sign else -1)
-        _others = [f'{p} ({"+" if sg > 0 else "−"})' for p, sg in _seed.arrivals
+        _others = [signs.label(p, sg) for p, sg in _seed.arrivals
                    if (p, sg) != _mine]
         _more = f' — also arriving: {", ".join(_others)}' if _others else ''
         if qa_suite:
@@ -432,7 +463,8 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(detailed_results, mo, qa_sim):
+def _(detailed_results, mo, qa_sim, qa_signs):
+    qa_signs  # noqa: B018 — rerender in the chosen sign vocabulary
     mo.stop(qa_sim is None)  # nothing to show until ▶ Run
     # the detailed-results subsections (quantish.apps.results), each
     # in its own accordion under one outer one
@@ -734,7 +766,8 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(declared_sweep, mo, qa_sim_model, sweep_controls):
+def _(declared_sweep, mo, qa_sim_model, sweep_controls, qa_signs):
+    qa_signs  # noqa: B018 — rerender in the chosen sign vocabulary
     # The sweep is defined here, in the UI: which variable, over what
     # range, how many points, what to record, and how to sort — seeded
     # from the loaded model's own sweep section when it has one, so the
@@ -766,7 +799,9 @@ def _(
     sweep_run,
     sweep_table,
     qa_units_pick,
+    qa_signs,
 ):
+    qa_signs  # noqa: B018 — rerender in the chosen sign vocabulary
     def _():
         if qa_sweep_problem:
             return mo.md('<span style="color:#b00">**sweep declaration '
@@ -789,7 +824,8 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(editor_rows, mo, qa_sweep_button, qa_sweep_decl, qa_sweep_editor, qa_sweep_problem, qa_sweep_view):
+def _(editor_rows, mo, qa_sweep_button, qa_sweep_decl, qa_sweep_editor, qa_sweep_problem, qa_sweep_view, qa_signs):
+    qa_signs  # noqa: B018 — rerender in the chosen sign vocabulary
     def _():
         rows = editor_rows(qa_sweep_editor)
         if qa_sweep_decl is None:
@@ -799,8 +835,7 @@ def _(editor_rows, mo, qa_sweep_button, qa_sweep_decl, qa_sweep_editor, qa_sweep
         what = (f"the probability that **{obs['particle']}** ends at "
                 f"**{obs['at']}**")
         if grp:
-            coord = ('sign and position' if grp['coordinate'] == 'both'
-                     else grp['coordinate'])
+            coord = signs.coordinate_name(grp['coordinate'])
             what += f", split by **{grp['particle']}**'s final {coord}"
         return mo.vstack([
             *rows,
@@ -910,7 +945,10 @@ async def initialization():
     _()
 
     import quantish.qnumber as qn
+    from quantish import signs
     from quantish.apps.common import (
+        apply_signs,
+        signs_toggle,
         build_stamp,
         editor_ui,
         in_div,
@@ -974,6 +1012,9 @@ async def initialization():
     # key off this
     QA_EDITOR_UI = editor_ui(_wasm_editor) if WASM_MODE else editor_ui()
     return (
+        signs,
+        apply_signs,
+        signs_toggle,
         angle_entries,
         angle_sliders,
         build_sim,

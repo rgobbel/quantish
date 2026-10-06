@@ -18,14 +18,17 @@ import marimo as mo
 import yaml
 from addict import Dict as Addict
 
+from quantish import signs as _signs
+from quantish.apps.sign_toggle import SignsToggle
 from quantish.qnumber import CalcMode
 from quantish.screen import MODELS_ROOTS, model_label, model_title
 
 __all__ = [
-    'CONSTANTS', 'MODELS_TOP', 'REPO_DIR', 'WASM_MODE', 'build_stamp', 'collections',
+    'CONSTANTS', 'MODELS_TOP', 'REPO_DIR', 'WASM_MODE', 'apply_signs', 'build_stamp', 'collections',
     'editor_ui', 'in_div', 'init_engine', 'load_config', 'md_cell',
     'model_files', 'model_label', 'model_title', 'parse_vars',
-    'merge_defaults', 'prose', 'remember_in', 'settable', 'stamp_html', 'switch_off_boxes',
+    'merge_defaults', 'prose', 'remember_in', 'settable', 'sign_prose', 'signs_toggle',
+    'stamp_html', 'switch_off_boxes',
     'switched_off', 'vars_text',
 ]
 
@@ -62,9 +65,12 @@ def settable(names) -> list[str]:
     return [n for n in names if n not in CONSTANTS]
 
 
-def init_engine(mode: str = 'Float') -> None:
-    """Every app's engine setup: the calculation mode and quiet logs."""
+def init_engine(mode: str = 'Float', signs: str = 'hv') -> None:
+    """Every app's engine setup: the calculation mode, the sign
+    vocabulary (the site's default is H / V; the CLI and the tests keep
+    the book's + / −), and quiet logs."""
     CalcMode.default(mode)
+    _signs.set_style(signs)
     logging.basicConfig(level=logging.WARNING)
     logging.getLogger('quantish').setLevel(logging.WARNING)
 
@@ -229,14 +235,40 @@ async def prose(name: str) -> str:
     them to public/text/, fetched once into /wasm-data/text/ (the suite
     fetches all of them up front)."""
     if not WASM_MODE:
-        return (REPO_DIR / 'notebooks' / 'text' / f'{name}.md').read_text()
+        return sign_prose((REPO_DIR / 'notebooks' / 'text' / f'{name}.md').read_text())
     cached = Path('/wasm-data/text') / f'{name}.md'
     if not cached.exists():
         from pyodide.http import pyfetch  # type: ignore[import-not-found]
         cached.parent.mkdir(parents=True, exist_ok=True)
         cached.write_text(await (await pyfetch(
             f'{mo.notebook_location()}/public/text/{name}.md')).string())
-    return cached.read_text()
+    return sign_prose(cached.read_text())
+
+
+def sign_prose(text: str) -> str:
+    """Prose with its sign tokens (⟦sign⟧, ⟦plus⟧, ⟦+p_2⟧, …) written
+    out in the current vocabulary — quantish.signs.prose. A cell that
+    shows such prose depends on its notebook's `<prefix>_signs` so it
+    rerenders when the switch is thrown."""
+    return _signs.prose(text)
+
+
+def signs_toggle(value: str | None = None):
+    """The sign-vocabulary switch as a widget for an app on its own
+    page (the suite's row carries the one switch for every section);
+    `.value['signs']` is the choice."""
+    return mo.ui.anywidget(SignsToggle(signs=value or _signs.SignStyle.style))
+
+
+def apply_signs(handed_in, toggle) -> str:
+    """The vocabulary in force for a notebook's displays: the style the
+    suite handed in ('hv' / 'pm'), else its own switch's; 'follow' (the
+    builder in the suite, which is never re-embedded) leaves whatever
+    the other sections set. Sets quantish.signs and returns the style."""
+    if handed_in == 'follow':
+        return _signs.SignStyle.style
+    style = handed_in or (toggle.value or {}).get('signs') or 'hv'
+    return _signs.set_style(style)
 
 
 def stamp_html(stamp: str):

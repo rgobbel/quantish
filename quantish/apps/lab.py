@@ -21,6 +21,7 @@ from quantish.builder_widget import (
     ScreenPanelWidget,
 )
 from quantish.coherence import path_coherence, signed_visibility
+from quantish.signs import attr, coordinate_name, group_display
 from quantish.diagram_layout import diagram_geometry
 from quantish.display import html_table
 from quantish.network_graph import NetworkGraph
@@ -85,8 +86,8 @@ def make_screen_editor(model_id):
                              label='arriving at'),
         'sort': mo.ui.dropdown(options=['(unsorted)', *particles],
                                value=grp.get('particle', '(unsorted)'), label='sort by'),
-        'coordinate': mo.ui.dropdown(options=['sign', 'position', 'both'],
-                                     value=grp.get('coordinate', 'sign'),
+        'coordinate': mo.ui.dropdown(options={coordinate_name(c): c for c in ('sign', 'position', 'both')},
+                                     value=coordinate_name(grp.get('coordinate', 'sign')),
                                      label='coordinate'),
     })
 
@@ -207,7 +208,7 @@ def make_controls(state):
         mo.md('<span style="font-size: 0.85em; color: #000">the screen is a sweep: '
               'the chosen plate\'s phase runs across the pixels, a hit is the chosen '
               'particle arriving at the chosen gate, and the hits can be sorted by '
-              'another particle\'s final sign or position — changing it rebuilds '
+              f'another particle\'s final {attr()} or position — changing it rebuilds '
               'the slot</span>'),
     ], gap=0.2) if state['editor'] is not None else None)
     controls = mo.vstack([
@@ -350,7 +351,7 @@ def strips_html(spec, xs, screens):
                     f'fill="#000"/>{"".join(cells)}</g>')
     height = len(screens) * (STRIP_H + 4)
     legend = ('brightness is the exact intensity'
-              + (''.join(f', <span style="color: rgb{STRIP_RGB[gi % 3]}">■</span> {grp}{particle}'
+              + (''.join(f', <span style="color: rgb{STRIP_RGB[gi % 3]}">■</span> {group_display(grp, particle, html=True)}'
                          for gi, grp in enumerate(groups)) if particle else '')
               + '; each strip is the screen as it would be if the two paths were '
                 'merged right after that stage, the environment frozen there — '
@@ -371,7 +372,7 @@ def stages_html(spec, sim):
     particle = spec.group_by[0] if spec.group_by else ''
     groups = list(rows[-1].groups) if rows else []
     head = [('stage', None), ('acts on', None), ('whole screen', None)]
-    head += [(f'{g}{particle}' if len(g) == 1 else g, None) for g in groups]
+    head += [(group_display(g, particle, html=True), None) for g in groups]
 
     def cell(z):
         v = signed_visibility(z)
@@ -407,7 +408,7 @@ def readout_text(spec, curves, inert=(), absent=()):
         return '—' if hi + lo < 1e-12 else f'{(hi - lo) / (hi + lo):.4f}'
     parts = []
     for g, ys in curves.items():
-        label = 'visibility' if g == 'all' else f'visibility, {g}{spec.group_by[0]}'
+        label = 'visibility' if g == 'all' else f'visibility, {group_display(g, spec.group_by[0], html=True)}'
         parts.append(f'{label}: <b>{vis(ys)}</b>')
     if list(curves) != ['all']:
         n = len(next(iter(curves.values())))

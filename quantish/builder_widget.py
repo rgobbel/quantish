@@ -393,7 +393,7 @@ const subName = (s) => String(s)
 // in the plain parts — unicode glyphs are too small and lack most
 // letters. hSub is the h('text', ...) counterpart returning the
 // filled element.
-const fillRuns = (el, s) => {
+const fillRuns = (el, s, extra = []) => {
   const runs = [];
   const plain = (txt) => {
     let last = 0;
@@ -411,10 +411,22 @@ const fillRuns = (el, s) => {
       if (seg) plain(seg);
     } else runs.push(...mathRuns(seg));
   });
-  appendRuns(el, runs, parseFloat(el.getAttribute('font-size')) || 13);
+  appendRuns(el, runs.concat(extra), parseFloat(el.getAttribute('font-size')) || 13);
   return el;
 };
-const hSub = (attrs, s) => fillRuns(h('text', attrs), s);
+const hSub = (attrs, s, extra) => fillRuns(h('text', attrs), s, extra);
+
+// The vocabulary for a particle's sign — the book's '+p1' before the
+// name, or the polarization superscript p1ᴴ after it — follows
+// data-signs on the page root (the switch in quantish.apps.sign_toggle
+// sets it; H / V when unset). signedName gives hSub's text and its
+// extra runs; twoSignSpec the two-component weight's spelling.
+const signsHV = () => (document.documentElement.dataset.signs || 'hv') === 'hv';
+const signMark = (sign) => signsHV() ? (sign === 0 ? 'H/V' : sign < 0 ? 'V' : 'H')
+                                     : (sign === 0 ? '±' : sign < 0 ? '−' : '+');
+const signedName = (sign, text) => signsHV() ? [text, [[signMark(sign), 1]]]
+                                              : [signMark(sign) + text, []];
+const twoSignSpec = () => signsHV() ? 'H; V' : 'plus; minus';
 
 // phase plates and delay gates are compact one-wire gates; everything
 // geometric branches through these. A delay gate has no ports at all —
@@ -1147,8 +1159,7 @@ function render({ model, el }) {
         x: p.x + pw / 2, y: p.y + PR + 4, 'text-anchor': 'middle',
         'font-size': 14, 'font-weight': 600, fill: '#000',
         'data-name': name,
-      }, (bothSigns(g, name) ? '±' : p.sign < 0 ? '−' : '+')
-         + (p.display_string || name)));
+      }, ...signedName(bothSigns(g, name) ? 0 : p.sign, p.display_string || name)));
       if (String(p.weight ?? 1) !== '1') {
         // a non-unit weight is worth seeing on the canvas
         grp.appendChild(h('text', {
@@ -1538,7 +1549,7 @@ function render({ model, el }) {
       // a two-sign weight 'plus; minus': the probability of each sign
       // and their sum, which must reach 1 over the particle's starts
       const halves = s.split(';');
-      if (halves.length !== 2) return '= ? (plus; minus — two components)';
+      if (halves.length !== 2) return `= ? (${twoSignSpec()} — two components)`;
       const ws = halves.map((h) => h.trim() === '' ? { re: 0, im: 0 } : parseWeight(h.trim()));
       if (ws.some((w) => !w)) return '= ? (checked by the app)';
       const pr = ws.map((w) => Math.round((w.re * w.re + w.im * w.im) * 1000) / 1000);
@@ -1730,6 +1741,11 @@ function render({ model, el }) {
     else if (s.startsWith('-') || s.startsWith('−')) {
       sign = -1;
       s = s.slice(1).trim();
+    } else {
+      // the polarization spelling: the superscript after the name
+      // (p1ᴴ, p1ⱽ), before any display string
+      const m = s.match(/^(\S+?)([ᴴⱽ])(\s.*)?$/u);
+      if (m) { sign = m[2] === 'ᴴ' ? 1 : -1; s = m[1] + (m[3] || ''); }
     }
     const [nn, disp] = splitDisplay(s);
     if (!nn || !checkName(copy, nn, name)) return null;
@@ -1817,13 +1833,18 @@ function render({ model, el }) {
         };
         nameInput = document.createElement('input');
         nameInput.type = 'text';
-        nameInput.value = (p.sign < 0 ? '-' : '+') + pname
+        nameInput.value = (signsHV() ? pname + (p.sign < 0 ? 'ⱽ' : 'ᴴ')
+                                     : (p.sign < 0 ? '-' : '+') + pname)
           + (p.display_string ? ' ' + p.display_string : '');
-        nameInput.title = 'sign first (+p1 or -p1); a display string '
-          + 'may follow after a space (+p1 $p_1$)';
+        nameInput.title = signsHV()
+          ? 'polarization last (p1ᴴ or p1ⱽ; +p1 and -p1 read too); a '
+            + 'display string may follow after a space (p1ᴴ $p_1$)'
+          : 'sign first (+p1 or -p1); a display string '
+            + 'may follow after a space (+p1 $p_1$)';
         input.title = 'a number, a complex literal (0.5+0.87j), a '
           + 'magnitude and phase (0.7@30°), an expression, or a '
-          + 'variable name; or both signs at once as plus; minus '
+          + 'variable name; or both ' + (signsHV() ? 'polarizations' : 'signs')
+          + ' at once as ' + twoSignSpec() + ' '
           + '(3/4; sqrt(3)*i/4 — either half may be empty)';
         grid.append(cell('name'), nameInput, cell('weight'), input);
         const arms = copy.links.filter((l) => l[0] === pname).map((l) => l[1]);
@@ -1857,9 +1878,10 @@ function render({ model, el }) {
             const inp = document.createElement('input');
             inp.type = 'text';
             inp.value = `${(armW || {})[d] ?? ''}`;
-            inp.placeholder = 'plus; minus';
-            inp.title = `the weight arriving at ${d}, by sign: plus; `
-              + 'minus (either half may be empty). The squared '
+            inp.placeholder = twoSignSpec();
+            inp.title = `the weight arriving at ${d}, by `
+              + `${signsHV() ? 'polarization' : 'sign'}: ${twoSignSpec()} `
+              + '(either half may be empty). The squared '
               + 'magnitudes over both destinations must sum to 1';
             return [d, inp];
           });
@@ -2187,8 +2209,14 @@ function render({ model, el }) {
   model.on('change:graph', redraw);
   model.on('change:angle_labels', redraw);
   model.on('change:off', redraw);
+  // the sign vocabulary (data-signs on the page root, the switch in
+  // quantish.apps.sign_toggle) relabels the particles in place
+  const _signsObs = new MutationObserver(redraw);
+  _signsObs.observe(document.documentElement,
+                    { attributes: true, attributeFilter: ['data-signs'] });
   redraw();
   return () => {
+    _signsObs.disconnect();
     window.removeEventListener('pointerdown', _grabH);
     window.removeEventListener('pointerup', _dropH);
     document.removeEventListener('pointerup', _palUp);

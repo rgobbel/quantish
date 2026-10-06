@@ -14,7 +14,7 @@ from quantish.config_space import (
     Position,
 )
 from quantish.gate import DelayGate, FredkinGate, PhasePlate
-from quantish.particle import Particle, sign_components
+from quantish.particle import particle_sign, Particle, sign_components
 from quantish.qnumber import qify
 from quantish.util import (
     BRANCH_MARK,
@@ -419,9 +419,7 @@ class Simulation:
                     f"particle '{pname}': display_string moved to the "
                     f"top-level display_strings section "
                     f"({{{pname}: ...}})")
-            sign = pval.get('sign')
-            if sign is not None:
-                sign = Sign(int(qn.to_float(qify(sign, self.qvars))))
+            sign = particle_sign(pname, pval, self.qvars)
             try:
                 comps = sign_components(pval.get('weight', 1), sign, self.qvars)
             except ValueError as exc:

@@ -73,6 +73,9 @@ async def initialization():
         sys.path.insert(0, str(_repo))
 
     from quantish.apps.common import (
+        apply_signs,
+        sign_prose,
+        signs_toggle,
         build_stamp,
         editor_ui,
         init_engine,
@@ -107,6 +110,9 @@ async def initialization():
     init_engine()
     DS_EDITOR_UI = editor_ui(_wasm_editor) if WASM_MODE else editor_ui()
     return (
+        apply_signs,
+        sign_prose,
+        signs_toggle,
         build_stamp,
         DEFAULT_THETA_S,
         diagram_geom,
@@ -133,7 +139,8 @@ async def initialization():
 
 
 @app.cell(hide_code=True)
-async def _(mo, prose):
+async def _(mo, prose, ds_signs):
+    ds_signs  # noqa: B018 — rerender in the chosen sign vocabulary
     mo.md(await prose('double-slit'))
 
 
@@ -142,6 +149,33 @@ async def _(build_stamp, stamp_html):
     # which build is this? (the site build writes public/version.json
     # beside the page; a development copy says so instead)
     stamp_html(await build_stamp())
+
+
+@app.cell(hide_code=True)
+def _():
+    # the sign vocabulary the suite hands in ('hv' or 'pm'; 'follow' for
+    # a section it never re-embeds) — None on its own page, where the
+    # switch below decides
+    ds_signs_in = None
+    return (ds_signs_in,)
+
+
+@app.cell(hide_code=True)
+def _(ds_signs_in, signs_toggle):
+    # the switch between H / V (polarization, a superscript after the
+    # name) and the book's + / − — shown on this app's own page; the
+    # suite's section row has the one switch for every section
+    ds_signs_pick = signs_toggle()
+    ds_signs_pick if ds_signs_in is None else None
+    return (ds_signs_pick,)
+
+
+@app.cell(hide_code=True)
+def _(apply_signs, ds_signs_in, ds_signs_pick):
+    # the vocabulary in force: every cell that writes a sign depends on
+    # this name, so a switch rerenders it (and nothing reruns an engine)
+    ds_signs = apply_signs(ds_signs_in, ds_signs_pick)
+    return (ds_signs,)
 
 
 @app.cell
@@ -156,11 +190,12 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(DEFAULT_THETA_S, math, mo):
+def _(DEFAULT_THETA_S, math, mo, ds_signs, sign_prose):
     """The comparison table's readability styles (black text, larger
     headers) live in css/double_slit_app.css, loaded via the App's css_file:
     a <style> tag emitted from a cell gets sanitized away."""
-    _step_by_step = mo.md(r"""
+    ds_signs  # noqa: B018 — rerender in the chosen sign vocabulary
+    _step_by_step = mo.md(sign_prose(r"""
     Two conventions are used throughout:
     - gate $g_{split}$'s **upper** switch output
     leads to the **left** slit ($S_1$) and its **lower** switch output to
@@ -182,7 +217,7 @@ def _(DEFAULT_THETA_S, math, mo):
     | passing through both slits at once                               | Fredkin gate $g_{split}$ splits $p_1$'s world into superposed configuration-space points, one per slit, each carrying part of the weight |
     | the two slits themselves                                         | delay gates $S_1$ and $S_2$ (passthroughs) |
     | different path lengths from the two slits to screen position $x$ | the phase plate $\varphi$ rotates the passing amplitude by its *angle* parameter and changes nothing else                      |
-    | the screen pixel at $x$                                          | the remerge gate $g_{merge}$ (matched to the split) followed by the sign sorter $g_{sort}$. A particle reaching the detector box $S$ is a hit at this pixel |
+    | the screen pixel at $x$                                          | the remerge gate $g_{merge}$ (matched to the split) followed by the ⟦sign⟧ sorter $g_{sort}$. A particle reaching the detector box $S$ is a hit at this pixel |
     | blocking slit $n$                                                | the block $B_n$ standing in that slit's place. The wire is diverted into it and those worlds never reach the screen |
     | a which-way detector at one slit                                 | recorder particle $p_2$ enters gate $g_{obs}$'s upper switch input, and the wire to the right slit passes through $g_{obs}$'s `control` input on its way to $S_2$. In the worlds where $p_1$ heads for the right slit, the occupied control makes $g_{obs}$ swap its switch wires and $p_2$ exits on the lower wire, otherwise on the upper wire. $p_2$'s exit records which slit $p_1$ used, without touching $p_1$ |
 
@@ -222,19 +257,19 @@ def _(DEFAULT_THETA_S, math, mo):
         the split (figure 4.7's lesson) and everything returns on the
         upper wire. At other phases the recombination is only partial —
         but the leftover does *not* exit on the lower wire, as one
-        might expect. It stays on the upper wire with its **sign**
+        might expect. It stays on the upper wire with its **⟦sign⟧**
         flipped, which is why a sorter has to come next.
 
     - ##### The **sorter** $g_{sort}$
 
         At the matched remerge, the relative phase 
         doesn't steer $p_1$ between $g_{merge}$'s output wires. Rather, it moves weight
-        between the two sign components of the upper wire, and a position
-        detector placed right there would see nothing. But a minus-sign
+        between the two ⟦sign⟧ components of the upper wire, and a position
+        detector placed right there would see nothing. But a ⟦minus-sign⟧
         particle entering a switch wire exits on the opposite wire, so the
-        angle-0 gate $g_{sort}$ turns the sign difference back into a position
-        difference: plus-sign arrivals exit toward the detector $S$,
-        minus-sign toward $D$. A plain position detector at $S$ then reads
+        angle-0 gate $g_{sort}$ turns the ⟦sign⟧ difference back into a position
+        difference: ⟦plus-sign⟧ arrivals exit toward the detector $S$,
+        ⟦minus-sign⟧ toward $D$. A plain position detector at $S$ then reads
         $P = \tfrac{1}{2}(1 + \cos\varphi)$: the fringes.
 
     - ##### the **recorder** $g_{obs}$
@@ -243,13 +278,13 @@ def _(DEFAULT_THETA_S, math, mo):
         If $p_1$ travels through the right slit, $p_2$ exits on the lower wire, otherwise on the upper wire, so $p_2$'s exit position records which slit $p_1$ went through without affecting $p_1$.
 
 
-    """)
+    """))
 
     _deg = math.degrees(DEFAULT_THETA_S)
     _curves = mo.md(rf"""
     A **condition** consists of a complete setup for one version of
     the experiment. Every condition contains the source particle $p_1$,
-    the split gate $g_{{split}}$, the remerge gate $g_{{merge}}$, and the sign sorter
+    the split gate $g_{{split}}$, the remerge gate $g_{{merge}}$, and the ⟦sign⟧ sorter
     $g_{{sort}}$; conditions differ in what stands at each slit ($S_n$ where it
     is open, the block $B_n$ where it is blocked) and, in the recorder
     condition only, in gate $g_{{obs}}$, which couples the which-way particle
@@ -576,10 +611,11 @@ def _(ds_diagrams, mo, ds_panels, ds_tunable_controls):
 
 
 @app.cell(hide_code=True)
-def _(ds_diagrams, ds_eraser_controls, mo, ds_panels):
+def _(ds_diagrams, ds_eraser_controls, mo, ds_panels, ds_signs, sign_prose):
+    ds_signs  # noqa: B018 — rerender in the chosen sign vocabulary
     # The quantum eraser in its own section: the explanation, its one
     # control, and its row (hits colored by the eraser's outcome).
-    _text = mo.md(r"""
+    _text = mo.md(sign_prose(r"""
     A sixth condition: the recorder circuit with one more gate on the
     recorder particle's path. After $g_{obs}$ has swapped $p_2$ exactly
     when $p_1$ took the right slit, both of $p_2$'s possible wires feed
@@ -592,26 +628,26 @@ def _(ds_diagrams, ds_eraser_controls, mo, ds_panels):
     At $\theta_{erase} = 45°$ each of $p_2$'s incoming wires splits
     evenly over both outgoing wires, so which detector $p_2$ reaches
     no longer tells which slit $p_1$ used, and neither does $p_2$'s
-    sign taken alone. The record is not destroyed — a reversible gate
+    ⟦sign⟧ taken alone. The record is not destroyed — a reversible gate
     keeps $p_2$'s two branch states orthogonal — but it is spread over
-    $p_2$'s exit wire and sign jointly, where no single readout can
-    recover it. Yet sorted by $p_2$'s *sign* the screen shows fringes:
-    the hits with $p_2$ at plus sign follow $\tfrac{1}{2}\cos^2\tfrac{\varphi}{2}$
-    and those at minus sign $\tfrac{1}{2}\sin^2\tfrac{\varphi}{2}$,
+    $p_2$'s exit wire and ⟦sign⟧ jointly, where no single readout can
+    recover it. Yet sorted by $p_2$'s *⟦sign⟧* the screen shows fringes:
+    the hits with $p_2$ at ⟦plus⟧ ⟦sign⟧ follow $\tfrac{1}{2}\cos^2\tfrac{\varphi}{2}$
+    and those at ⟦minus⟧ ⟦sign⟧ $\tfrac{1}{2}\sin^2\tfrac{\varphi}{2}$,
     whichever detector $p_2$ reached. The two patterns are
     complementary, and their sum is the recorder's flat line: the
     screen taken as a whole is as fringeless as in the recorder
     condition, which is why the erasure can be "chosen" after $p_1$ has
     hit the screen without changing anything there.
 
-    On the film below, each hit is colored by $p_2$'s sign (orange for
-    plus, blue for minus; the colors are additive, so a pixel both
-    signs hit turns white): the brightness is the flat total, the
+    On the film below, each hit is colored by $p_2$'s ⟦sign⟧ (orange for
+    ⟦plus⟧, blue for ⟦minus⟧; the colors are additive, so a pixel both
+    ⟦signs⟧ hit turns white): the brightness is the flat total, the
     colors are the two fringe patterns. At $\theta_{erase} = 0$ the
     gate passes $p_2$ straight through and the condition is the plain
-    recorder, every hit plus; between $0$ and $45°$ the minus-sign
-    fringes keep full contrast while the plus-sign ones gain it.
-    """)
+    recorder, every hit ⟦plus⟧; between $0$ and $45°$ the ⟦minus-sign⟧
+    fringes keep full contrast while the ⟦plus-sign⟧ ones gain it.
+    """))
     _text = mo.Html('<div class="tight-prose">' + _text.text + '</div>')
     mo.accordion({'### Quantum eraser\n\n<span style="font-size:0.85em">'
                   'the which-way record mixed away after the fact: '
@@ -787,7 +823,9 @@ def _(
     ds_n_points,
     ds_theta_erase_sl,
     ds_via,
+    ds_signs,
 ):
+    ds_signs  # noqa: B018 — rerender in the chosen sign vocabulary
     # the eraser's curve comes split by p2's sign (parts), its total
     # in curve_eraser
     ds_current['theta_erase'] = math.radians(ds_theta_erase_sl.value)
@@ -797,13 +835,14 @@ def _(
 
 
 @app.cell(hide_code=True)
-def _(DiagramWidget, MODES, diagram_geom, mo):
+def _(DiagramWidget, MODES, diagram_geom, mo, ds_signs):
     """One circuit diagram per condition, rendered from the Simulation
     objects that yield the curves (Sn = slit n, Bn = a block in its
     place). The widgets are created once, here, at the models' own
     angles; the per-group cells below push new geometry into them when
     their sliders move (the widget redraws in place, keeping its view),
     so nothing else on the page re-renders."""
+    ds_signs  # noqa: B018 — rerender in the chosen sign vocabulary
     ds_diagram_widgets = {mode: DiagramWidget(geometry=diagram_geom(mode, {}, {}))
                        for mode in MODES}
     ds_diagrams = {mode: mo.ui.anywidget(w) for mode, w in ds_diagram_widgets.items()}

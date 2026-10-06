@@ -6,6 +6,7 @@ ScreenPanelWidget at the right grain.
 from __future__ import annotations
 
 from quantish.double_slit import screen_curve, screen_curves_by_sign
+from quantish.signs import group_display, label
 
 __all__ = ['double_slit_curves', 'eraser_curves', 'grouped_curves', 'main_curves',
            'push_curves', 'tunable_curve']
@@ -37,8 +38,7 @@ def grouped_curves(curves: dict, particle: str = ''):
     total = [sum(col) for col in zip(*curves.values())]
     if list(curves) == ['all']:
         return total, None
-    return total, [(f'{g}{particle}' if len(g) == 1 else g, ys)
-                   for g, ys in curves.items()]
+    return total, [(group_display(g, particle), ys) for g, ys in curves.items()]
 
 
 def main_curves(n, fringes, main_angles: dict, via: str = 'pixels',
@@ -61,7 +61,7 @@ def eraser_curves(n, fringes, main_angles: dict, theta_erase, via: str = 'pixels
     the parts by p₂'s sign — what the film colors its hits by)."""
     xs, (plus, minus) = screen_curves_by_sign(
         n, fringes, 'eraser', via=via, theta_erase=theta_erase, **main_angles)
-    return xs, [a + b for a, b in zip(plus, minus)], [('+p₂', plus), ('−p₂', minus)]
+    return xs, [a + b for a, b in zip(plus, minus)], [(label('p₂', 1), plus), (label('p₂', -1), minus)]
 
 
 def double_slit_curves(settings: dict, main_modes):

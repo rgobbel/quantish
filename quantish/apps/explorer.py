@@ -13,6 +13,7 @@ import math
 import marimo as mo
 
 import quantish.qnumber as qn
+from quantish import signs
 from quantish.builder_widget import WeightSplitWidget
 from quantish.display import latex_weight, phase_deg
 from quantish.gate import FredkinGate
@@ -68,8 +69,8 @@ def controls_row(controls: mo.ui.dictionary) -> list:
             return element
         # (an inline group: a nested hstack would take the row's spare width)
         return mo.Html('<span style="display: inline-flex; align-items: center; '
-                       'gap: 0.4em"><span style="margin-right: 0.5em">sign</span>'
-                       f'−{element}+</span>')
+                       f'gap: 0.4em"><span style="margin-right: 0.5em">{signs.attr()}</span>'
+                       f'{signs.mark(-1)}{element}{signs.mark(1)}</span>')
     return [cell(k, e) for k, e in controls.elements.items()]
 
 
@@ -94,7 +95,7 @@ def explorer_view(values: dict, selected=()) -> tuple:
         'c3b': '&c_{3b}',
     }
     shown = [c for c in COMPONENTS if c in values['components']]
-    sign_str = '+' if values['sign'] else '−'
+    sign_str = signs.mark(1 if values['sign'] else -1)
     lines = [rf"&{component_strings[name]} &= {latex_weight(data[name], prec=2)}"
              rf" &\quad \texttt{{Pr}} &= {abs(data[name])**2:.2f}"
              rf" & \phi &= {phase_deg(data[name]):.1f}\degree\\"
@@ -105,7 +106,7 @@ def explorer_view(values: dict, selected=()) -> tuple:
     native = mo.ui.anywidget(WeightSplitWidget(
         data={'vectors': {c: [data[c].real, data[c].imag] for c in shown},
               'order': shown,
-              'title': f"θ = {values['theta']}º, sign = {sign_str}",
+              'title': f"θ = {values['theta']}º, {signs.attr()} = {sign_str}",
               'size': CHART_SIZE},
         selected=[c for c in selected if c in shown]))
     return native, mo.hstack([native, mo.md(latex)], align='center', justify='start',

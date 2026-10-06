@@ -80,7 +80,7 @@ async def initialization():
     from notebooks.network_builder_app import app as nb_app
     from notebooks.quantish_app import app as qa_app
     from notebooks.weight_split_app import app as ws_app
-    from quantish.apps.common import WASM_MODE, build_stamp, prose, stamp_html
+    from quantish.apps.common import WASM_MODE, apply_signs, build_stamp, prose, stamp_html
     from quantish.apps.suite_nav import SectionNav
 
     # Under WASM an embedded app's runtime serves widget code as
@@ -105,6 +105,7 @@ async def initialization():
         return mo.Html(f'<div class="suite-sec suite-sec-{name}">{mo.as_html(content).text}</div>')
 
     return (
+        apply_signs,
         build_stamp,
         dl_app,
         ds_app,
@@ -137,35 +138,54 @@ def _(mo):
     # sent, and the gate the quantish app last picked for the explorer
     suite_slot_get, suite_slot_set = mo.state(None)
     suite_seed_get, suite_seed_set = mo.state(None)
-    return suite_seed_get, suite_seed_set, suite_slot_get, suite_slot_set
+    # the sign vocabulary chosen on the section row ('hv' / 'pm')
+    suite_signs_get, suite_signs_set = mo.state('hv')
+    return (suite_seed_get, suite_seed_set, suite_signs_get, suite_signs_set,
+            suite_slot_get, suite_slot_set)
+
+
+@app.cell(hide_code=True)
+def _(apply_signs, suite_nav, suite_signs_get, suite_signs_set):
+    # the row's switch, relayed as state so that only a change of it —
+    # not a section switch, which also changes the row's value — reruns
+    # the sections. The builder is not re-embedded (that would lose the
+    # canvas): its canvas relabels itself in the browser, and its
+    # tables follow at their next rerun
+    _signs = (suite_nav.value or {}).get('signs') or 'hv'
+    if _signs != suite_signs_get():
+        apply_signs(_signs, None)
+        suite_signs_set(_signs)
 
 
 # the sections, in the order of the section row (marimo's outline
 # panel lists their headings in cell order)
 @app.cell(hide_code=True)
-async def _(build_stamp, mo, prose, section, stamp_html):
+async def _(build_stamp, mo, prose, section, stamp_html, suite_signs_get):
+    suite_signs_get()  # the prose follows the sign vocabulary
     section('home', mo.vstack([mo.md(await prose('home')), stamp_html(await build_stamp())]))
 
 
 @app.cell(hide_code=True)
-async def _(section, suite_seed_get, ws_app):
+async def _(section, suite_seed_get, suite_signs_get, ws_app):
     # the explorer, opening on the picked gate
-    ws = await ws_app.embed(defs={'ws_seed_in': suite_seed_get()})
+    ws = await ws_app.embed(defs={'ws_seed_in': suite_seed_get(),
+                                  'ws_signs_in': suite_signs_get()})
     section('explorer', ws.output)
 
 
 @app.cell(hide_code=True)
-async def _(ds_app, section):
-    ds = await ds_app.embed()
+async def _(ds_app, section, suite_signs_get):
+    ds = await ds_app.embed(defs={'ds_signs_in': suite_signs_get()})
     section('double-slit', ds.output)
 
 
 
 @app.cell(hide_code=True)
-async def _(embedded_def, qa_app, section, suite_seed_get, suite_seed_set, suite_slot_get):
+async def _(embedded_def, qa_app, section, suite_seed_get, suite_seed_set, suite_signs_get, suite_slot_get):
     # the quantish app, opening on the sent model; a gate it picks
     # goes out through the seed state
-    qa = await qa_app.embed(defs={'qa_suite': True, 'qa_model_in': suite_slot_get()})
+    qa = await qa_app.embed(defs={'qa_suite': True, 'qa_model_in': suite_slot_get(),
+                                  'qa_signs_in': suite_signs_get()})
     _seed = embedded_def(qa, 'qa_seed')
     if _seed is not None and _seed != suite_seed_get():
         suite_seed_set(_seed)
@@ -175,7 +195,7 @@ async def _(embedded_def, qa_app, section, suite_seed_get, suite_seed_set, suite
 @app.cell(hide_code=True)
 async def _(embedded_def, nb_app, section, suite_slot_get, suite_slot_set):
     # the builder; a model it sends goes out through the slot state
-    nb = await nb_app.embed(defs={'nb_suite': True})
+    nb = await nb_app.embed(defs={'nb_suite': True, 'nb_signs_in': 'follow'})
     _sent = embedded_def(nb, 'nb_sent')
     if _sent is not None and _sent != suite_slot_get():
         suite_slot_set(_sent)
@@ -183,9 +203,10 @@ async def _(embedded_def, nb_app, section, suite_slot_get, suite_slot_set):
 
 
 @app.cell(hide_code=True)
-async def _(dl_app, section, suite_slot_get):
+async def _(dl_app, section, suite_signs_get, suite_slot_get):
     # the lab, opening slot A on the sent model
-    dl = await dl_app.embed(defs={'dl_model_in': suite_slot_get()})
+    dl = await dl_app.embed(defs={'dl_model_in': suite_slot_get(),
+                                  'dl_signs_in': suite_signs_get()})
     section('lab', dl.output)
 
 if __name__ == "__main__":

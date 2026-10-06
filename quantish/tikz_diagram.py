@@ -32,6 +32,7 @@ from pathlib import Path
 
 from PIL import Image
 
+from quantish import signs
 from quantish.util import SEP, angle_label, base_name
 
 # --------------------------------------------------------------------------
@@ -1528,11 +1529,10 @@ def emit_tex(circuit: Circuit, L: Layout, routes: list[Route],
     # Particles.
     for pname, (cx, cy) in L.particle_xy.items():
         sign_int = circuit.topology['topo']['particle_signs'][pname]
-        sign_char = r'\pm ' if sign_int == 0 else '+' if sign_int > 0 else '-'
         stem, sub = split_name(pname)
         if len(stem) > 2:
             stem = stem[0]   # a long name would burst the particle circle
-        label = math_label(stem + sub, prefix=sign_char)
+        label = math_label(stem + sub, sign=sign_int)
         out.append(rf"\node[particle] ({pname}) at ({cx:.2f},{cy:.2f}) {{{label}}};")
 
     # Wires.
@@ -1574,13 +1574,16 @@ def wire_label_tex(label: str) -> str:
         return rf"${m.group(1)}_{{{m.group(2)}}}$"
     return rf"${tex_math_clean(label)}$"
 
-def math_label(name: str, prefix: str = '') -> str:
+def math_label(name: str, prefix: str = '', sign=None) -> str:
     """A name as a math-mode label with trailing digits subscripted:
     'g1' → $g_1$, 'S2' → $S_2$, 'B' → $B$ — the one convention for gates,
-    delay boxes, and particles alike."""
+    delay boxes, and particles alike. A particle's `sign` (0 for both)
+    is written as the vocabulary says: '+p_1' or 'p_1^{H}'."""
     stem, sub = split_name(name)
     stem = stem.replace('_', r'\_')
     body = rf"{stem}_{{{sub}}}" if sub else stem
+    if sign is not None:
+        body = signs.label_tex(body, sign)
     return rf"${prefix}{body}$"
 
 

@@ -8,7 +8,7 @@ your own — and its angles become sliders, its own notes explain it,
 and its circuit diagram follows the sliders. A model that declares a
 screen (a `sweep` on a phase plate: which phase sweeps across the
 pixels, which particle at which detector makes a hit, and, where a
-recorder is read out, which particle's sign sorts the hits) also
+recorder is read out, which particle's ⟦sign⟧ sorts the hits) also
 gets a fired-particle screen with its exact intensity curve — and any model can be given one, or a different one, from the slot's controls: choose the phase plate to sweep, the particle and gate that make a hit, and the sort — and the *virtual screens*: one film strip per stage showing what the screen would be if the two paths were merged right there — whole and per sorted subset — so a which-way record is seen being written, and erased, as the fringes die and return. A table gives the same progression as fringe visibilities, and every slot carries the weight-evolution graphic of its particles across the stages.
 
 The library holds, by collection:

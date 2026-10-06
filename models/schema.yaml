@@ -78,6 +78,7 @@ properties:
       additionalProperties: false
       properties:
         sign: {type: [integer, string]}
+        polarization: {enum: [H, V]}   # the same thing, spelled H (plus) / V (minus)
         weight: {$ref: '#/$defs/spec'}
   gates:
     type: object
@@ -159,7 +160,7 @@ properties:
         required: [particle]
         properties:
           particle: {type: string}
-          coordinate: {enum: [sign, position, both]}   # default sign
+          coordinate: {enum: [sign, polarization, position, both]}   # default sign (polarization spells the same)
 $defs:
   spec: {type: [string, number]}
   groups:

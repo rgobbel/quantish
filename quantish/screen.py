@@ -32,6 +32,7 @@ from pathlib import Path
 import yaml
 from addict import Dict as Addict
 
+from quantish.signs import coordinate_key
 from quantish.sweep import group_label
 
 # the model library: the frozen copy under WASM, else the repo's
@@ -232,7 +233,7 @@ class ScreenSpec:
                    phase_var=var if screened else None,
                    plate=carriers[0] if screened else None,
                    observe=(observe['particle'], observe['at']) if screened else None,
-                   group_by=((grp['particle'], grp.get('coordinate', 'sign'))
+                   group_by=((grp['particle'], coordinate_key(grp.get('coordinate', 'sign')))
                              if screened and grp else None),
                    variables=variables,
                    variable_notes={k: str(v) for k, v in (cfg.get('variable_notes') or {}).items()},

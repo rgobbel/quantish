@@ -45,7 +45,14 @@ async def initialization():
     if str(_repo) not in sys.path:
         sys.path.insert(0, str(_repo))
 
-    from quantish.apps.common import build_stamp, init_engine, prose, stamp_html
+    from quantish.apps.common import (
+        apply_signs,
+        build_stamp,
+        init_engine,
+        prose,
+        signs_toggle,
+        stamp_html,
+    )
     from quantish.apps.explorer import (
         chart_selection,
         controls_row,
@@ -56,6 +63,8 @@ async def initialization():
 
     init_engine()
     return (
+        apply_signs,
+        signs_toggle,
         ExplorerSeed,
         build_stamp,
         chart_selection,
@@ -69,7 +78,8 @@ async def initialization():
 
 
 @app.cell(hide_code=True)
-async def _(mo, prose):
+async def _(mo, prose, ws_signs):
+    ws_signs  # noqa: B018 — rerender in the chosen sign vocabulary
     mo.md(await prose('explorer'))
     return
 
@@ -79,7 +89,33 @@ async def _(build_stamp, stamp_html):
     # which build is this? (the site build writes public/version.json
     # beside the page; a development copy says so instead)
     stamp_html(await build_stamp())
-    return
+
+
+@app.cell(hide_code=True)
+def _():
+    # the sign vocabulary the suite hands in ('hv' or 'pm'; 'follow' for
+    # a section it never re-embeds) — None on its own page, where the
+    # switch below decides
+    ws_signs_in = None
+    return (ws_signs_in,)
+
+
+@app.cell(hide_code=True)
+def _(ws_signs_in, signs_toggle):
+    # the switch between H / V (polarization, a superscript after the
+    # name) and the book's + / − — shown on this app's own page; the
+    # suite's section row has the one switch for every section
+    ws_signs_pick = signs_toggle()
+    ws_signs_pick if ws_signs_in is None else None
+    return (ws_signs_pick,)
+
+
+@app.cell(hide_code=True)
+def _(apply_signs, ws_signs_in, ws_signs_pick):
+    # the vocabulary in force: every cell that writes a sign depends on
+    # this name, so a switch rerenders it (and nothing reruns an engine)
+    ws_signs = apply_signs(ws_signs_in, ws_signs_pick)
+    return (ws_signs,)
 
 
 @app.cell(hide_code=True)
@@ -100,7 +136,8 @@ def _(ExplorerSeed, mo, ws_seed_in):
 
 
 @app.cell(hide_code=True)
-def _(controls_row, explorer_controls, mo, ws_seed):
+def _(controls_row, explorer_controls, mo, ws_seed, ws_signs):
+    ws_signs  # noqa: B018 — rerender in the chosen sign vocabulary
     ws_controls = explorer_controls(ws_seed.as_controls() if ws_seed else None)
     # the chart's mouse selection, persisted across parameter changes
     # (the chart is rebuilt on every slider move and reseeded from here)
@@ -113,7 +150,8 @@ def _(controls_row, explorer_controls, mo, ws_seed):
 
 
 @app.cell(hide_code=True)
-def _(explorer_view, ws_controls, ws_sel_get):
+def _(explorer_view, ws_controls, ws_sel_get, ws_signs):
+    ws_signs  # noqa: B018 — rerender in the chosen sign vocabulary
     ws_native, ws_view = explorer_view(ws_controls.value, ws_sel_get())
     ws_view  # noqa: B018 — the cell's output
     return (ws_native,)

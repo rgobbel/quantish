@@ -16,12 +16,12 @@ revised draft of the book.*
 
 ## Quantish and quantum
 
-A quantish particle travels along a wire and has a *sign*, plus or minus. Wires meet at *Fredkin gates*, with three
+A quantish particle travels along a wire and has a *⟦sign⟧*, ⟦plus⟧ or ⟦minus⟧. Wires meet at *Fredkin gates*, with three
 wires in,
 three wires out, and a *measurement angle* $\theta$.
 
 A quantish gate is equivalent to a standard two-qubit operation in quantum computing. Given a particle with
-sign qubit $s$ ($\vert0\rangle = \mathrm{plus}$, $\vert1\rangle = \mathrm{minus}$) a position qubit $x$, and a gate
+⟦sign⟧ qubit $s$ ($\vert0\rangle = \mathrm{⟦plus⟧}$, $\vert1\rangle = \mathrm{⟦minus⟧}$) a position qubit $x$, and a gate
 at measurement angle $\theta$ with no control particle present, the result is
 
 $$U(\theta) = R_x^{(s)}(-2\theta) \cdot \mathrm{CNOT}_{s \rightarrow x} \cdot R_x^{(s)}(+2\theta)$$
@@ -35,7 +35,7 @@ Its weight splits four ways, over the two exits and the two signs, into the
 $-i \cdot \sin\theta \cdot \cos\theta$. The squared magnitudes of the four components sum to one.
 
 So the state of a quantish universe is never a single arrangement of its particles. It is a *superposition* of
-*configuration-space points*, each a complete assignment of a position and a sign to every particle, each carrying one
+*configuration-space points*, each a complete assignment of a position and a ⟦sign⟧ to every particle, each carrying one
 complex weight. A gate turns each point into several. The squared magnitude of a point's weight is its probability,
 and the probabilities always sum to one. One further rule completes the physics: two configuration-space points that
 come to the same position in a network merge, with a result that is the vector sum of their weights. A point with weight

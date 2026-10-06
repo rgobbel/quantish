@@ -8,6 +8,7 @@ import python_mermaid.link as pml
 import python_mermaid.node as pm
 
 import quantish.qnumber as qn
+from quantish import signs
 from quantish.display import entry_summary, pos_sign_lines
 from quantish.simulation import Simulation
 from quantish.util import (
@@ -185,9 +186,8 @@ def diagram(sim:Simulation, output_file=None, has_run=False):
         pname = particle_name.split('<')[0]
         particle_node = pmd.Node(id=pname, shape='stadium-shape')
         # name + sign only; the weight shows at the entry port instead
-        psign = ('±' if particle.superposed
-                 else '+' if qn.to_float(particle.sign) >= 0 else '-')
-        particle_node.content = f'{psign}{pname}'
+        particle_node.content = signs.label(
+            pname, 0 if particle.superposed else (1 if qn.to_float(particle.sign) >= 0 else -1))
         mermaid_nodes[pname] = particle_node
         diag.add_nodes([particle_node])
 

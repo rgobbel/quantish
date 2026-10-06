@@ -9,6 +9,7 @@ import re
 
 import marimo as mo
 
+from quantish import signs
 from quantish.qubit_circuit import compile_qubits
 
 __all__ = ['qubit_panel']
@@ -22,7 +23,7 @@ def qubit_panel(sim, intro: str = ''):
     except NotImplementedError as exc:
         return mo.md(f'{intro}\n\n_Not compiled: {exc}._')
     names = circuit.qubit_names
-    rows = ['| Particle | Sign qubit | Position qubit | Flag qubits |', '|---|---|---|---|']
+    rows = [f'| Particle | {signs.attr(capital=True)} qubit | Position qubit | Flag qubits |', '|---|---|---|---|']
     for name, pq in circuit.particles.items():
         flags = ', '.join(f'q{f}' for f in pq.flags) or '—'
         rows.append(f'| {name} | q{pq.sign} ({names[pq.sign]}) | q{pq.x} ({names[pq.x]}) | {flags} |')

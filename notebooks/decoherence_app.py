@@ -61,6 +61,8 @@ async def initialization():
     import yaml
 
     from quantish.apps.common import (
+        apply_signs,
+        signs_toggle,
         build_stamp,
         editor_ui,
         init_engine,
@@ -91,6 +93,8 @@ async def initialization():
     init_engine()
     DL_EDITOR_UI = editor_ui(_wasm_editor) if WASM_MODE else editor_ui()
     return (
+        apply_signs,
+        signs_toggle,
         build_stamp,
         DL_EDITOR_UI,
         grouped_curves,
@@ -117,7 +121,8 @@ async def initialization():
 
 
 @app.cell(hide_code=True)
-async def _(mo, prose):
+async def _(mo, prose, dl_signs):
+    dl_signs  # noqa: B018 — rerender in the chosen sign vocabulary
     mo.md(await prose('lab'))
 
 
@@ -126,6 +131,33 @@ async def _(build_stamp, stamp_html):
     # which build is this? (the site build writes public/version.json
     # beside the page; a development copy says so instead)
     stamp_html(await build_stamp())
+
+
+@app.cell(hide_code=True)
+def _():
+    # the sign vocabulary the suite hands in ('hv' or 'pm'; 'follow' for
+    # a section it never re-embeds) — None on its own page, where the
+    # switch below decides
+    dl_signs_in = None
+    return (dl_signs_in,)
+
+
+@app.cell(hide_code=True)
+def _(dl_signs_in, signs_toggle):
+    # the switch between H / V (polarization, a superscript after the
+    # name) and the book's + / − — shown on this app's own page; the
+    # suite's section row has the one switch for every section
+    dl_signs_pick = signs_toggle()
+    dl_signs_pick if dl_signs_in is None else None
+    return (dl_signs_pick,)
+
+
+@app.cell(hide_code=True)
+def _(apply_signs, dl_signs_in, dl_signs_pick):
+    # the vocabulary in force: every cell that writes a sign depends on
+    # this name, so a switch rerenders it (and nothing reruns an engine)
+    dl_signs = apply_signs(dl_signs_in, dl_signs_pick)
+    return (dl_signs,)
 
 
 @app.cell(hide_code=True)
@@ -311,14 +343,16 @@ def _():
 
 
 @app.cell(hide_code=True)
-def _(make_screen_editor, dl_pick_a):
+def _(make_screen_editor, dl_pick_a, dl_signs):
+    dl_signs  # noqa: B018 — rerender in the chosen sign vocabulary
     # slot A's screen definition, rebuilt with the model choice
     dl_screen_a = make_screen_editor(dl_pick_a.value)
     return (dl_screen_a,)
 
 
 @app.cell(hide_code=True)
-def _(make_screen_editor, dl_pick_b):
+def _(make_screen_editor, dl_pick_b, dl_signs):
+    dl_signs  # noqa: B018 — rerender in the chosen sign vocabulary
     dl_screen_b = make_screen_editor(dl_pick_b.value)
     return (dl_screen_b,)
 

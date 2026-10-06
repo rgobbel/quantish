@@ -44,7 +44,8 @@ import re
 
 import yaml
 
-from quantish.particle import SIGN_SEP, sign_components
+from quantish import signs
+from quantish.particle import SIGN_SEP, particle_sign, sign_components
 from quantish.qnumber import angle_expr, qify, reserved_name
 from quantish.util import SEP, WIRES
 
@@ -236,7 +237,7 @@ def validate_graph(graph, variables=None,
     for name, p in sorted(particles.items()):
         spec = p.get('weight', 1)
         try:
-            sign_components(spec, p.get('sign', 1), env)
+            sign_components(spec, p.get('sign', 1), env)   # the canvas's sign is ±1
         except Exception as exc:  # noqa: BLE001 — qify's message informs
             reason = str(exc).splitlines()[0]
             problems.append(f'{name}: cannot use weight {spec!r} — '
@@ -461,6 +462,9 @@ def graph_to_config(graph, title: str, caption: str | None = None,
         w = p.get('weight', 1)
         if name in arm_weights or (isinstance(w, str) and SIGN_SEP in w):
             return {'weight': w} if str(w) != '1' else {}
+        # the sign in the current vocabulary: `sign: -1` or `polarization: V`
+        if signs.hv():
+            return {'weight': w, 'polarization': signs.mark(p.get('sign', 1))}
         return {'weight': w, 'sign': p.get('sign', 1)}
 
     config['particles'] = {
@@ -740,7 +744,7 @@ def config_to_graph(config) -> tuple[dict, list[str]]:
         spec = p.get('weight', 1)
         w = spec if isinstance(spec, (int, float)) else str(spec)
         graph['particles'][name] = {'x': 24, 'y': 60 + i * 70,
-                                    'sign': int(p.get('sign', 1)),
+                                    'sign': int(particle_sign(name, p) or 1),
                                     'weight': w}
         if name in _displays:
             graph['particles'][name]['display_string'] = _displays[name]
@@ -849,6 +853,8 @@ def config_to_yaml(config, raw_sections: dict[str, str] | None = None) -> str:
             opts.append(f'weight: {wtxt}')
         if 'sign' in p:
             opts.append(f"sign: {p['sign']}")
+        if 'polarization' in p:
+            opts.append(f"polarization: {p['polarization']}")
         lines.append(f"  {name}: {{{', '.join(opts)}}}")
     lines += ['', 'gates:']
     for name, g in config['gates'].items():

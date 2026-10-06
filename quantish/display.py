@@ -13,6 +13,7 @@ import re
 from collections import defaultdict
 
 import quantish.qnumber as qn
+from quantish import signs
 from quantish.config_space import GatePort
 from quantish.util import SEP, base_name, math_to_unicode
 
@@ -110,11 +111,11 @@ def particle_tokens(sim, point) -> list:
             continue
         port = coord.position.origin or coord.position.endpoint
         if port is None:
-            tokens.append((name, f'{coord.sign}?'))
+            tokens.append((name, signs.label('?', coord.sign)))
         elif port.gate in bare:
-            tokens.append((name, f'{coord.sign}{port.gate}'))
+            tokens.append((name, signs.label(port.gate, coord.sign)))
         else:
-            tokens.append((name, f'{coord.sign}{port.gate}{(port.port or "c")[0]}'))
+            tokens.append((name, signs.label(f'{port.gate}{(port.port or "c")[0]}', coord.sign)))
     return tokens
 
 
@@ -182,7 +183,9 @@ def cs_point_sort_key(sim, point):
     return tuple(sorted(coord_sort_key(sim, c) for c in point.coords.values()))
 
 
-# str(Sign) is '+' or '-'; the numeric spellings are accepted too
+# str(Sign) is '+' or '-'; the numeric spellings are accepted too. The
+# displays write a signed name through quantish.signs (the book's '+p1',
+# or p1ᴴ in the polarization vocabulary)
 SIGN_MARK = {'+': '+', '-': '−', '1': '+', '+1': '+', '-1': '−'}
 
 
@@ -224,7 +227,7 @@ def pos_sign_lines(sim, pos):
         for pname in sorted(probs):
             agg = complex(amps[pname])
             deg = math.degrees(cmath.phase(agg)) if abs(agg) > 1e-12 else 0.0
-            signed = [f'{SIGN_MARK[sign]}{pname} '
+            signed = [f'{signs.label(pname, sign)} '
                       f'{sym_or_float(prob, f"{float(prob):.{prec}f}", max_len)}'
                       for sign, prob in sorted(probs[pname].items(),
                                                key=lambda kv: kv[0] != '+')]
@@ -250,7 +253,7 @@ def entry_summary(sim, source: str, name: str | None = None) -> str:
     pname = base_name(source) if name is None else name
     prec = sim.precision
     return '  '.join(
-        f'{SIGN_MARK[str(s)]}{pname} {qn.to_float(qn.probability(w)):.{prec}f}'
+        f'{signs.label(pname, s)} {qn.to_float(qn.probability(w)):.{prec}f}'
         for s, w in sim.entry_components(source).items())
 
 
@@ -292,7 +295,7 @@ def port_summary(sim, step, port, end='origin'):
         for pname in sorted(probs.keys()):
             # sign first, as the configuration labels write it: '+p1'
             sign_parts = ', '.join(
-                f'{SIGN_MARK[sign]}{pname}: '
+                f'{signs.label(pname, sign)}: '
                 f'{sym_or_float(prob, f"{float(prob):.{prec}f}", max_len)}'
                 for sign, prob in sorted(probs[pname].items(),
                                          key=lambda kv: kv[0] != '+'))
